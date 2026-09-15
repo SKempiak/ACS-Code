@@ -1,0 +1,34 @@
+% !TeX root = ../main.tex
+\section{Read/Write Mix}\label{sec:rw-mix}
+\rubric{Read/write and queue-depth analysis}{40}{Correct mix and queue-depth experiments, knee
+identification and Little's Law reasoning (with \cref{sec:queue-depth}).}
+
+\begin{hypothesis}
+  \todo{Expected IOPS and latency for 100\% read, 70/30, 50/50 and 100\% write at a fixed block size, and why
+  mixing changes more than a weighted average would predict.}
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & 4~KiB random; iodepth \tbd; numjobs 1; direct I/O \\
+  Varied      & read percentage: 100, 70, 50, 0 \\
+  Script      & \code{SSD_Performance_Profiling/scripts/run.sh rw_mix} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{rw_mix}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, ybar, bar width=10pt, width=0.7\linewidth, xtick={0,50,70,100}, enlarge x limits=0.15,
+                   xlabel={Reads (\%)}, ylabel={IOPS}, ymin=0, legend pos=north west]
+        \addplot+[iqr bars] table[x=rwmixread, y=iops_median, iqr of=iops, only if={direction}{read}] {data/rw_mix.csv};
+        \addlegendentry{read IOPS}
+        \addplot+[iqr bars] table[x=rwmixread, y=iops_median, iqr of=iops, only if={direction}{write}] {data/rw_mix.csv};
+        \addlegendentry{write IOPS}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Read and write IOPS across mixes. \todo{takeaway; add latency}}\label{fig:rw-mix}
+\end{figure}
+
+\subsection{Analysis}
+\todo{Total IOPS and per-direction latency across mixes, and the controller/FTL behavior that explains them.}

@@ -1,0 +1,34 @@
+% !TeX root = ../main.tex
+\section{Stride and Gather Access}\label{sec:stride}
+
+\begin{hypothesis}
+  \todo{How strides of 2/4/8 and gather-style indexing should change time per processed element and
+  SIMD efficiency, in cache and in DRAM.}
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & SAXPY; float32 \\
+  Varied      & access (unit, stride 1/2/4/8, gather); $N$ cache-resident and DRAM-resident; variant \\
+  Definition  & \todo{stride semantics used (e.g.\ $i = 0, s, 2s, \ldots < N$) and gather index pattern} \\
+  Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh stride} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{stride}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, xlabel={Stride}, ylabel={Time per processed element (ns)}, legend pos=north west]
+        \addplot+[iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{scalar}, only if={n}{16777216}] {data/stride.csv};
+        \addlegendentry{scalar}
+        \addplot+[iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{native}, only if={n}{16777216}] {data/stride.csv};
+        \addlegendentry{native}
+        % TODO: unit-stride and gather reference points; cache-resident N
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Effect of stride on time per processed element. \todo{takeaway}}\label{fig:stride}
+\end{figure}
+
+\subsection{Analysis}
+\todo{Effective memory bandwidth per processed element; whether strided loops vectorize and how
+(gather/scatter vs.\ scalar); why gather rarely pays off here.}

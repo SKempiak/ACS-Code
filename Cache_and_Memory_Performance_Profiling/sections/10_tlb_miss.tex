@@ -1,0 +1,33 @@
+% !TeX root = ../main.tex
+\section{TLB-Miss Impact}\label{sec:tlb}
+
+\begin{hypothesis}
+  \todo{Expected effect of 2~MiB pages on dTLB misses and runtime for random access over large
+  footprints, given the TLB sizes of this CPU.}
+\end{hypothesis}
+
+\begin{knobs}
+  Kernel      & $z_i = x_i \cdot y_i$ (float64), random traversal \\
+  Varied      & page size (base, transparent huge pages); $N$ \\
+  Verification & \todo{how huge-page backing was confirmed (AnonHugePages)} \\
+  Script      & \code{PERF=1 Cache_and_Memory_Performance_Profiling/scripts/run.sh tlb} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{tlb}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, xlabel={$N$ (elements)}, ylabel={Time per element (ns)}, legend pos=north west]
+        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={huge_requested}{0}] {data/tlb.csv};
+        \addlegendentry{base pages}
+        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={huge_requested}{1}] {data/tlb.csv};
+        \addlegendentry{huge pages}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Runtime with base vs.\ huge pages. \todo{takeaway; add dTLB-load-misses}}\label{fig:tlb}
+\end{figure}
+
+\subsection{Analysis}
+\todo{TLB reach (entries $\times$ page size) vs.\ footprint; change in dTLB misses and page walks;
+runtime effect and its limits.}

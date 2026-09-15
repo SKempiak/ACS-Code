@@ -1,0 +1,44 @@
+% !TeX root = ../main.tex
+\section{Vectorization Verification}\label{sec:vectorization}
+\rubric{Vectorization verification}{15}{Clear evidence that SIMD instructions are used, with a correct
+reading of vector width, FMA and masking.}
+
+\begin{hypothesis}
+  \todo{Which loops you expect each variant to vectorize, at what width, and which you expect the
+  compiler to reject (and why).}
+\end{hypothesis}
+
+\Cref{tab:vec-summary} counts, for each kernel function, the instructions that operate on vector
+registers or use packed operations (\code{make report}).
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{SIMD instructions per kernel function and build variant.}\label{tab:vec-summary}
+  \IfDataExists{vectorization}{%
+    \pgfplotstabletypeset[
+      col sep=comma,
+      columns={variant,function,insns,simd_insns,widest_register},
+      columns/variant/.style={column name=Variant, string type},
+      columns/function/.style={column name=Function, string type, string replace*={_}{\_}},
+      columns/insns/.style={column name=Instructions},
+      columns/simd_insns/.style={column name=SIMD instructions},
+      columns/widest_register/.style={column name=Widest register, string type},
+      every head row/.style={before row=\toprule, after row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/vectorization.csv}%
+  }
+\end{table}
+
+\subsection{Compiler report}
+\begin{lstlisting}[style=excerpt]
+TODO: 2-5 relevant lines from data/raw/vectorization/<run>/report_<variant>.txt
+\end{lstlisting}
+
+\subsection{Disassembly}
+\begin{lstlisting}[style=excerpt]
+TODO: 5-10 lines of a vectorized loop body, e.g. disasm/native/saxpy_f32.s
+\end{lstlisting}
+
+\todo{Interpret the evidence: register width (xmm/ymm/zmm) and lanes per element type; FMA
+(\code{vfmadd*}); masked tails (k-mask registers) versus a scalar epilogue; loops that did not
+vectorize and the compiler's reason.}

@@ -1,0 +1,32 @@
+% !TeX root = ../main.tex
+\section{Reproducibility}\label{app:repro}
+
+Code, FIO job files, scripts and raw data: \coderepo, commit \todo{hash}.
+
+\begin{lstlisting}[language=bash]
+git clone https://github.com/SKempiak/ACS-Code.git && cd ACS-Code
+git checkout <commit>
+scripts/collect_env.sh
+export TARGET=<scratch dir>/test.fio-scratch SIZE=<size> DEVICE=<nvme device>
+SSD_Performance_Profiling/scripts/run.sh precondition
+SSD_Performance_Profiling/scripts/run.sh all
+scripts/sync_data.sh SSD_Performance_Profiling
+\end{lstlisting}
+
+\begin{table}[h]
+  \centering\small
+  \caption{Raw data behind each figure.}\label{tab:raw-data}
+  \begin{tabularx}{\linewidth}{@{}lX@{}}
+    \toprule
+    Figure / table & Raw run directory (\code{SSD_Performance_Profiling/data/raw/...}) \\
+    \midrule
+    \Cref{tab:zero-queue} & \todo{\code{zero_queue/<timestamp>}} \\
+    \Cref{fig:block-size} & \todo{\code{block_size/<timestamp>}} \\
+    \Cref{fig:rw-mix} & \todo{\code{rw_mix/<timestamp>}} \\
+    \Cref{fig:queue-depth}, \cref{tab:littles-law} & \todo{\code{queue_depth/<timestamp>}} \\
+    \Cref{fig:tail} & \todo{\code{tail/<timestamp>}} \\
+    \Cref{fig:device-state}, \cref{tab:smart} & \todo{\code{device_state/<timestamp>, precondition/<timestamp>}} \\
+    \Cref{tab:pitfall} & \todo{\code{pitfall/<timestamp>}} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}

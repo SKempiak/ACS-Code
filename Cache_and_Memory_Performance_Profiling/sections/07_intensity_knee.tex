@@ -1,0 +1,58 @@
+% !TeX root = ../main.tex
+\section{Intensity Sweep and the Throughput--Latency Knee}\label{sec:intensity}
+\rubric{Throughput--latency knee}{35}{Clear knee identification, diminishing-returns discussion and a
+Little's Law connection.}
+
+\begin{hypothesis}
+  \todo{Thread count at which throughput should stop scaling and latency should rise, and why
+  (cores, memory channels, shared bandwidth).}
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & region \tbd~per thread; random reads; granularity \tbd~bytes \\
+  Varied      & threads $T$ = 1, 2, 4, \ldots{} (pinned: \todo{CPU list}) \\
+  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh intensity} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{intensity}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, width=0.75\linewidth, xlabel={Throughput (GiB/s)}, ylabel={Latency (ns/op)},
+                   legend pos=north west, nodes near coords, point meta=explicit symbolic,
+                   every node near coord/.append style={font=\scriptsize, anchor=south east}]
+        \addplot+ table[x=gib_per_s_median, y=lat_mean_ns_median, meta=threads] {data/intensity.csv};
+        \addlegendentry{mean}
+        \addplot+ table[x=gib_per_s_median, y=lat_p99_ns_median, meta=threads] {data/intensity.csv};
+        \addlegendentry{p99}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Throughput vs.\ latency; labels give the thread count. \todo{mark the knee}}\label{fig:intensity}
+\end{figure}
+
+\subsection{Little's Law check}
+With $T$ threads always busy, the number of requests in the system is $L = T$, so throughput $\lambda$
+and mean latency $W$ should satisfy $L = \lambda W$ \cite{little1961proof}.
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{Little's Law: measured $\lambda W$ against the number of busy threads.}\label{tab:littles-law}
+  \IfDataExists{intensity}{%
+    \pgfplotstabletypeset[
+      col sep=comma,
+      columns={threads,ops_per_s_median,lat_mean_ns_median,lambdaW},
+      create on use/lambdaW/.style={create col/expr={\thisrow{ops_per_s_median}*\thisrow{lat_mean_ns_median}/1e9}},
+      columns/threads/.style={column name=$T$},
+      columns/ops_per_s_median/.style={column name={$\lambda$ (ops/s)}, sci, precision=2},
+      columns/lat_mean_ns_median/.style={column name={$W$ (ns)}, fixed, precision=2},
+      columns/lambdaW/.style={column name={$L=\lambda W$}, fixed, precision=2},
+      every head row/.style={before row=\toprule, after row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/intensity.csv}%
+  }
+\end{table}
+
+\subsection{Analysis}
+\todo{Where the knee is and why; diminishing returns beyond it; whether $\lambda W \approx T$ holds and
+what a deviation means (sampling, think time, oversubscription).}

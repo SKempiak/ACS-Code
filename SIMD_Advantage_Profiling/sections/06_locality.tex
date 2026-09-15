@@ -1,0 +1,39 @@
+% !TeX root = ../main.tex
+\section{Locality Sweep}\label{sec:locality}
+\rubric{Locality and memory-bound analysis}{20}{Working-set transitions identified, and the compression
+of SIMD gains in the memory-bound regime explained.}
+
+\begin{hypothesis}
+  \todo{At which $N$ each cache transition should appear for this kernel, and how scalar and SIMD
+  builds should diverge or converge beyond LLC.}
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & kernel \tbd; float32; unit stride; aligned; pinned to CPU \tbd \\
+  Varied      & $N$ (dense grid across L1/L2/LLC/DRAM); variant \\
+  Counters    & \todo{perf events recorded (\code{PERF=1}), e.g.\ LLC-load-misses} \\
+  Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh locality} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{locality}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, xlabel={$N$ (elements)}, ylabel={Time per element (ns)},
+                   legend pos=north west]
+        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{scalar}] {data/locality.csv};
+        \addlegendentry{scalar}
+        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{autovec}] {data/locality.csv};
+        \addlegendentry{autovec}
+        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{native}] {data/locality.csv};
+        \addlegendentry{native}
+        % TODO: mark cache boundaries in elements: \acsvline{<N>}{L1d} \acsvline{<N>}{L2} \acsvline{<N>}{LLC}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Time per element across cache levels. \todo{takeaway}}\label{fig:locality}
+\end{figure}
+
+\subsection{Analysis}
+\todo{Where each transition occurs (bytes = arrays $\times$ element size $\times N$) and what the
+counters show there; why the SIMD speedup compresses once memory traffic dominates.}

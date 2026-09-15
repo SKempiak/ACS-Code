@@ -1,0 +1,17 @@
+% !TeX root = ../main.tex
+\section{Introduction}\label{sec:intro}
+
+\todo{Motivation: the L1/L2/L3/DRAM hierarchy on this machine (sizes, expected latencies) and why
+locality, concurrency and page size decide real performance.}
+
+This report answers:
+\begin{enumerate}
+  \item What is the zero-queue access latency of each level, and the DRAM bandwidth under different
+        patterns, granularities and read/write mixes? (\cref{sec:zero-queue,sec:pattern,sec:rw-mix})
+  \item Where does added concurrency stop buying throughput, and does Little's Law hold? (\cref{sec:intensity})
+  \item How do working-set size, cache misses and TLB misses show up in runtime and counters?
+        (\cref{sec:working-set,sec:cache-miss,sec:tlb})
+  \item Which benchmark mistake produces misleading numbers? (\cref{sec:pitfall})
+\end{enumerate}
+
+\todo{One-paragraph summary of the main findings.}

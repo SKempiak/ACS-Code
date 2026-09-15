@@ -1,0 +1,36 @@
+% !TeX root = ../main.tex
+\section{Tail Latency}\label{sec:tail}
+\rubric{Tail latency and device state}{25}{p50/p95/p99/p99.9 reporting and interpretation of queueing,
+thermal and garbage-collection effects (with \cref{sec:device-state}).}
+
+\begin{hypothesis}
+  \todo{How the gap between p50 and p99.9 should grow from a mid queue depth to the knee, and why.}
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & 4~KiB random read; numjobs 1; \tbd~s runs \\
+  Varied      & iodepth: mid (\tbd) and near-knee (\tbd, from \cref{sec:queue-depth}) \\
+  Script      & \code{SSD_Performance_Profiling/scripts/run.sh tail} \\
+\end{knobs}
+
+% TODO: keep symbolic x coords in sync with the queue depths used in run.sh exp_tail.
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{tail}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, ybar, bar width=9pt, width=0.7\linewidth, ymode=log, log origin=infty,
+                   symbolic x coords={8,64}, xtick=data, enlarge x limits=0.5,
+                   xlabel={iodepth}, ylabel={Latency (\si{\micro\second})}, legend pos=north west, legend columns=2]
+        \addplot table[x=iodepth, y=p50_us_median] {data/tail.csv};   \addlegendentry{p50}
+        \addplot table[x=iodepth, y=p95_us_median] {data/tail.csv};   \addlegendentry{p95}
+        \addplot table[x=iodepth, y=p99_us_median] {data/tail.csv};   \addlegendentry{p99}
+        \addplot table[x=iodepth, y=p999_us_median] {data/tail.csv};  \addlegendentry{p99.9}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Latency percentiles at mid and near-knee queue depth. \todo{takeaway}}\label{fig:tail}
+\end{figure}
+
+\subsection{Analysis}
+\todo{Tail amplification with queueing; outliers from garbage collection or throttling; why tails matter more
+than means for this workload.}

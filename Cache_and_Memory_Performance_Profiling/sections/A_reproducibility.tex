@@ -1,0 +1,31 @@
+% !TeX root = ../main.tex
+\section{Reproducibility}\label{app:repro}
+
+Code, scripts and raw data: \coderepo, commit \todo{hash}.
+
+\begin{lstlisting}[language=bash]
+git clone https://github.com/SKempiak/ACS-Code.git && cd ACS-Code
+git checkout <commit>
+make && make test
+scripts/collect_env.sh
+ACS_CPU=2 ACS_CPUS=2,4,6,8 PERF=1 Cache_and_Memory_Performance_Profiling/scripts/run.sh all
+scripts/sync_data.sh Cache_and_Memory_Performance_Profiling
+\end{lstlisting}
+
+\begin{table}[h]
+  \centering\small
+  \caption{Raw data behind each figure.}\label{tab:raw-data}
+  \begin{tabularx}{\linewidth}{@{}lX@{}}
+    \toprule
+    Figure / table & Raw run directory (\code{Cache_and_Memory_Performance_Profiling/data/raw/...}) \\
+    \midrule
+    \Cref{tab:zero-queue} & \todo{\code{zero_queue/<timestamp>}} \\
+    \Cref{fig:pattern} & \todo{\code{pattern/<timestamp>}} \\
+    \Cref{fig:rw-mix} & \todo{\code{rw_mix/<timestamp>}} \\
+    \Cref{fig:intensity}, \cref{tab:littles-law} & \todo{\code{intensity/<timestamp>}} \\
+    \Cref{fig:working-set} & \todo{\code{working_set/<timestamp>}} \\
+    \Cref{fig:cache-miss} & \todo{\code{cache_miss/<timestamp>}} \\
+    \Cref{fig:tlb} & \todo{\code{tlb/<timestamp>}} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}

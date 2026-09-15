@@ -1,0 +1,31 @@
+% !TeX root = ../main.tex
+\section{Reproducibility}\label{app:repro}
+
+Code, scripts and raw data: \coderepo, commit \todo{hash}.
+
+\begin{lstlisting}[language=bash]
+git clone https://github.com/SKempiak/ACS-Code.git && cd ACS-Code
+git checkout <commit>
+make && make test
+scripts/collect_env.sh
+SIMD_Advantage_Profiling/scripts/run.sh all
+make -C SIMD_Advantage_Profiling report
+scripts/sync_data.sh SIMD_Advantage_Profiling
+\end{lstlisting}
+
+\begin{table}[h]
+  \centering\small
+  \caption{Raw data behind each figure.}\label{tab:raw-data}
+  \begin{tabularx}{\linewidth}{@{}lX@{}}
+    \toprule
+    Figure / table & Raw run directory (\code{SIMD_Advantage_Profiling/data/raw/...}) \\
+    \midrule
+    \Cref{fig:baseline-speedup,fig:baseline-throughput} & \todo{\code{baseline/<timestamp>}} \\
+    \Cref{fig:locality} & \todo{\code{locality/<timestamp>}} \\
+    \Cref{fig:alignment} & \todo{\code{alignment/<timestamp>}} \\
+    \Cref{fig:stride} & \todo{\code{stride/<timestamp>}} \\
+    \Cref{fig:dtype} & \todo{\code{dtype/<timestamp>}} \\
+    \Cref{tab:vec-summary} & \todo{\code{vectorization/<timestamp>}} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}

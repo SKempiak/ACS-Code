@@ -1,0 +1,20 @@
+% !TeX root = ../main.tex
+% Optional CPU-vs-GPU extension. Enable with \input{sections/15_gpu_extension} in main.tex.
+\section{Optional Extension: CPU vs.\ GPU}\label{sec:gpu}
+
+GPU: \sysGPU; CUDA \sysCUDA.
+
+\begin{hypothesis}
+  \todo{Break-even $N$ you expect, once host--device transfer is included.}
+\end{hypothesis}
+
+\begin{knobs}
+  Kernel      & \tbd \\
+  Timing      & kernel-only (device synchronized) and end-to-end (including host$\leftrightarrow$device copies) \\
+  Varied      & $N$ \\
+\end{knobs}
+
+\todo{Figure: CPU (best SIMD build) vs.\ GPU kernel-only vs.\ GPU end-to-end throughput across $N$.}
+
+\subsection{Analysis}
+\todo{When GPU acceleration helps, when transfers erase the benefit, and why.}

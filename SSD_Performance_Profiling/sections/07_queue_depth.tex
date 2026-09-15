@@ -1,0 +1,57 @@
+% !TeX root = ../main.tex
+\section{Queue-Depth Sweep}\label{sec:queue-depth}
+
+\begin{hypothesis}
+  \todo{Queue depth at which IOPS should saturate and latency rise sharply, and why (controller parallelism,
+  NAND channels, host CPU).}
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & 4~KiB random read; numjobs 1; direct I/O \\
+  Varied      & iodepth 1--256 \todo{and/or numjobs} \\
+  Effective QD & \todo{how verified (e.g.\ \code{iostat -x} aqu-sz)} \\
+  Script      & \code{SSD_Performance_Profiling/scripts/run.sh queue_depth} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{queue_depth}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, width=0.75\linewidth, ymode=log, xlabel={IOPS}, ylabel={Latency (\si{\micro\second})},
+                   legend pos=north west, nodes near coords, point meta=explicit symbolic,
+                   every node near coord/.append style={font=\scriptsize, anchor=south east}]
+        \addplot+ table[x=iops_median, y=lat_mean_us_median, meta=iodepth] {data/queue_depth.csv};
+        \addlegendentry{mean}
+        \addplot+ table[x=iops_median, y=p99_us_median, meta=iodepth] {data/queue_depth.csv};
+        \addlegendentry{p99}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Throughput vs.\ latency; labels give the queue depth. \todo{mark the knee}}\label{fig:queue-depth}
+\end{figure}
+
+\subsection{Little's Law check}
+With the queue kept full, the number of outstanding I/Os $L$ should equal iodepth $\times$ numjobs, so
+IOPS $\lambda$ and mean latency $W$ should satisfy $L = \lambda W$ \cite{little1961proof}.
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{Little's Law: measured $\lambda W$ against the configured queue depth.}\label{tab:littles-law}
+  \IfDataExists{queue_depth}{%
+    \pgfplotstabletypeset[
+      col sep=comma,
+      columns={iodepth,iops_median,lat_mean_us_median,lambdaW},
+      create on use/lambdaW/.style={create col/expr={\thisrow{iops_median}*\thisrow{lat_mean_us_median}/1e6}},
+      columns/iodepth/.style={column name=iodepth},
+      columns/iops_median/.style={column name={$\lambda$ (IOPS)}, fixed, precision=0},
+      columns/lat_mean_us_median/.style={column name={$W$ (\si{\micro\second})}, fixed, precision=1},
+      columns/lambdaW/.style={column name={$L=\lambda W$}, fixed, precision=2},
+      every head row/.style={before row=\toprule, after row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/queue_depth.csv}%
+  }
+\end{table}
+
+\subsection{Analysis}
+\todo{Knee location and why; diminishing returns beyond it; where $\lambda W$ departs from the configured
+depth and what that reveals (host-side queueing, submission latency, engine limits).}

@@ -1,0 +1,61 @@
+% !TeX root = ../main.tex
+\section{Methodology}\label{sec:method}
+\rubric{Baseline, correctness, reproducibility}{15}{Reference validation, controlled timing,
+reproducible scripts and a documented environment (with \cref{sec:correctness,sec:baseline}).}
+
+\subsection{Platform}
+\input{../common/environment_table}
+
+\todo{Vector widths actually usable on this CPU (SSE / AVX2 / AVX-512), and whether the compiler
+prefers 256- or 512-bit vectors by default.}
+
+\subsection{Kernels}
+\begin{table}[tbp]
+  \centering\small
+  \caption{Kernels and floating-point operations (FLOPs) per processed element.}\label{tab:kernels}
+  \begin{tabular}{@{}lll@{}}
+    \toprule
+    Kernel & Definition & FLOPs / element \\
+    \midrule
+    SAXPY               & $y_i \leftarrow a\,x_i + y_i$                         & \tbd \\
+    Dot product         & $s \leftarrow \sum_i x_i\, y_i$                        & \tbd \\
+    Elementwise multiply & $z_i \leftarrow x_i\, y_i$                            & \tbd \\
+    3-point stencil     & $y_i \leftarrow a\,x_{i-1} + b\,x_i + c\,x_{i+1}$      & \tbd \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+\todo{Justify the FLOP counts (and how FMA is counted). State which kernels were selected.}
+
+\subsection{Build variants}
+\begin{table}[tbp]
+  \centering\small
+  \caption{Build variants. Only the kernel translation unit differs; the timing harness and the
+  reference implementation are identical across variants.}\label{tab:variants}
+  \begin{tabularx}{\linewidth}{@{}lX@{}}
+    \toprule
+    Variant & Kernel compiler flags (from \code{simd_bench --info}) \\
+    \midrule
+    scalar    & \todo{e.g.\ \code{-O3 -fno-tree-vectorize}} \\
+    autovec   & \todo{e.g.\ \code{-O3}} \\
+    native    & \todo{e.g.\ \code{-O3 -march=native}} \\
+    native512 & \todo{e.g.\ \code{-O3 -march=native -mprefer-vector-width=512}, if AVX-512 is available} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+\todo{Primary compiler and version; floating-point contraction setting; whether a second compiler was compared.}
+
+\subsection{Timing and statistics}
+\begin{itemize}
+  \item Timer: \code{clock_gettime(CLOCK_MONOTONIC_RAW)}; each timed sample repeats the kernel until
+        it lasts at least \tbd{}~ms. \todo{justify relative to timer resolution}
+  \item Warm-up samples: \tbd; repetitions per configuration: \tbd.
+  \item Reported statistic: median; error bars show the interquartile range. \todo{justify}
+  \item Pinning, SMT, governor and turbo: \cref{tab:environment}. \todo{anything not captured there}
+  \item Configuration order: \todo{sequential or shuffled, and why}
+\end{itemize}
+
+\subsection{Data initialization and working-set sizes}
+\todo{Value distribution and seed; why no denormals, NaNs or overflow; gather index pattern.}
+
+\todo{How $N$ maps to bytes touched (arrays $\times$ element size), and which $N$ fall in L1, L2,
+LLC and DRAM on this CPU.}

@@ -1,0 +1,10 @@
+% !TeX root = ../main.tex
+\section{Validation and Sanity Checks}\label{sec:validation}
+
+\todo{Checks that the numbers describe the SSD, e.g.:}
+\begin{itemize}
+  \item \todo{Sequential throughput below the interface ceiling (PCIe generation $\times$ lanes, or SATA 6~Gb/s).}
+  \item \todo{FIO throughput agrees with \code{iostat -x} for one configuration.}
+  \item \todo{Effective queue depth (\code{iostat} aqu-sz) matches the requested iodepth $\times$ numjobs.}
+  \item \todo{Direct I/O confirmed (page cache does not grow during runs).}
+\end{itemize}
