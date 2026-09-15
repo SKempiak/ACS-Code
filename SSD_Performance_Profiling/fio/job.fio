@@ -1,0 +1,9 @@
+; job.fio — FIO job(s) for the Project 3 sweeps.
+;
+; TODO:
+;   - Target: a dedicated empty partition, a raw test device, or a large disposable file
+;     (checked by scripts/safety.sh before any run).
+;   - Direct I/O; block-aligned random offsets.
+;   - Varied per run: block size, sequential/random, read/write mix, iodepth and/or numjobs.
+;   - Fixed and documented: runtime and ramp time, data pattern, I/O engine.
+;   - Latency percentiles p50 / p95 / p99 / p99.9; machine-readable output for parsing.

@@ -1,0 +1,4 @@
+; precondition.fio — bring the device to a known state before steady-state measurements.
+;
+; TODO: fill the tested range, then sustain writes until throughput settles, and keep the
+; logs that show when steady state was reached.

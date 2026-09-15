@@ -1,0 +1,13 @@
+# Build outputs
+build/
+*.o
+*.dSYM/
+
+# OS
+.DS_Store
+
+# FIO target files: never commit benchmark scratch data
+*.fio-scratch
+
+# data/raw and data/processed are deliverables: keep them tracked.
+AI_USE_LOG.md
