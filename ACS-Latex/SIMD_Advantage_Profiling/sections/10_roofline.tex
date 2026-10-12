@@ -4,7 +4,11 @@
 bandwidth, and a justified compute- vs.\ memory-bound conclusion.}
 
 \begin{hypothesis}
-  \todo{Which kernels you expect to be compute-bound and which memory-bound, before computing the model.}
+  All four kernels have very low arithmetic intensity (well under \qty{1}{\flop\per\byte}), so on a
+  machine whose single-core bandwidth is tens of \unit{\giga\byte\per\second} and whose peak vector
+  rate is over \qty{100}{\giga\flop\per\second} they should all sit on the \emph{bandwidth} slope of
+  the roofline when DRAM-resident, i.e.\ be memory-bound. The stencil, with the highest intensity,
+  should come closest to the compute roof.
 \end{hypothesis}
 
 Attainable performance at arithmetic intensity $I$ (FLOPs per byte of memory traffic) is bounded by
@@ -15,36 +19,64 @@ where $P_{\text{peak}}$ is the CPU's peak FLOP rate and $B$ the memory bandwidth
 
 \begin{table}[tbp]
   \centering\small
-  \caption{Roofline inputs.}\label{tab:roofline-inputs}
+  \caption{Roofline inputs (single core, float32).}\label{tab:roofline-inputs}
   \begin{tabularx}{\linewidth}{@{}lrX@{}}
     \toprule
     Quantity & Value & Source \\
     \midrule
-    Peak FLOP rate $P_{\text{peak}}$ & \tbd~GFLOP/s & \todo{how estimated (e.g.\ cores/vector width/measured compute-bound kernel)} \\
-    Memory bandwidth $B$            & \tbd~GiB/s   & \todo{measurement: Project 2 \code{mem_bandwidth} or Intel MLC} \\
-    Intensity $I$, SAXPY            & \tbd~FLOP/byte & \todo{derivation} \\
-    Intensity $I$, dot product      & \tbd~FLOP/byte & \\
+    Peak FLOP rate $P_{\text{peak}}$ & $\approx\num{147}$~GFLOP/s & Estimated: 2~FMA units $\times$ 8
+      float32 lanes $\times$ 2 FLOP $\times\approx\qty{4.6}{\giga\hertz}$ single-core turbo. Not
+      independently measured (no compute-bound microbenchmark); see \cref{sec:anomalies}. \\
+    Memory bandwidth $B$            & $\approx\num{45}$~GB/s ($\approx\num{42}$~GiB/s)  & Measured:
+      DRAM-resident native SAXPY, \qty{5.6}{\giga\flop\per\second} $=2.8\times10^{9}$ elem/s
+      $\times\qty{16}{\byte}$ traffic/element (read $x$, read + write-allocate + write $y$). \\
+    Intensity $I$, SAXPY            & \num{0.125}~FLOP/byte & $2\,\text{FLOP} / \qty{16}{\byte}$ \\
+    Intensity $I$, multiply         & \num{0.063}~FLOP/byte & $1\,\text{FLOP} / \qty{16}{\byte}$ \\
+    Intensity $I$, stencil          & \num{0.42}~FLOP/byte & $5\,\text{FLOP} / \qty{12}{\byte}$ (reuses $x$) \\
+    Intensity $I$, dot product      & \num{0.25}~FLOP/byte & $2\,\text{FLOP} / \qty{8}{\byte}$ (no store) \\
     \bottomrule
   \end{tabularx}
 \end{table}
 
-% TODO: replace the placeholder model constants (GFLOP/s and GiB/s) with measured values.
-\newcommand{\roofPeak}{50}
-\newcommand{\roofBandwidth}{10}
+\newcommand{\roofPeak}{147}
+\newcommand{\roofBandwidth}{42}
 \begin{figure}[tbp]
   \centering
   \begin{tikzpicture}
     \begin{axis}[acs, xmode=log, ymode=log, xlabel={Arithmetic intensity (FLOP/byte)},
-                 ylabel={Performance (GFLOP/s)}, width=0.7\linewidth, xmin=0.01, xmax=100]
+                 ylabel={Performance (GFLOP/s)}, width=0.7\linewidth, xmin=0.01, xmax=100,
+                 legend pos=south east, legend style={font=\scriptsize}]
       % bandwidth slope: GiB/s * 2^30 bytes * I FLOP/byte / 1e9
       \addplot[thick, domain=0.01:100, samples=200]
         {min(\roofPeak, \roofBandwidth * 1.073741824 * x)};
-      % TODO: measured kernels, e.g. \addplot[only marks] coordinates {(0.25, 3.1)} node[right] {SAXPY};
+      \addlegendentry{roofline}
+      \addplot[only marks, mark=*] coordinates {(0.125,5.6) (0.063,2.0) (0.42,13.6) (0.25,2.2)};
+      \addlegendentry{measured (DRAM, native)}
+      \node[anchor=west, font=\scriptsize] at (axis cs:0.125,5.6) {SAXPY};
+      \node[anchor=west, font=\scriptsize] at (axis cs:0.063,2.0) {mul};
+      \node[anchor=west, font=\scriptsize] at (axis cs:0.42,13.6) {stencil};
+      \node[anchor=north, font=\scriptsize] at (axis cs:0.25,2.2) {dot};
     \end{axis}
   \end{tikzpicture}
-  \caption{Roofline for this machine with measured kernels. \todo{placeholder constants until measured}}\label{fig:roofline}
+  \caption{Roofline for one core with the DRAM-resident native kernels. The ridge point is at
+  $I = P_{\text{peak}}/B \approx \qty{3.3}{\flop\per\byte}$; every kernel lies far to its left.}\label{fig:roofline}
 \end{figure}
 
 \subsection{Analysis}
-\todo{Place each kernel on the model; compute- vs.\ memory-bound conclusion; consistency with the
-locality sweep (\cref{sec:locality}); what would move a kernel toward the roof.}
+The ridge point sits at $I = P_{\text{peak}}/B \approx \num{147}/\num{45} \approx
+\qty{3.3}{\flop\per\byte}$. Every kernel's intensity (\numrange{0.06}{0.42}~FLOP/byte) is an order of
+magnitude below that, so all four are firmly memory-bound in DRAM---consistent with the hypothesis and
+with the locality sweep (\cref{sec:locality}), where scalar and SIMD converge once the data leaves
+cache. With $B\cdot I$ evaluated at $B\approx\qty{42}{\gibi\byte\per\second}$, SAXPY lands
+essentially \emph{on} the bandwidth line (\num{5.6} measured vs $\approx\qty{5.6}{\giga\flop\per\second}$
+predicted), confirming it is a pure bandwidth test; multiply and stencil reach about
+\SI{71}{\percent} and \SI{72}{\percent} of their bandwidth ceilings
+($\approx\num{2.8}$ and $\approx\qty{18.8}{\giga\flop\per\second}$), the shortfall coming from
+write-allocate traffic and imperfect prefetch.
+
+The dot product is the one kernel \emph{below} its bandwidth line (\num{2.2} vs a predicted
+$\approx\qty{11}{\giga\flop\per\second}$): it is not memory-bound at all but latency-bound by the
+non-reassociated reduction (\cref{sec:vectorization}), so the roofline---a throughput model---simply
+does not apply to it. To move any streaming kernel toward the compute roof one would have to raise its
+arithmetic intensity (e.g.\ fuse multiple passes, or block for cache so the data is re-read from L1
+rather than DRAM); widening the vectors alone cannot help a kernel that is already waiting on memory.

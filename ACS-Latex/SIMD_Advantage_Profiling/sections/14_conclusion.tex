@@ -1,5 +1,15 @@
 % !TeX root = ../main.tex
 \section{Conclusion}\label{sec:conclusion}
 
-\todo{Three to five sentences: when SIMD helps on this machine, when gains compress or vanish, and
-the single most important lesson for writing and benchmarking vectorized code.}
+On this AVX2 machine SIMD pays off handsomely only when two conditions hold at once: the data fits in
+cache and the kernel is not a serial reduction. Under those conditions \code{-march=native} gives
+SAXPY, elementwise multiply and the stencil roughly $3.3$--$5.8\times$ over scalar (with the generic
+SSE build at about half that), tracking the float32 lane count discounted by load/store pressure.
+Once the working set spills to DRAM, every streaming kernel becomes bandwidth-bound and the advantage
+compresses to $1.3$--$1.4\times$---not because SIMD slows down, but because scalar code waits on the
+same memory channel. Data type scales the cache-resident gain through lane count (float64 halves it),
+and access pattern dominates everything else: any non-unit stride or a gather erases the SIMD benefit
+outright. The single most important lesson for writing and benchmarking vectorized code is that ``the
+loop vectorized'' is not ``the loop is fast'': our memory-bound SAXPY and our non-reassociated dot
+product both compile to genuine SIMD yet barely beat scalar, and only a controlled sweep across
+working-set size, plus disassembly and a roofline, reveals why.

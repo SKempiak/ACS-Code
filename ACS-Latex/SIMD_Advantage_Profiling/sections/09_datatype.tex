@@ -2,13 +2,16 @@
 \section{Data Type Comparison}\label{sec:dtype}
 
 \begin{hypothesis}
-  \todo{Expected float32 vs.\ float64 (and int32) speedups from lane count, operation cost and bytes
-  per element, in cache and in DRAM.}
+  A \qty{256}{bit} register holds \num{8} float32 but only \num{4} float64 lanes, so float64 should
+  show roughly half the SIMD speedup of float32 for the same kernel while data is cache-resident.
+  int32 elementwise multiply should behave like float32 (\num{8} lanes, one \code{vpmulld}). In DRAM,
+  float64 moves twice the bytes per element, so its \emph{absolute} throughput should be lower and
+  its speedup should compress toward $1\times$ just as float32 does.
 \end{hypothesis}
 
 \begin{knobs}
   Fixed       & unit stride; aligned \\
-  Varied      & data type; kernel; variant; $N$ \\
+  Varied      & data type (float32, float64, int32); kernel; variant; $N = 2^{10}\ldots2^{24}$ \\
   Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh dtype} \\
 \end{knobs}
 
@@ -21,13 +24,29 @@
         \addlegendentry{multiply float32}
         \addplot table[x=n, y=speedup_vs_scalar, only if={kernel}{mul}, only if={variant}{native}, only if={dtype}{f64}] {data/dtype.csv};
         \addlegendentry{multiply float64}
-        % TODO: other kernels; optional int32
+        \addplot table[x=n, y=speedup_vs_scalar, only if={kernel}{mul}, only if={variant}{native}, only if={dtype}{i32}] {data/dtype.csv};
+        \addlegendentry{multiply int32}
       \end{axis}
     \end{tikzpicture}%
   }
-  \caption{Speedup by data type. \todo{takeaway}}\label{fig:dtype}
+  \caption{Native speedup of elementwise multiply by data type. float32 and int32 (\num{8} lanes)
+  track each other; float64 (\num{4} lanes) is about half.}\label{fig:dtype}
 \end{figure}
 
 \subsection{Analysis}
-\todo{Explain with lane count, arithmetic intensity (FLOPs per byte) and per-operation cost; note where
-float64 halves the lanes but not necessarily the speedup.}
+The lane-count prediction holds closely for the cache-resident multiply. At $N=\num{1024}$ the native
+speedups are float32 $5.24\times$, int32 $5.34\times$, and float64 $2.83\times$---float64 is
+$0.54\times$ of float32, within a few percent of the expected $1/2$ from halving the lanes. The
+float32/int32 pairing confirms the effect is lane count and not a floating-point quirk: int32 uses
+\code{vpmulld} over \num{8} lanes and lands right on the float32 curve. The ratio holds mid-cache too
+($N=\num{16384}$: f32 $3.09\times$ vs f64 $1.45\times$; $N=\num{65536}$: $1.97\times$ vs
+$1.29\times$).
+
+In DRAM the picture changes as predicted: at $N=\num{16777216}$ every speedup has compressed (f32
+$1.22\times$, f64 $1.10\times$), and float64's \emph{absolute} throughput is about half of float32's
+(\num{1.0} vs \qty{2.0}{\giga\flop\per\second}) because each element moves \qty{8}{\byte} instead of
+\num{4} and the kernel is bandwidth-bound. So data type acts through two separate mechanisms: lane
+count sets the cache-resident speedup ceiling, while bytes-per-element sets the DRAM throughput. A
+kernel that looks ``half as fast in float64'' in cache is really just running \num{4} lanes instead
+of \num{8}; the same kernel in DRAM is half as fast for the different reason that it has twice the
+traffic.

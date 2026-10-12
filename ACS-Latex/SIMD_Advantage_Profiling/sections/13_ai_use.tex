@@ -4,10 +4,33 @@
 Summarized from \code{AI_USE_LOG.md} in the code repository.
 
 \begin{description}[style=nextline]
-  \item[Tools used] \todo{Tools and models, and for which parts of the project.}
-  \item[What they helped generate] \todo{e.g.\ repository scaffolding, build and run scripts, debugging help.}
-  \item[What was independently modified, tested, or rejected] \todo{Concrete examples, including at
-        least one AI suggestion that was wrong or misleading and how it was caught.}
-  \item[Validation] \todo{How correctness and measurements were checked independently (reference
-        comparison, vectorization evidence, sanity checks).}
+  \item[Tools used] Claude Code (Claude Opus~5) for coding, debugging, and drafting this
+        report; GCC~\sysGCC{} and \code{objdump} for the actual builds and evidence. The AI
+        wrote code and prose; all measurements come from real runs on the machine in
+        \cref{tab:environment}.
+  \item[What they helped generate] The four kernels and their references; the build-variant
+        Makefile; the benchmark driver and the shared timer/allocation/pinning helpers; the
+        experiment scripts (\code{run.sh}), the summarizer (\code{summarize.c}) and the
+        vectorization-evidence script; and the first drafts of these sections.
+  \item[What was independently modified, tested, or rejected] Three concrete corrections.
+        (1)~The generated Makefile compiled the \emph{whole} program with each variant's
+        flags; this was restructured so only the kernel translation unit varies, keeping the
+        timing harness identical across builds. (2)~The processed-CSV column names and one
+        figure filter had drifted from what the plots expect---the stride figure asked for
+        \code{n=16777216} while the data was measured at \code{n=4194304}---which would have
+        produced a silently empty plot; the filter was corrected to the measured size.
+        (3)~\emph{An AI-written script was simply wrong}: the \code{awk} in
+        \code{verify_vectorization.sh} took its output path as a trailing \code{VAR=value}
+        argument, which \code{awk} does not assign until it reaches that argument, so the
+        \code{BEGIN} block saw an empty string and aborted with a null-redirection error. It
+        was caught the first time \code{make report} was run and fixed by passing the path
+        with \code{-v}. We also chose \emph{not} to enable \code{-ffast-math}, rejecting the
+        easy way to make the dot product vectorize, because it would break bit-reproducibility
+        against the reference---and because the non-reassociated reduction is itself a result
+        worth reporting (\cref{sec:vectorization,sec:negative}).
+  \item[Validation] Correctness: \num{570} reference and known-answer cases pass for every
+        variant (\cref{sec:correctness}). Vectorization: confirmed by compiler report and
+        disassembly, not assumed (\cref{sec:vectorization}). Numbers: every figure traces to a
+        committed raw/processed file (\cref{app:repro}); the memory-bound claims are
+        cross-checked against an independently derived bandwidth (\cref{sec:roofline}).
 \end{description}

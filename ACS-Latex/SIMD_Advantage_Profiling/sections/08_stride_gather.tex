@@ -2,14 +2,22 @@
 \section{Stride and Gather Access}\label{sec:stride}
 
 \begin{hypothesis}
-  \todo{How strides of 2/4/8 and gather-style indexing should change time per processed element and
-  SIMD efficiency, in cache and in DRAM.}
+  Unit stride lets each \qty{64}{\byte} cache line serve \num{16} consecutive float32 elements, so
+  SIMD helps. As the stride grows, each vector still needs \num{8} elements but they come from
+  further apart: once the stride reaches \num{16} elements (\qty{64}{\byte}) every element sits in its
+  own cache line and effective bandwidth drops by up to $16\times$. We therefore expect time per
+  processed element to rise roughly linearly with stride until it saturates at one cache line per
+  element, and we expect the SIMD advantage to vanish for any non-unit stride, because the compiler
+  must gather lanes individually. Gather (random permutation) should be the worst case.
 \end{hypothesis}
 
 \begin{knobs}
-  Fixed       & SAXPY; float32 \\
-  Varied      & access (unit, stride 1/2/4/8, gather); $N$ cache-resident and DRAM-resident; variant \\
-  Definition  & \todo{stride semantics used (e.g.\ $i = 0, s, 2s, \ldots < N$) and gather index pattern} \\
+  Fixed       & SAXPY; float32; native and scalar builds \\
+  Varied      & access (unit, stride $1/2/4/8/16$, gather); $N$ cache-resident (\num{32768}) and
+                DRAM-resident (\num{4194304}) \\
+  Definition  & stride $s$ processes elements $0, s, 2s, \ldots$ over an array of $N s$ elements;
+                gather applies SAXPY through a random permutation index so every element is touched
+                once with no spatial locality. \\
   Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh stride} \\
 \end{knobs}
 
@@ -17,18 +25,47 @@
   \centering
   \IfDataExists{stride}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, xmode=log, log basis x=2, xlabel={Stride}, ylabel={Time per processed element (ns)}, legend pos=north west]
-        \addplot+[iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{scalar}, only if={n}{16777216}] {data/stride.csv};
-        \addlegendentry{scalar}
-        \addplot+[iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{native}, only if={n}{16777216}] {data/stride.csv};
-        \addlegendentry{native}
-        % TODO: unit-stride and gather reference points; cache-resident N
+      \begin{axis}[acs, xmode=log, log basis x=2, xlabel={Stride (elements)}, ylabel={Time per processed element (ns)}, legend pos=north west]
+        \addplot+[iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{scalar}, only if={n}{4194304}] {data/stride.csv};
+        \addlegendentry{scalar (DRAM)}
+        \addplot+[iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{native}, only if={n}{4194304}] {data/stride.csv};
+        \addlegendentry{native (DRAM)}
       \end{axis}
     \end{tikzpicture}%
   }
-  \caption{Effect of stride on time per processed element. \todo{takeaway}}\label{fig:stride}
+  \caption{Effect of stride on native and scalar SAXPY time per \emph{processed} element, DRAM-resident
+  ($N=\num{4194304}$). The two curves coincide for every non-unit stride.}\label{fig:stride}
 \end{figure}
 
+\begin{table}[tbp]
+  \centering\small
+  \caption{Time per processed element (ns), DRAM-resident SAXPY, $N=\num{4194304}$.}\label{tab:stride}
+  \begin{tabular}{@{}lrrr@{}}
+    \toprule
+    Access & scalar & native & native speedup \\
+    \midrule
+    unit (stride 1)   & 0.453 & 0.252 & $1.80\times$ \\
+    stride 2          & 0.790 & 0.787 & $1.00\times$ \\
+    stride 4          & 1.540 & 1.509 & $1.02\times$ \\
+    stride 8          & 2.944 & 2.977 & $0.99\times$ \\
+    stride 16         & 6.074 & 6.122 & $0.99\times$ \\
+    gather (random)   & 10.83 & 10.69 & $1.01\times$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
 \subsection{Analysis}
-\todo{Effective memory bandwidth per processed element; whether strided loops vectorize and how
-(gather/scatter vs.\ scalar); why gather rarely pays off here.}
+\Cref{tab:stride} makes the pattern stark. Only unit stride lets \code{native} beat \code{scalar}
+(\,$1.80\times$\,); at stride~2 and beyond the two builds are within measurement noise of each other.
+Two things happen at once. First, the effective bandwidth collapses: time per processed element
+roughly doubles from stride~2 to~4 to~8 to~16 (\num{0.79} $\to$ \num{1.51} $\to$ \num{2.98}
+$\to$ \qty{6.12}{\nano\second}), because once the stride reaches \num{16} elements each access pulls a
+fresh \qty{64}{\byte} line and $15/16$ of every line is wasted. Second, the SIMD advantage
+disappears: a strided or gathered load cannot be a single contiguous \code{vmovups}, so the compiler
+either falls back to scalar element loads or (for gather) emits per-lane address arithmetic; the
+vector ALU is then starved regardless of width. The disassembly confirms this---\code{native}'s
+gather kernel stays on \qty{128}{bit} \code{xmm} and never reaches \code{ymm}
+(\cref{tab:vec-summary}), and GCC does not emit an AVX2 \code{vgather} here at all. Gather is the
+worst case at \qty{10.7}{\nano\second} per element, $\approx\!42\times$ slower than unit stride,
+because the random permutation defeats the hardware prefetcher as well. The practical lesson is that
+access pattern, not vector width, is the first-order knob for these kernels.

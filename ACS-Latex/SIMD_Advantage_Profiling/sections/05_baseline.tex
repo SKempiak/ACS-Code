@@ -4,14 +4,18 @@
 across working-set sizes.}
 
 \begin{hypothesis}
-  \todo{Expected speedup per kernel relative to the lane count, and how it should change between
-  cache-resident and DRAM-resident $N$.}
+  For compute-friendly, unit-stride kernels (SAXPY, elementwise multiply, stencil) we expect the
+  \code{native} speedup to approach the float32 lane count ($8\times$) while data is L1/L2-resident,
+  and to fall toward $1\times$ once the working set is DRAM-resident and all variants share the same
+  bandwidth. \code{autovec} (\num{4} lanes) should track at roughly half the \code{native} speedup.
+  The dot product should barely speed up at any size because its reduction does not reassociate
+  (\cref{sec:vectorization}).
 \end{hypothesis}
 
 \begin{knobs}
-  Fixed       & float32; unit stride; aligned arrays; one thread pinned to CPU \tbd \\
-  Varied      & kernel; variant (scalar, autovec, native); $N = 2^{8} \ldots 2^{26}$ \\
-  Repetitions & \tbd{} per point; median, IQR error bars \\
+  Fixed       & float32; unit stride; aligned arrays; one thread pinned to CPU~2 \\
+  Varied      & kernel; variant (scalar, autovec, native); $N = 2^{8} \ldots 2^{25}$ \\
+  Repetitions & 12 per point; median, IQR error bars \\
   Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh baseline} \\
 \end{knobs}
 
@@ -21,15 +25,24 @@ across working-set sizes.}
     \begin{tikzpicture}
       \begin{axis}[acs, xmode=log, log basis x=2, xlabel={$N$ (elements)}, ylabel={Speedup over scalar},
                    legend pos=outer north east, width=0.75\linewidth]
-        \addplot table[x=n, y=speedup_vs_scalar, only if={kernel}{saxpy}, only if={variant}{autovec}] {data/baseline.csv};
-        \addlegendentry{SAXPY autovec}
         \addplot table[x=n, y=speedup_vs_scalar, only if={kernel}{saxpy}, only if={variant}{native}] {data/baseline.csv};
         \addlegendentry{SAXPY native}
-        % TODO: remaining kernels; cache boundaries, e.g. \acsvline{<L1d elements>}{L1d}
+        \addplot table[x=n, y=speedup_vs_scalar, only if={kernel}{saxpy}, only if={variant}{autovec}] {data/baseline.csv};
+        \addlegendentry{SAXPY autovec}
+        \addplot table[x=n, y=speedup_vs_scalar, only if={kernel}{mul}, only if={variant}{native}] {data/baseline.csv};
+        \addlegendentry{multiply native}
+        \addplot table[x=n, y=speedup_vs_scalar, only if={kernel}{stencil}, only if={variant}{native}] {data/baseline.csv};
+        \addlegendentry{stencil native}
+        \addplot table[x=n, y=speedup_vs_scalar, only if={kernel}{dot}, only if={variant}{native}] {data/baseline.csv};
+        \addlegendentry{dot native}
+        \acsvline{4096}{L1d}
+        \acsvline{32768}{L2}
+        \acsvline{2600000}{L3}
       \end{axis}
     \end{tikzpicture}%
   }
-  \caption{Speedup of the SIMD builds over the scalar build. \todo{one-sentence takeaway}}\label{fig:baseline-speedup}
+  \caption{Speedup of the SIMD builds over scalar. Gains peak while data is cache-resident and
+  compress toward $1\times$ in DRAM; the dot product never benefits.}\label{fig:baseline-speedup}
 \end{figure}
 
 \begin{figure}[tbp]
@@ -42,13 +55,34 @@ across working-set sizes.}
         \addlegendentry{SAXPY scalar}
         \addplot+[iqr bars] table[x=n, y=elems_per_s_median, iqr of=elems_per_s, only if={kernel}{saxpy}, only if={variant}{native}] {data/baseline.csv};
         \addlegendentry{SAXPY native}
-        % TODO: report GFLOP/s instead: y expr={\thisrow{elems_per_s_median} * <FLOPs per element> / 1e9}
+        \acsvline{4096}{L1d}
+        \acsvline{32768}{L2}
       \end{axis}
     \end{tikzpicture}%
   }
-  \caption{Achieved throughput. \todo{one-sentence takeaway}}\label{fig:baseline-throughput}
+  \caption{Achieved SAXPY throughput (elements/s). Both builds plateau at the same DRAM-limited rate
+  for large $N$; the IQR whiskers are smaller than the markers.}\label{fig:baseline-throughput}
 \end{figure}
 
 \subsection{Analysis}
-\todo{Speedups versus lane count per kernel; why reductions (dot) and stencils behave differently from
-SAXPY and elementwise multiply; where the curves bend and why.}
+At $N=\num{4096}$ (L1-resident) the \code{native} speedups are SAXPY $5.8\times$ (\qty{35}{\giga\flop\per\second}),
+stencil $3.5\times$ (\qty{30}{\giga\flop\per\second}), elementwise multiply $3.3\times$, and dot
+$1.04\times$; \code{autovec} is close to half the \code{native} figure. None reaches the full
+$8\times$ lane count even in cache because each vector FMA still needs one or two \qty{256}{bit}
+loads and (for SAXPY/mul/stencil) a store, so the loop is load/store-port-bound well before it is
+FLOP-bound.
+
+The three streaming kernels behave as predicted and the two outliers are informative.
+\emph{Elementwise multiply} does only one FLOP per element over the same three memory references as
+SAXPY, so it has the lowest arithmetic intensity and the smallest cache-resident speedup of the
+streaming kernels. The \emph{stencil} has the highest FLOP count (5) and reuses $x_{i-1},x_i,x_{i+1}$
+across iterations, so it stays the most compute-bound and keeps a $2\times$ advantage even in DRAM
+(\cref{fig:baseline-speedup}). The \emph{dot product} is the reduction case from
+\cref{sec:vectorization}: packed multiplies, serial sum, $\approx1\times$ throughout.
+
+By $N=\num{16777216}$ (\qty{128}{\mebi\byte}, far past L3) every speedup has collapsed---SAXPY
+$1.37\times$, multiply $1.24\times$, dot $1.02\times$---and \cref{fig:baseline-throughput} shows why:
+scalar and native SAXPY converge to the same $\approx\qty{5}{\giga\flop\per\second}$ plateau. The
+curves bend downward exactly at the L1 ($N\approx\num{4096}$) and L2 ($N\approx\num{32768}$)
+boundaries; \cref{sec:locality} resolves those transitions in detail and \cref{sec:roofline} ties the
+DRAM plateau to measured bandwidth.

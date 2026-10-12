@@ -13,8 +13,19 @@
 \maketitle
 
 \begin{abstract}
-  \todo{Two to four sentences: CPU and ISA studied, headline speedups per kernel, where SIMD gains
-  compress as the workload becomes memory-bound, and the negative result.}
+  We quantify scalar-versus-SIMD speedup for four single-threaded numeric kernels (SAXPY, dot
+  product, elementwise multiply and a 3-point stencil) on an Intel Core i9-10900F (Comet Lake,
+  AVX2+FMA, \qty{256}{bit} vectors). With cache-resident data a \code{-march=native} build reaches
+  about $5.8\times$ over scalar for SAXPY (\num{8} float32 lanes), while the generic
+  auto-vectorized (SSE, \qty{128}{bit}) build reaches about $3\times$; these gains compress to
+  $\approx1.3\text{--}1.4\times$ once the working set spills to DRAM and memory bandwidth
+  dominates. Float64 roughly halves the SIMD advantage (\num{4} lanes), and non-unit stride or
+  gather access erases it entirely. Our negative case is memory-bound SAXPY: the loop vectorizes
+  (verified by disassembly) yet barely speeds up; a second, subtler anomaly is the dot product,
+  whose reduction the compiler refuses to reassociate without \code{-ffast-math}, leaving a scalar
+  dependency chain and $\approx1\times$ speedup despite packed multiplies. A roofline built from our
+  own measured streaming bandwidth ($\approx\qty{43}{\giga\byte\per\second}$) explains every kernel
+  as memory-bound in DRAM.
 \end{abstract}
 
 \ifacsdraft\tableofcontents\clearpage\fi

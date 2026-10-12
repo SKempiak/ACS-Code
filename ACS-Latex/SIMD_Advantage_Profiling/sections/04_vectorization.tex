@@ -4,12 +4,19 @@
 reading of vector width, FMA and masking.}
 
 \begin{hypothesis}
-  \todo{Which loops you expect each variant to vectorize, at what width, and which you expect the
-  compiler to reject (and why).}
+  The \code{scalar} build should emit only scalar SSE (\code{ss}/\code{sd}) instructions and report
+  zero vectorized loops. \code{autovec}, limited to the generic SSE2 target, should vectorize the
+  streaming kernels at \qty{128}{bit} (\num{4} float32 lanes). \code{native} should vectorize them at
+  \qty{256}{bit} (\code{ymm}, \num{8} float32 / \num{4} float64 lanes) and fuse the multiply--add in
+  SAXPY and the stencil into \code{vfmadd}. We expect the compiler to \emph{refuse} to vectorize the
+  dot-product reduction usefully, because summation reassociation is illegal without
+  \code{-ffast-math}.
 \end{hypothesis}
 
-\Cref{tab:vec-summary} counts, for each kernel function, the instructions that operate on vector
-registers or use packed operations (\code{make report}).
+\Cref{tab:vec-summary} counts, for each kernel function and variant, the instructions that operate on
+vector registers or use packed operations, extracted by \code{objdump} in \code{make report}. (A few
+``SIMD'' matches in the scalar column are register-clearing \code{pxor}/\code{movaps} on \code{xmm},
+not vectorized loop bodies---the compiler reports \emph{zero} vectorized loops for \code{scalar}.)
 
 \begin{table}[tbp]
   \centering\small
@@ -30,15 +37,49 @@ registers or use packed operations (\code{make report}).
 \end{table}
 
 \subsection{Compiler report}
+GCC's \code{-fopt-info-vec} confirms the widths. For SAXPY (\code{kernels.c:25}):
 \begin{lstlisting}[style=excerpt]
-TODO: 2-5 relevant lines from data/raw/vectorization/<run>/report_<variant>.txt
+# native  (-O3 -march=native):
+src/kernels.c:25:26: optimized: loop vectorized using 32 byte vectors and unroll factor 8
+src/kernels.c:25:26: optimized: epilogue loop vectorized using 16 byte vectors and unroll factor 4
+# autovec (-O3, generic x86-64):
+src/kernels.c:25:26: optimized: loop vectorized using 16 byte vectors and unroll factor 4
+# scalar  (-O3 -fno-tree-vectorize): 0 loops vectorized
 \end{lstlisting}
+\qty{32}{\byte} vectors $=$ \qty{256}{bit} $=$ \num{8} float32 lanes (native); \qty{16}{\byte} $=$
+\qty{128}{bit} $=$ \num{4} lanes (autovec). The native main loop is additionally unrolled $8\times$,
+and its \qty{128}{bit} epilogue handles the remainder.
 
 \subsection{Disassembly}
+The native SAXPY inner loop is a single fused multiply--add on \code{ymm} registers:
 \begin{lstlisting}[style=excerpt]
-TODO: 5-10 lines of a vectorized loop body, e.g. disasm/native/saxpy_f32.s
+vmovups   (%rdi,%rax,1),%ymm0           # load 8 x[i]
+vfmadd213ps (%rsi,%rax,1),%ymm1,%ymm0   # ymm0 = a*x + y   (one FMA, 8 lanes)
+vmovups   %ymm0,(%rsi,%rax,1)           # store 8 y[i]
+\end{lstlisting}
+whereas the scalar build does one element at a time with scalar SSE:
+\begin{lstlisting}[style=excerpt]
+movss (%rdi,%rax,4),%xmm0  # x[i]
+mulss %xmm1,%xmm0          # a*x[i]
+addss (%rsi,%rax,4),%xmm0  # + y[i]   (no FMA: -ffp-contract default off here)
+movss %xmm0,(%rsi,%rax,4)  # y[i]
 \end{lstlisting}
 
-\todo{Interpret the evidence: register width (xmm/ymm/zmm) and lanes per element type; FMA
-(\code{vfmadd*}); masked tails (k-mask registers) versus a scalar epilogue; loops that did not
-vectorize and the compiler's reason.}
+The dot product is the instructive exception. Native \emph{does} multiply eight lanes at once, but
+the horizontal sum is a serial chain of scalar \code{vaddss}:
+\begin{lstlisting}[style=excerpt]
+vmulps (%rdi,%rax,1),%ymm1,%ymm1  # 8 products at once ...
+vaddss %xmm1,%xmm0,%xmm0          # ... but summed one lane at a time,
+vaddss %xmm3,%xmm0,%xmm0          #     in strict source order
+...
+\end{lstlisting}
+
+\subsection{Interpretation}
+The evidence matches the hypothesis. \code{native} uses \code{ymm} (\qty{256}{bit}) with FMA for
+SAXPY, multiply, and the stencil; \code{autovec} uses \code{xmm} (\qty{128}{bit}); \code{scalar} is
+genuinely scalar. Tails are handled by a narrower vectorized epilogue (a \qty{128}{bit} loop), not a
+scalar remainder---there are no AVX-512 mask registers here because the CPU has no AVX-512. The dot
+product shows why ``the loop vectorized'' is not the same as ``the loop is fast'': without
+\code{-ffast-math} the compiler keeps the reduction's addition order, so the packed multiplies feed a
+latency-bound scalar accumulator. We quantify the throughput consequence in
+\cref{sec:baseline,sec:negative}.
