@@ -1,0 +1,41 @@
+% Project 3 — SSD Performance Profiling
+% Build: `latexmk` in this directory, or `make ssd` from the repository root.
+\documentclass[11pt]{article}
+\input{../common/preamble}
+\input{../common/macros}
+\input{../common/system_info}
+
+\title{Project 3: SSD Performance Profiling}
+\author{\acsauthor\\[2pt]\small\acscourse\\\small\href{mailto:\acsemail}{\acsemail}}
+\date{\acsdue}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+  \todo{Two to four sentences: the SSD and interface, QD=1 latencies, peak IOPS and throughput, where the
+  queue-depth knee sits, and what tail latency and device state reveal.}
+\end{abstract}
+
+\ifacsdraft\tableofcontents\clearpage\fi
+
+\input{sections/01_introduction}
+\input{sections/02_methodology_safety}
+\input{sections/03_validation}
+\input{sections/04_zero_queue}
+\input{sections/05_block_size}
+\input{sections/06_rw_mix}
+\input{sections/07_queue_depth}
+\input{sections/08_tail_latency}
+\input{sections/09_device_state}
+\input{sections/10_pitfall}
+\input{sections/11_anomalies_limitations}
+\input{sections/12_ai_use}
+\input{sections/13_conclusion}
+
+\printbibliography
+
+\appendix
+\input{sections/A_reproducibility}
+
+\end{document}

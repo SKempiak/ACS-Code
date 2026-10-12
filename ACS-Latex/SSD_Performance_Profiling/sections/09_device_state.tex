@@ -1,0 +1,44 @@
+% !TeX root = ../main.tex
+\section{Device State and Working Set}\label{sec:device-state}
+
+\begin{hypothesis}
+  \todo{When sustained writes should exhaust the SLC cache and how far throughput should drop; whether
+  temperature should trigger throttling.}
+\end{hypothesis}
+
+\begin{knobs}
+  Workload    & 4~KiB random write, iodepth 32, \tbd~s, per-second IOPS log \\
+  LBA range   & \tbd~GiB of \tbd~GiB capacity \todo{effect of range / fill level} \\
+  State       & \todo{fresh vs.\ preconditioned; TRIM state} \\
+  Script      & \code{SSD_Performance_Profiling/scripts/run.sh device_state} (and \code{precondition}) \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfFileExists{data/device_state_iops.log}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, height=0.4\linewidth, xlabel={Time (s)}, ylabel={Write IOPS}]
+        \addplot[no markers, thin, blue] table[header=false, x expr=\thisrowno{0}/1000, y index=1] {data/device_state_iops.log};
+      \end{axis}
+    \end{tikzpicture}%
+  }{\acsmissing{data/device_state_iops.log}}
+  \caption{Sustained random-write IOPS over time. \todo{mark SLC exhaustion / throttling}}\label{fig:device-state}
+\end{figure}
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{SMART snapshot before and after the sustained-write run.}\label{tab:smart}
+  \begin{tabular}{@{}lrr@{}}
+    \toprule
+    Attribute & Before & After \\
+    \midrule
+    Temperature (\si{\celsius}) & \tbd & \tbd \\
+    Data units written          & \tbd & \tbd \\
+    Media errors                & \tbd & \tbd \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Analysis}
+\todo{Burst vs.\ steady-state throughput, SLC cache size estimate, garbage-collection or thermal effects,
+and what this means for the steady-state results in the earlier sections.}

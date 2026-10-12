@@ -1,0 +1,37 @@
+% !TeX root = ../main.tex
+\section{Cache-Miss Impact}\label{sec:cache-miss}
+
+\begin{hypothesis}
+  \todo{How runtime per element should track cache misses as footprint and traversal order change.}
+\end{hypothesis}
+
+\begin{knobs}
+  Kernel      & $z_i = x_i \cdot y_i$ (float64) \\
+  Varied      & $N$ (footprint); traversal order (sequential, random permutation) \\
+  Counters    & \todo{events used; note that \code{perf stat} covers the whole process} \\
+  Script      & \code{PERF=1 Cache_and_Memory_Performance_Profiling/scripts/run.sh cache_miss} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{cache_miss}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, xlabel={$N$ (elements)}, ylabel={Time per element (ns)}, legend pos=north west]
+        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={order}{seq}] {data/cache_miss.csv};
+        \addlegendentry{sequential}
+        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={order}{random}] {data/cache_miss.csv};
+        \addlegendentry{random}
+        % TODO (PERF=1 data): misses per element on a second axis, e.g.
+        % \addplot table[x=n, y expr={\thisrow{LLC-load-misses}/\thisrow{n}}, only if={order}{random}] {data/cache_miss.csv};
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Runtime per element versus footprint and order. \todo{takeaway}}\label{fig:cache-miss}
+\end{figure}
+
+\subsection{AMAT interpretation}
+\begin{equation}
+  \text{AMAT} = t_{L1} + m_{L1}\bigl(t_{L2} + m_{L2}\,(t_{L3} + m_{L3}\, t_{\text{DRAM}})\bigr)
+\end{equation}
+\todo{Plug in the zero-queue latencies (\cref{tab:zero-queue}) and measured local miss ratios; compare the
+predicted and measured time per element.}

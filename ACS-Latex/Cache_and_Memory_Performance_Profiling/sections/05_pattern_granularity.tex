@@ -1,0 +1,45 @@
+% !TeX root = ../main.tex
+\section{Access Pattern and Granularity}\label{sec:pattern}
+\rubric{Pattern, granularity and read/write sweeps}{35}{Complete, well-controlled bandwidth and latency
+comparisons (with \cref{sec:rw-mix}).}
+
+\begin{hypothesis}
+  \todo{How sequential vs.\ random access and 64/256/1024-byte granularity should affect bandwidth and
+  latency, and why (prefetching, TLB reach, memcpy cost).}
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & 1 thread; \tbd~GiB DRAM-resident region; 100\% reads \\
+  Varied      & pattern (sequential, random); granularity (64, 256, 1024 bytes) \\
+  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh pattern} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{pattern}{%
+    \begin{subfigure}[t]{0.49\linewidth}
+      \begin{tikzpicture}
+        \begin{axis}[acs, xmode=log, log basis x=2, height=0.85\linewidth, xlabel={Granularity (bytes)}, ylabel={Bandwidth (GiB/s)}, legend pos=north west]
+          \addplot+[iqr bars] table[x=granularity, y=gib_per_s_median, iqr of=gib_per_s, only if={pattern}{seq}] {data/pattern.csv};
+          \addlegendentry{sequential}
+          \addplot+[iqr bars] table[x=granularity, y=gib_per_s_median, iqr of=gib_per_s, only if={pattern}{rand}] {data/pattern.csv};
+          \addlegendentry{random}
+        \end{axis}
+      \end{tikzpicture}
+      \caption{Bandwidth.}
+    \end{subfigure}\hfill
+    \begin{subfigure}[t]{0.49\linewidth}
+      \begin{tikzpicture}
+        \begin{axis}[acs, xmode=log, log basis x=2, height=0.85\linewidth, xlabel={Granularity (bytes)}, ylabel={Mean latency (ns/op)}]
+          \addplot+[iqr bars] table[x=granularity, y=lat_mean_ns_median, iqr of=lat_mean_ns, only if={pattern}{seq}] {data/pattern.csv};
+          \addplot+[iqr bars] table[x=granularity, y=lat_mean_ns_median, iqr of=lat_mean_ns, only if={pattern}{rand}] {data/pattern.csv};
+        \end{axis}
+      \end{tikzpicture}
+      \caption{Latency.}
+    \end{subfigure}%
+  }
+  \caption{Access pattern and granularity. \todo{takeaway}}\label{fig:pattern}
+\end{figure}
+
+\subsection{Analysis}
+\todo{Explain the gap between sequential and random access and its dependence on granularity.}

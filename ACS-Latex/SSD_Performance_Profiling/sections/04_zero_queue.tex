@@ -1,0 +1,37 @@
+% !TeX root = ../main.tex
+\section{Zero-Queue Baselines}\label{sec:zero-queue}
+
+\begin{hypothesis}
+  \todo{Expected QD=1 latency for 4~KiB random and 128~KiB sequential reads and writes, and why reads
+  and writes differ.}
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & iodepth 1; numjobs 1; direct I/O \\
+  Cases       & 4~KiB random read, 4~KiB random write, 128~KiB sequential read, 128~KiB sequential write \\
+  Script      & \code{SSD_Performance_Profiling/scripts/run.sh zero_queue} \\
+\end{knobs}
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{QD=1 performance (medians over repetitions; latencies in \si{\micro\second}).}\label{tab:zero-queue}
+  \IfDataExists{zero_queue}{%
+    \pgfplotstabletypeset[
+      col sep=comma,
+      columns={rw,bs,iops_median,bw_mib_s_median,lat_mean_us_median,p50_us_median,p95_us_median,p99_us_median},
+      columns/rw/.style={column name=Pattern, string type},
+      columns/bs/.style={column name=Block, string type},
+      columns/iops_median/.style={column name=IOPS, fixed, precision=0},
+      columns/bw_mib_s_median/.style={column name=MiB/s, fixed, precision=1},
+      columns/lat_mean_us_median/.style={column name=Mean, fixed, precision=1},
+      columns/p50_us_median/.style={column name=p50, fixed, precision=1},
+      columns/p95_us_median/.style={column name=p95, fixed, precision=1},
+      columns/p99_us_median/.style={column name=p99, fixed, precision=1},
+      every head row/.style={before row=\toprule, after row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/zero_queue.csv}%
+  }
+\end{table}
+
+\subsection{Analysis}
+\todo{Latency composition at QD=1 (host stack, controller, flash read/program), variability, and caveats.}

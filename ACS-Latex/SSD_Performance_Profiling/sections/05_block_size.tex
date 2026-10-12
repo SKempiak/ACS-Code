@@ -1,0 +1,48 @@
+% !TeX root = ../main.tex
+\section{Block-Size Sweep}\label{sec:block-size}
+\rubric{Block-size and pattern sweeps}{35}{Complete matrix and clear interpretation of IOPS and MiB/s
+against latency.}
+
+\begin{hypothesis}
+  \todo{How IOPS, MiB/s and latency should change from 4~KiB to 1~MiB, for random vs.\ sequential access,
+  and where the interface or controller limit should appear.}
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & iodepth \tbd; numjobs 1; direct I/O; reads \todo{and writes} \\
+  Varied      & block size 4~KiB--256~KiB (512~KiB, 1~MiB sequential); pattern \\
+  Script      & \code{SSD_Performance_Profiling/scripts/run.sh block_size} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{block_size}{%
+    \begin{subfigure}[t]{0.49\linewidth}
+      \begin{tikzpicture}
+        \begin{axis}[acs, height=0.85\linewidth, symbolic x coords={4k,16k,32k,64k,128k,256k,512k,1m},
+                     xtick=data, xlabel={Block size}, ylabel={Throughput (MiB/s)}, legend pos=north west]
+          \addplot+[iqr bars] table[x=bs, y=bw_mib_s_median, iqr of=bw_mib_s, only if={rw}{randread}] {data/block_size.csv};
+          \addlegendentry{random}
+          \addplot+[iqr bars] table[x=bs, y=bw_mib_s_median, iqr of=bw_mib_s, only if={rw}{read}] {data/block_size.csv};
+          \addlegendentry{sequential}
+        \end{axis}
+      \end{tikzpicture}
+      \caption{Throughput.}
+    \end{subfigure}\hfill
+    \begin{subfigure}[t]{0.49\linewidth}
+      \begin{tikzpicture}
+        \begin{axis}[acs, height=0.85\linewidth, ymode=log, symbolic x coords={4k,16k,32k,64k,128k,256k,512k,1m},
+                     xtick=data, xlabel={Block size}, ylabel={Mean latency (\si{\micro\second})}]
+          \addplot+[iqr bars] table[x=bs, y=lat_mean_us_median, iqr of=lat_mean_us, only if={rw}{randread}] {data/block_size.csv};
+          \addplot+[iqr bars] table[x=bs, y=lat_mean_us_median, iqr of=lat_mean_us, only if={rw}{read}] {data/block_size.csv};
+        \end{axis}
+      \end{tikzpicture}
+      \caption{Latency (same runs).}
+    \end{subfigure}%
+  }
+  \caption{Block-size sweep. \todo{takeaway; add the write side}}\label{fig:block-size}
+\end{figure}
+
+\subsection{Analysis}
+\todo{Transition from IOPS-limited to throughput-limited behavior; the interface/controller ceiling;
+random vs.\ sequential gap and its causes.}

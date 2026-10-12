@@ -1,0 +1,35 @@
+% !TeX root = ../main.tex
+\section{Misleading Setup}\label{sec:pitfall}
+\rubric{AI-use transparency and pitfall analysis}{15}{Honest AI-use note and a meaningful misleading-setup
+analysis (with \cref{sec:ai-use}).}
+
+\begin{hypothesis}
+  \todo{What the flawed setup will report and why it looks plausible.}
+\end{hypothesis}
+
+\begin{knobs}
+  Pitfall     & \todo{e.g.\ buffered I/O measuring the page cache, wrong effective queue depth, no preconditioning, thermal throttling} \\
+  Wrong setup & \todo{} \\
+  Right setup & \todo{} \\
+  Script      & \code{SSD_Performance_Profiling/scripts/run.sh pitfall} \\
+\end{knobs}
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{Direct vs.\ buffered I/O for the same workload.}\label{tab:pitfall}
+  \IfDataExists{pitfall}{%
+    \pgfplotstabletypeset[
+      col sep=comma,
+      columns={direct,iops_median,lat_mean_us_median,p99_us_median},
+      columns/direct/.style={column name=O\_DIRECT},
+      columns/iops_median/.style={column name=IOPS, fixed, precision=0},
+      columns/lat_mean_us_median/.style={column name={Mean (\si{\micro\second})}, fixed, precision=1},
+      columns/p99_us_median/.style={column name={p99 (\si{\micro\second})}, fixed, precision=1},
+      every head row/.style={before row=\toprule, after row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/pitfall.csv}%
+  }
+\end{table}
+
+\subsection{Explanation}
+\todo{Why the flawed numbers are wrong, how to detect the problem, and how the methodology avoids it.}

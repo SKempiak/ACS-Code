@@ -1,0 +1,33 @@
+% !TeX root = ../main.tex
+\section{Data Type Comparison}\label{sec:dtype}
+
+\begin{hypothesis}
+  \todo{Expected float32 vs.\ float64 (and int32) speedups from lane count, operation cost and bytes
+  per element, in cache and in DRAM.}
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & unit stride; aligned \\
+  Varied      & data type; kernel; variant; $N$ \\
+  Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh dtype} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{dtype}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, xlabel={$N$ (elements)}, ylabel={Speedup over scalar}, legend pos=north east]
+        \addplot table[x=n, y=speedup_vs_scalar, only if={kernel}{mul}, only if={variant}{native}, only if={dtype}{f32}] {data/dtype.csv};
+        \addlegendentry{multiply float32}
+        \addplot table[x=n, y=speedup_vs_scalar, only if={kernel}{mul}, only if={variant}{native}, only if={dtype}{f64}] {data/dtype.csv};
+        \addlegendentry{multiply float64}
+        % TODO: other kernels; optional int32
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Speedup by data type. \todo{takeaway}}\label{fig:dtype}
+\end{figure}
+
+\subsection{Analysis}
+\todo{Explain with lane count, arithmetic intensity (FLOPs per byte) and per-operation cost; note where
+float64 halves the lanes but not necessarily the speedup.}

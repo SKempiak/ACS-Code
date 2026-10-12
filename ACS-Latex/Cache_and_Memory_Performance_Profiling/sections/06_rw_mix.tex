@@ -1,0 +1,29 @@
+% !TeX root = ../main.tex
+\section{Read/Write Mix}\label{sec:rw-mix}
+
+\begin{hypothesis}
+  \todo{Expected throughput and latency for 100\% read, 100\% write, 70/30 and 50/50, and why writes
+  differ (read-for-ownership, cache pollution, write-combining).}
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & 1 thread; random access; granularity \tbd~bytes; region \tbd \\
+  Varied      & read percentage: 100, 70, 50, 0 \\
+  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh rw_mix} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{rw_mix}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, ybar, bar width=14pt, width=0.6\linewidth, xtick={0,50,70,100},
+                   xlabel={Reads (\%)}, ylabel={Bandwidth (GiB/s)}, ymin=0, enlarge x limits=0.15]
+        \addplot+[iqr bars] table[x=read_pct, y=gib_per_s_median, iqr of=gib_per_s] {data/rw_mix.csv};
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Bandwidth across read/write mixes. \todo{takeaway; add latency}}\label{fig:rw-mix}
+\end{figure}
+
+\subsection{Analysis}
+\todo{Compare throughput and latency across mixes and explain the differences.}

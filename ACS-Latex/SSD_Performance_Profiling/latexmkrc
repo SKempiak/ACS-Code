@@ -1,0 +1,4 @@
+# latexmk settings for this report: run `latexmk` here, or `make` from the repo root.
+$pdf_mode = 1;        # pdflatex
+$out_dir = 'build';   # keep auxiliary files out of the source tree
+$bibtex_use = 2;      # run biber when the bibliography changes

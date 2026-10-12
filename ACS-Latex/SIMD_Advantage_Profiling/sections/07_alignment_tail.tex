@@ -1,0 +1,42 @@
+% !TeX root = ../main.tex
+\section{Alignment and Tail Handling}\label{sec:alignment}
+\rubric{Alignment, tail, stride/gather studies}{20}{Quantified alignment, prologue/epilogue and masking
+effects with a convincing explanation (with \cref{sec:stride}).}
+
+\begin{hypothesis}
+  \todo{Expected cost of misaligned starts on this CPU, and how time per element should vary when $N$
+  is not a multiple of lanes $\times$ unroll factor.}
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & kernel \tbd; float32; unit stride \\
+  Varied      & start offset from a 64-byte boundary (0--32 bytes); $N$ just above multiples of the vector width \\
+  Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh alignment} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{alignment}{%
+    \begin{subfigure}[t]{0.49\linewidth}
+      \begin{tikzpicture}
+        \begin{axis}[acs, height=0.8\linewidth, xlabel={Start offset (bytes)}, ylabel={Time per element (ns)}]
+          \addplot+[iqr bars] table[x=offset, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{native}, only if={n}{4096}] {data/alignment.csv};
+        \end{axis}
+      \end{tikzpicture}
+      \caption{Misaligned starts ($N=4096$).}
+    \end{subfigure}\hfill
+    \begin{subfigure}[t]{0.49\linewidth}
+      \begin{tikzpicture}
+        \begin{axis}[acs, height=0.8\linewidth, xlabel={$N$ (elements)}, ylabel={Time per element (ns)}]
+          \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{native}, only if={offset}{0}] {data/alignment.csv};
+        \end{axis}
+      \end{tikzpicture}
+      \caption{Tail length.}
+    \end{subfigure}%
+  }
+  \caption{Alignment and tail-handling costs. \todo{takeaway}}\label{fig:alignment}
+\end{figure}
+
+\subsection{Analysis}
+\todo{Size of the prologue/epilogue cost relative to the loop body; aligned vs.\ unaligned loads on
+this microarchitecture; masked tails (AVX-512) vs.\ scalar remainder loops, backed by disassembly.}

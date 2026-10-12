@@ -1,0 +1,28 @@
+% !TeX root = ../main.tex
+\section{Methodology}\label{sec:method}
+\rubric{Experimental rigor}{25}{Pinning and isolation, repetitions, documented settings and reproducible scripts.}
+
+\subsection{Platform}
+\newcommand{\acsenvextra}{%
+  Memory configuration & \todo{DIMM count, capacity, rated vs.\ configured speed, channels} \\
+}
+\input{../common/environment_table}
+
+\subsection{Tools}
+\begin{knobs}
+  \code{mem_latency}   & single-thread access latency for a working set of a given size \\
+  \code{mem_bandwidth} & bandwidth and sampled per-operation latency with $T$ pinned threads \\
+  \code{kernel_miss}   & simple loop kernel under \code{perf stat} for cache/TLB correlation \\
+  Intel MLC            & \todo{version and options, if used \cite{intel_mlc}} \\
+  perf                 & \sysPerf{} \cite{linux_perf} \\
+\end{knobs}
+
+\subsection{Controls}
+\begin{itemize}
+  \item Pinning and isolation: \todo{CPUs used, one logical CPU per physical core, P-cores only?}
+  \item Frequency: governor \sysGovernor, turbo \sysTurbo. \todo{justify / what was changed}
+  \item Pre-faulting and warm-up: \todo{how buffers are faulted in and warmed before timing}
+  \item Repetitions: \tbd{} per point; median with IQR error bars. \todo{justify}
+  \item Page size: base \sysPageSize; transparent huge pages: \sysHugePages. \todo{how huge-page backing was verified}
+  \item Background load: \todo{how the machine was kept quiet}
+\end{itemize}

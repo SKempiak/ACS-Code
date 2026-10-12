@@ -1,0 +1,33 @@
+% !TeX root = ../main.tex
+\section{Methodology and Safety}\label{sec:method}
+\rubric{Safety and zero-queue baselines}{30}{Safe setup, direct I/O and alignment, and an accurate QD=1
+latency table (with \cref{sec:zero-queue}).}
+\rubric{Reproducibility and data hygiene}{25}{FIO configs, raw data, scripts, repeated trials and
+environment documentation.}
+
+\subsection{Platform}
+\newcommand{\acsenvextra}{%
+  SSD       & \todo{model, capacity, firmware (\code{nvme id-ctrl} or \code{smartctl -i})} \\
+  Interface & \todo{NVMe PCIe generation and link width (\code{lspci -vv}, LnkSta), or SATA} \\
+  Target    & \todo{file on a filesystem (type, mount options) or raw partition; LBA range / file size} \\
+}
+\input{../common/environment_table}
+
+\subsection{Data-loss safeguards}
+\begin{itemize}
+  \item Target: \todo{dedicated empty partition or scratch directory on the SSD under test}. The run
+        scripts refuse any other target (\code{scripts/safety.sh}): file targets must sit in a marked
+        scratch directory, and raw devices must be named explicitly and be unmounted.
+  \item \todo{What else was done (nothing of value on the device, backups).}
+\end{itemize}
+
+\subsection{FIO configuration}
+\begin{knobs}
+  Engine          & \todo{io\_uring or libaio}; \code{direct=1} (page cache bypassed) \\
+  Alignment       & random offsets aligned to the block size (\code{blockalign} defaults to \code{bs}) \\
+  Timing          & \tbd~s ramp (excluded) + \tbd~s measured; \tbd{} repetitions per point \\
+  Data pattern    & \todo{incompressible (\code{refill_buffers}, 0\% compressible) or other, held constant} \\
+  Latency metric  & \todo{completion latency (clat) or total latency} \\
+  Preconditioning & \todo{sequential fill + sustained random writes; evidence in \cref{sec:device-state}} \\
+  Job file        & \code{SSD_Performance_Profiling/fio/job.fio} \cite{axboe_fio} \\
+\end{knobs}

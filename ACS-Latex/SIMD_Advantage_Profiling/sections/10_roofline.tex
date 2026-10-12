@@ -1,0 +1,50 @@
+% !TeX root = ../main.tex
+\section{Roofline Interpretation}\label{sec:roofline}
+\rubric{Roofline and quantitative insight}{20}{Correct arithmetic intensity, use of measured memory
+bandwidth, and a justified compute- vs.\ memory-bound conclusion.}
+
+\begin{hypothesis}
+  \todo{Which kernels you expect to be compute-bound and which memory-bound, before computing the model.}
+\end{hypothesis}
+
+Attainable performance at arithmetic intensity $I$ (FLOPs per byte of memory traffic) is bounded by
+\begin{equation}
+  P(I) = \min\bigl(P_{\text{peak}},\; B \cdot I\bigr),
+\end{equation}
+where $P_{\text{peak}}$ is the CPU's peak FLOP rate and $B$ the memory bandwidth \cite{williams2009roofline}.
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{Roofline inputs.}\label{tab:roofline-inputs}
+  \begin{tabularx}{\linewidth}{@{}lrX@{}}
+    \toprule
+    Quantity & Value & Source \\
+    \midrule
+    Peak FLOP rate $P_{\text{peak}}$ & \tbd~GFLOP/s & \todo{how estimated (e.g.\ cores/vector width/measured compute-bound kernel)} \\
+    Memory bandwidth $B$            & \tbd~GiB/s   & \todo{measurement: Project 2 \code{mem_bandwidth} or Intel MLC} \\
+    Intensity $I$, SAXPY            & \tbd~FLOP/byte & \todo{derivation} \\
+    Intensity $I$, dot product      & \tbd~FLOP/byte & \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+% TODO: replace the placeholder model constants (GFLOP/s and GiB/s) with measured values.
+\newcommand{\roofPeak}{50}
+\newcommand{\roofBandwidth}{10}
+\begin{figure}[tbp]
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[acs, xmode=log, ymode=log, xlabel={Arithmetic intensity (FLOP/byte)},
+                 ylabel={Performance (GFLOP/s)}, width=0.7\linewidth, xmin=0.01, xmax=100]
+      % bandwidth slope: GiB/s * 2^30 bytes * I FLOP/byte / 1e9
+      \addplot[thick, domain=0.01:100, samples=200]
+        {min(\roofPeak, \roofBandwidth * 1.073741824 * x)};
+      % TODO: measured kernels, e.g. \addplot[only marks] coordinates {(0.25, 3.1)} node[right] {SAXPY};
+    \end{axis}
+  \end{tikzpicture}
+  \caption{Roofline for this machine with measured kernels. \todo{placeholder constants until measured}}\label{fig:roofline}
+\end{figure}
+
+\subsection{Analysis}
+\todo{Place each kernel on the model; compute- vs.\ memory-bound conclusion; consistency with the
+locality sweep (\cref{sec:locality}); what would move a kernel toward the roof.}

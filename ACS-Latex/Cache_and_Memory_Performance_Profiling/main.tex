@@ -1,0 +1,42 @@
+% Project 2 — Cache & Memory Performance Profiling
+% Build: `latexmk` in this directory, or `make memory` from the repository root.
+\documentclass[11pt]{article}
+\input{../common/preamble}
+\input{../common/macros}
+\input{../common/system_info}
+
+\title{Project 2: Cache \& Memory Performance Profiling}
+\author{\acsauthor\\[2pt]\small\acscourse\\\small\href{mailto:\acsemail}{\acsemail}}
+\date{\acsdue}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+  \todo{Two to four sentences: per-level latencies measured, DRAM bandwidth, where the
+  throughput--latency knee sits and why, and the measured cache/TLB-miss impact.}
+\end{abstract}
+
+\ifacsdraft\tableofcontents\clearpage\fi
+
+\input{sections/01_introduction}
+\input{sections/02_methodology}
+\input{sections/03_validation}
+\input{sections/04_zero_queue}
+\input{sections/05_pattern_granularity}
+\input{sections/06_rw_mix}
+\input{sections/07_intensity_knee}
+\input{sections/08_working_set}
+\input{sections/09_cache_miss}
+\input{sections/10_tlb_miss}
+\input{sections/11_pitfall}
+\input{sections/12_anomalies_limitations}
+\input{sections/13_ai_use}
+\input{sections/14_conclusion}
+
+\printbibliography
+
+\appendix
+\input{sections/A_reproducibility}
+
+\end{document}

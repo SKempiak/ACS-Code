@@ -1,0 +1,43 @@
+% Project 1 — SIMD Advantage Profiling
+% Build: `latexmk` in this directory, or `make simd` from the repository root.
+\documentclass[11pt]{article}
+\input{../common/preamble}
+\input{../common/macros}
+\input{../common/system_info}
+
+\title{Project 1: SIMD Advantage Profiling}
+\author{\acsauthor\\[2pt]\small\acscourse\\\small\href{mailto:\acsemail}{\acsemail}}
+\date{\acsdue}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+  \todo{Two to four sentences: CPU and ISA studied, headline speedups per kernel, where SIMD gains
+  compress as the workload becomes memory-bound, and the negative result.}
+\end{abstract}
+
+\ifacsdraft\tableofcontents\clearpage\fi
+
+\input{sections/01_introduction}
+\input{sections/02_methodology}
+\input{sections/03_correctness}
+\input{sections/04_vectorization}
+\input{sections/05_baseline}
+\input{sections/06_locality}
+\input{sections/07_alignment_tail}
+\input{sections/08_stride_gather}
+\input{sections/09_datatype}
+\input{sections/10_roofline}
+\input{sections/11_negative_case}
+\input{sections/12_anomalies_limitations}
+\input{sections/13_ai_use}
+\input{sections/14_conclusion}
+% \input{sections/15_gpu_extension}   % optional CPU-vs-GPU comparison
+
+\printbibliography
+
+\appendix
+\input{sections/A_reproducibility}
+
+\end{document}

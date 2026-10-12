@@ -1,0 +1,38 @@
+% !TeX root = ../main.tex
+\section{Zero-Queue Baselines}\label{sec:zero-queue}
+\rubric{Zero-queue baselines}{25}{Methodologically sound per-level latency measurements with clear units and caveats.}
+
+\begin{hypothesis}
+  \todo{Expected latency per level (in ns and in CPU cycles) and why.}
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & one thread pinned to CPU \tbd; random reads; granularity \tbd~bytes \\
+  Varied      & working-set size placed in L1, L2, LLC, DRAM \\
+  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh zero_queue} \\
+\end{knobs}
+
+% TODO: set to the measured operating frequency in GHz (used for the cycles column).
+\newcommand{\cpuFreqGHz}{1.0}
+\begin{table}[tbp]
+  \centering\small
+  \caption{Zero-queue access latency per level. Cycles assume \cpuFreqGHz~GHz \todo{measured frequency}.}\label{tab:zero-queue}
+  \IfDataExists{zero_queue}{%
+    \pgfplotstabletypeset[
+      col sep=comma,
+      columns={size_bytes,ns_per_access_median,ns_per_access_q25,ns_per_access_q75,cycles},
+      create on use/cycles/.style={create col/expr={\thisrow{ns_per_access_median}*\cpuFreqGHz}},
+      columns/size_bytes/.style={column name=Working set (bytes), int detect},
+      columns/ns_per_access_median/.style={column name=Median (ns), fixed, precision=2},
+      columns/ns_per_access_q25/.style={column name=Q1 (ns), fixed, precision=2},
+      columns/ns_per_access_q75/.style={column name=Q3 (ns), fixed, precision=2},
+      columns/cycles/.style={column name=Cycles, fixed, precision=1},
+      every head row/.style={before row=\toprule, after row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/zero_queue.csv}%
+  }
+\end{table}
+
+\subsection{Analysis}
+\todo{Which level each size actually lands in (evidence), caveats (timer/loop overhead, TLB,
+prefetchers), and comparison with published or MLC numbers.}

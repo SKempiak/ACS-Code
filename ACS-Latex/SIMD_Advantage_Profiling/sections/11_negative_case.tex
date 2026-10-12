@@ -1,0 +1,20 @@
+% !TeX root = ../main.tex
+\section{Negative Example}\label{sec:negative}
+\rubric{AI-use transparency and failure case}{10}{A meaningful negative or misleading example, verified
+and explained (with \cref{sec:ai-use}).}
+
+\begin{hypothesis}
+  \todo{What a naive reading (or a quickly generated benchmark) would predict for this case.}
+\end{hypothesis}
+
+\begin{knobs}
+  Case        & \todo{a loop that looks SIMD-friendly but is not vectorized, or one that vectorizes but gains little because memory bandwidth dominates} \\
+  Build       & \todo{variant / extra flags} \\
+  Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh negative} \\
+\end{knobs}
+
+\subsection{Evidence}
+\todo{Vectorization report or disassembly excerpt plus timing figure/table.}
+
+\subsection{Explanation}
+\todo{Why the expected speedup does not appear, and how you verified the explanation.}

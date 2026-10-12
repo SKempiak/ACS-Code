@@ -1,0 +1,16 @@
+% !TeX root = ../main.tex
+\section{Introduction}\label{sec:intro}
+
+\todo{Motivation: what SIMD offers on this CPU (ISA extensions, vector width, lanes per float32/float64)
+and why measured speedups differ from the lane count.}
+
+This report answers:
+\begin{enumerate}
+  \item How much faster are auto-vectorized builds than scalar builds for each kernel, and how does
+        that change from cache-resident to DRAM-resident working sets? (\cref{sec:baseline,sec:locality})
+  \item What do alignment, loop tails, stride and gather access, and data type cost? (\cref{sec:alignment,sec:stride,sec:dtype})
+  \item Where do these kernels sit in a roofline model of this machine? (\cref{sec:roofline})
+  \item When does the expected SIMD benefit fail to appear? (\cref{sec:negative})
+\end{enumerate}
+
+\todo{One-paragraph summary of the main findings.}

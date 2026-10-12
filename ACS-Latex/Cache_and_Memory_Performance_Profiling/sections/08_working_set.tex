@@ -1,0 +1,30 @@
+% !TeX root = ../main.tex
+\section{Working-Set Sweep}\label{sec:working-set}
+\rubric{Working-set, cache and TLB analysis}{35}{Counters and performance correlated correctly (with
+\cref{sec:cache-miss,sec:tlb}).}
+
+\begin{hypothesis}
+  \todo{Where latency steps should appear given L1d = \tbd, L2 = \tbd, LLC = \tbd{} on this CPU.}
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & 1 thread pinned; random reads; granularity \tbd~bytes; base pages \\
+  Varied      & working-set size from \qty{4}{\kibi\byte} to \tbd~\si{\gibi\byte} \\
+  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh working_set} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{working_set}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, xlabel={Working-set size (bytes)}, ylabel={Latency (ns/access)}]
+        \addplot+[iqr bars] table[x=size_bytes, y=ns_per_access_median, iqr of=ns_per_access, only if={huge_requested}{0}] {data/working_set.csv};
+        % TODO: cache boundaries in bytes, e.g. \acsvline{48000}{L1d} \acsvline{1280000}{L2} \acsvline{30000000}{LLC}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Access latency across working-set sizes. \todo{takeaway}}\label{fig:working-set}
+\end{figure}
+
+\subsection{Analysis}
+\todo{Transition regions, and how sharp or gradual they are and why (shared LLC, prefetchers, TLB reach).}

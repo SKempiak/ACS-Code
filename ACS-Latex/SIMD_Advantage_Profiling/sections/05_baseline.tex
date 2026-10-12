@@ -1,0 +1,54 @@
+% !TeX root = ../main.tex
+\section{Scalar vs.\ SIMD Baseline}\label{sec:baseline}
+\rubric{Baseline, correctness, reproducibility}{15}{Speedup and achieved throughput for every kernel
+across working-set sizes.}
+
+\begin{hypothesis}
+  \todo{Expected speedup per kernel relative to the lane count, and how it should change between
+  cache-resident and DRAM-resident $N$.}
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & float32; unit stride; aligned arrays; one thread pinned to CPU \tbd \\
+  Varied      & kernel; variant (scalar, autovec, native); $N = 2^{8} \ldots 2^{26}$ \\
+  Repetitions & \tbd{} per point; median, IQR error bars \\
+  Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh baseline} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{baseline}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, xlabel={$N$ (elements)}, ylabel={Speedup over scalar},
+                   legend pos=outer north east, width=0.75\linewidth]
+        \addplot table[x=n, y=speedup_vs_scalar, only if={kernel}{saxpy}, only if={variant}{autovec}] {data/baseline.csv};
+        \addlegendentry{SAXPY autovec}
+        \addplot table[x=n, y=speedup_vs_scalar, only if={kernel}{saxpy}, only if={variant}{native}] {data/baseline.csv};
+        \addlegendentry{SAXPY native}
+        % TODO: remaining kernels; cache boundaries, e.g. \acsvline{<L1d elements>}{L1d}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Speedup of the SIMD builds over the scalar build. \todo{one-sentence takeaway}}\label{fig:baseline-speedup}
+\end{figure}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{baseline}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, xlabel={$N$ (elements)}, ylabel={Throughput (elements/s)},
+                   legend pos=outer north east, width=0.75\linewidth]
+        \addplot+[iqr bars] table[x=n, y=elems_per_s_median, iqr of=elems_per_s, only if={kernel}{saxpy}, only if={variant}{scalar}] {data/baseline.csv};
+        \addlegendentry{SAXPY scalar}
+        \addplot+[iqr bars] table[x=n, y=elems_per_s_median, iqr of=elems_per_s, only if={kernel}{saxpy}, only if={variant}{native}] {data/baseline.csv};
+        \addlegendentry{SAXPY native}
+        % TODO: report GFLOP/s instead: y expr={\thisrow{elems_per_s_median} * <FLOPs per element> / 1e9}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Achieved throughput. \todo{one-sentence takeaway}}\label{fig:baseline-throughput}
+\end{figure}
+
+\subsection{Analysis}
+\todo{Speedups versus lane count per kernel; why reductions (dot) and stencils behave differently from
+SAXPY and elementwise multiply; where the curves bend and why.}
