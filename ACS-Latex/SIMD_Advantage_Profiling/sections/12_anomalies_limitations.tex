@@ -39,7 +39,11 @@
         so the \qty{512}{bit} regime is out of scope.
   \item \textbf{THP always-on; SMT enabled.} Transparent huge pages are \code{always} and SMT is on
         (the sibling of the pinned core is left idle but not offlined). Neither is controlled for.
-  \item \textbf{Report not compiled on the measurement host.} No \TeX{} installation was present on
-        the machine used to generate the data; the figures were validated against the committed CSVs
-        by column, and the document is built elsewhere.
+  \item \textbf{Report build backend.} This report compiles cleanly with \code{make simd}
+        (draft) and \code{make final}. The build host has \code{bibtex} but not \code{biber}, so
+        \code{biblatex} is configured with \code{backend=bibtex}; the single citation and the
+        bibliography resolve correctly. One benign, unavoidable artifact of that backend is a
+        \enquote{Package biblatex Warning: Please (re)run BibTeX} notice on the final pass---it does
+        not affect the output (no unresolved \code{[?]} markers) and disappears if \code{biber} is
+        installed and \code{backend=biber} restored.
 \end{itemize}

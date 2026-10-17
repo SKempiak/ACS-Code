@@ -198,7 +198,43 @@ is the evidence we did it right," which is where the rubric's points are.
 - `make report` → scalar 0 vectorized loops, autovec xmm(128), native ymm(256)+FMA.
 - `scripts/run.sh all` → `data/processed/{baseline,locality,alignment,stride,dtype,negative}.csv`
   and `vectorization.csv`; `sync_data.sh` copies them into `ACS-Latex/.../data/`.
-- **Not verified here:** the LaTeX build. No TeX engine (latexmk/pdflatex/biber) is installed
-  on this machine, so `make simd` / `make final` could not be run. The figures were checked
-  by column against the committed CSVs and the document structure reviewed by hand; a tester
-  with TeX Live should run `cd ACS-Latex && make simd` (draft) and `make final`.
+- **LaTeX build (now verified).** TeX Live is installed on the test host, so `make simd` and
+  `make final` were run here: both exit 0, all three PDFs regenerate, and the SIMD log has
+  zero `! ` errors, zero `Package acs Warning`, and a
+  non-empty bibliography (`williams2009roofline` renders as `[1]`; no `[?]` markers in the
+  output). The only reference-related log line is the benign `biblatex` "There were undefined
+  references" / "Please (re)run BibTeX" notice inherent to the `bibtex` backend (biber absent);
+  it does not affect the rendered PDF and is documented in §Limitations. The
+  `Package acs Warning` lines reported by `make final` come only from the untouched
+  memory/SSD scaffolds (TODO / `\tbd` / missing-data), as designed.
+
+---
+
+## 2026-10-17 — build fix (returned issue): SIMD report would not compile
+
+The SIMD report build (`make simd`) failed on the test host. Two problems, both fixed:
+
+1. **siunitx range inside `\qty` (the hard error).** `sections/07_alignment_tail.tex:49` wrote
+   `\qty{0.080\text{--}0.090}{\nano\second}` — a dash range is not a parseable siunitx *number*,
+   so `pdflatex` threw `Package siunitx Error: Invalid number`, and under nonstopmode the runaway
+   argument corrupted the parse of the next section (`Missing $`, `Missing \endgroup`). latexmk
+   then aborted before biber/reruns, which is why the tester *also* saw ~60 "undefined reference"
+   and an "Empty bibliography" — all downstream symptoms of the early abort, not independent bugs.
+   **Fix:** `\qtyrange{0.080}{0.090}{\nano\second}` and, for consistency, the adjacent percentage
+   range → `\SIrange{40}{60}{\percent}`. Renders as "≈ 0.080 ns to 0.090 ns, i.e. a 40 % to 60 %
+   slowdown." This is the correction the plan identified as the single root cause. *(Example of
+   AI-generated LaTeX that looked plausible but was syntactically invalid — caught only at build.)*
+
+2. **biber not installed on the test host (environment deviation).** With the siunitx error fixed,
+   `pdflatex` reached the biography step, but `biblatex` was configured `backend=biber` and **biber
+   is not installed** here (only `bibtex`; no sudo to install biber). latexmk therefore still failed
+   (`biber: command not found`). The plan assumed biber would run; reality forced a deviation
+   (recorded as an issue note). **Fix:** switched `common/preamble.tex` to `backend=bibtex`, changed
+   `\addbibresource{../common/references.bib}` to the bare name `references.bib`, and added
+   `BIBINPUTS` (absolute path to `common/`) to each project's `latexmkrc` so `bibtex` — which runs
+   from `build/` and resolves slash-containing names relative to its CWD — can find the shared
+   `references.bib`. After this, `make simd` and `make final` exit 0 and the bibliography resolves.
+   One benign, unavoidable artifact of the `bibtex` backend remains: `biblatex` prints
+   "Please (re)run BibTeX" on the final pass. It does not affect output (verified: no `[?]`, cite
+   renders `[1]`) and is documented in the report's §Anomalies/Limitations. Restoring
+   `backend=biber` on a host with biber installed removes the notice.

@@ -46,7 +46,7 @@ effects with a convincing explanation (with \cref{sec:stride}).}
 The alignment penalty is real but small. At offset $0$ and offset \qty{32}{\byte}---both
 \qty{32}{\byte}-aligned, since the base is \qty{64}{\byte}-aligned---native SAXPY runs at
 $\approx\qty{0.056}{\nano\second}$ per element. Every non-multiple-of-32 offset ($4,8,\ldots,28,36,60$)
-costs $\approx\qty{0.080\text{--}0.090}{\nano\second}$, i.e.\ a \emph{\num{40}--\SI{60}{\percent}}
+costs $\approx\qtyrange{0.080}{0.090}{\nano\second}$, i.e.\ a \emph{\SIrange{40}{60}{\percent}}
 slowdown, and the pattern recurs with the \qty{32}{\byte} vector period (offset \num{32} is fast
 again). The penalty comes from the compiler's aligned-access assumption: at an unaligned start it
 either peels a short scalar prologue to reach alignment or issues split loads that straddle a

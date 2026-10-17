@@ -2,3 +2,10 @@
 $pdf_mode = 1;        # pdflatex
 $out_dir = 'build';   # keep auxiliary files out of the source tree
 $bibtex_use = 2;      # run biber when the bibliography changes
+
+# The bibliography lives in ../common; biblatex refers to it by bare name
+# (references.bib). pdflatex runs from this dir while bibtex runs from build/,
+# so point BIBINPUTS at an absolute path both can resolve. Trailing ':' keeps
+# kpathsea's default search path (which includes the current dir for main-blx.bib).
+use Cwd 'abs_path';
+$ENV{'BIBINPUTS'} = abs_path('../common') . ':';
