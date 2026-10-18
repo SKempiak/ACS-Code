@@ -238,3 +238,49 @@ The SIMD report build (`make simd`) failed on the test host. Two problems, both 
    "Please (re)run BibTeX" on the final pass. It does not affect output (verified: no `[?]`, cite
    renders `[1]`) and is documented in the report's §Anomalies/Limitations. Restoring
    `backend=biber` on a host with biber installed removes the notice.
+
+---
+
+## 2026-10-17 — build the other two reports (returned issue)
+
+**Returned feedback (samsonk):** "Can you do the other 2 reports as well? Make sure they compile?"
+i.e. make the **Cache & Memory (Project 2)** and **SSD (Project 3)** LaTeX reports build to PDF
+the way the SIMD report now does. (The earlier SIMD siunitx/biber failure in the same feedback was
+already fixed in the prior session and was not redone.)
+
+**Scope assumption (recorded):** Projects 2/3 are intentionally *scaffolds* — the full section
+structure with `\todo`/`\tbd` placeholders and `\IfDataExists`-guarded figures. The active
+requirements scope the *simulation* to Project 1 only, and the honesty rule forbids fabricating
+Project 2/3 measurements (and SSD `fio` runs are destructive). So "do the other 2 reports" here
+means **make the memory and SSD scaffolds compile to PDF**, keeping the draft/final placeholder
+behaviour intact. Their final-mode `Package acs Warning` lines (unresolved TODO / unmeasured
+`\tbd` / missing data file) are **by design**, not compile failures. Fully populating P2/P3 with
+real data is a separate, larger effort needing real (and for SSD, destructive) hardware runs and a
+scope sign-off.
+
+**What was done:** From `ACS-Latex/`, after `make clean`: `make memory`, `make ssd` (draft), then
+`make final` for all three. Read every `*/build/main.log`.
+
+**Result — compiles, no source change needed.** Both scaffolds already build with the shared
+fixes made for SIMD (`common/preamble.tex` `backend=bibtex` + bare `\addbibresource`, and the
+`BIBINPUTS` line in each `latexmkrc`). No per-section hard error surfaced — the plan's
+static-analysis prediction held; no `.tex` edit was required.
+
+| Report | `make <t>` (draft) | `make final` | Pages | Fatal `!` | Undefined refs | Bib resolves | acs-warnings (final) |
+|---|---|---|---|---|---|---|---|
+| SIMD (P1) | exit 0 | exit 0 | 18 | 0 | 0 | `williams2009roofline` → `[1]` | 0 (fully written) |
+| Cache & Memory (P2) | exit 0 | exit 0 | 9 | 0 | 0 | `intel_mlc`, `linux_perf`, `little1961proof` | 90 (by-design placeholders) |
+| SSD (P3) | exit 0 | exit 0 | 9 | 0 | 0 | `axboe_fio`, `little1961proof` | 90 (by-design placeholders) |
+
+Every cited key has a matching `\entry{...}` in that report's `build/main.bbl`; no `[?]` markers
+in any PDF. SIMD rebuilt clean (0 acs-warnings) → no regression from the shared preamble/latexmkrc.
+
+**What was right / what needed correcting:** the plan predicted memory/SSD *should* already compile
+from the shared fixes and that the unread scaffold sections *might* hide a hard error; building them
+confirmed the optimistic case — nothing needed correcting in the sources. The only residual is the
+same benign `biblatex` "Please (re)run BibTeX" / "There were undefined references" notice inherent
+to the `bibtex` backend (biber absent on this host), with **zero** actual `undefined on input line`
+entries — identical to SIMD's accepted state and documented in §Limitations.
+
+**Limitation unchanged:** biber is still not installed here, so the benign re-run-BibTeX notice
+persists for all three reports; restoring `backend=biber` on a biber-equipped host removes it.
