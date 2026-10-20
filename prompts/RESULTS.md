@@ -3,18 +3,21 @@
 This file records what happened when each prompt in `prompts/` was handed to an AI coding
 agent and carried out against the real repository on the test machine (Intel i9-10900F,
 Arch Linux, GCC 16.2.1). For every prompt: **what was asked**, **what was produced**, and
-**how well it worked** — what was right and what needed correcting. The resulting code is
-in `ACS-Code/SIMD_Advantage_Profiling/` and the paper in
-`ACS-Latex/SIMD_Advantage_Profiling/`.
+**how well it worked** — what was right and what needed correcting. The resulting code lives in
+`ACS-Code/<project>/` and the papers in `ACS-Latex/<project>/`, one of each per project.
 
-> Scope note: the repo scaffolds three class-wide projects (SIMD, Cache/Memory, SSD), which
-> are alternatives — a student submits one. This simulation carries out **Project 1 (SIMD)**
-> end-to-end because it is the one fully measurable on a generic dev machine (Project 3 needs
-> a dedicated SSD and is data-loss-dangerous; Project 2 needs Intel MLC / `perf`). The same
-> prompt-and-simulate pattern extends to the other two if wanted.
+> Scope note: the repo holds **all three** class-wide projects (Project 1 SIMD, Project 2 Cache &
+> Memory, Project 3 SSD), and this work carries out **all three** end-to-end — code, raw/processed
+> data, figures/tables in the paper, example prompts and this simulation log. (An earlier note here
+> had treated the projects as alternatives and completed only SIMD; that was wrong and has been
+> corrected — the PDF presents #1/#2/#3 as a set and the repository scaffolds all three.) Project 1
+> (SIMD) was done first; Projects 2 and 3 were then brought to the same standard. The prompts below
+> are grouped by project (`01`–`08` SIMD, `09`–`13` Cache & Memory, `14`–`18` SSD).
 
-All numbers below are from real runs; nothing is fabricated. Where a tool was unavailable
-(`perf`, governor control, a TeX engine) it is recorded as a limitation, not faked.
+All numbers below are from real runs on the test machine; nothing is fabricated. Where a tool was
+genuinely unavailable (`perf`/hardware counters, Intel MLC, `fio`, governor control, `biber`, a TeX
+engine) it is recorded as a limitation, never faked — this is the same honesty standard accepted for
+the SIMD project, carried over to the other two.
 
 ---
 
@@ -284,3 +287,95 @@ entries — identical to SIMD's accepted state and documented in §Limitations.
 
 **Limitation unchanged:** biber is still not installed here, so the benign re-run-BibTeX notice
 persists for all three reports; restoring `backend=biber` on a biber-equipped host removes it.
+
+---
+
+# 2026-10-20 — Projects 2 & 3 carried out end-to-end (scope correction)
+
+Returned-issue feedback ("Where does it say that you only need to do one of the three tasks?")
+settled the scope: the PDF presents Projects #1/#2/#3 as a set, so all three are carried out, not
+one. Project 1 (SIMD) was already complete and accepted and is unchanged. Below: Projects 2 and 3
+brought to the same real-data standard. Prompts `09`–`13` are Cache & Memory; `14`–`18` are SSD.
+All numbers are from real runs on the Intel i9-10900F (GCC 16.2.1); unavailable tools are documented,
+never faked.
+
+## Cache & Memory (Project 2)
+
+**Prompt 09 — implement the microbenchmarks.** Asked for `mem_latency` (pointer-chase), `mem_bandwidth`
+(multi-thread streaming) and `kernel_miss`. Produced all three on the shared `common/` harness.
+*Worked:* the Sattolo random ring defeats the prefetcher, giving a believable latency staircase
+(L1 ≈ 1.0 ns / 4.9 cyc → DRAM ≈ 84 ns / ~400 cyc). *Needed correcting:* an early version used a
+sequential stride and reported ~5 ns "DRAM latency" — really prefetched throughput; fixed by randomizing
+the chase (kept the sequential number as a labelled caveat row).
+
+**Prompt 10 — run driver + pipeline.** Produced `run.sh` (latency/granularity/rwmix/intensity/cache_miss/
+tlb/pitfall) + `validate.sh`. *Worked:* raw→`summarize`→processed flow matches SIMD; `validate.sh`
+asserts L1<L2<L3<DRAM and bandwidth orderings — all pass. *Corrected:* figure column names had to match
+`summarize` output exactly (`gib_s_median`, `ns_per_access_median`, …) or pgfplots silently drops rows.
+
+**Prompt 11 — knee + Little's Law.** Produced the intensity analysis: 1 core = 14.4 GiB/s, knee at 4–6
+cores, ceiling ~30 GiB/s; Little's Law gives ~42 outstanding lines at saturation vs ~10 fill buffers per
+core. *Worked and kept honest:* explicitly flagged that using the zero-queue latency makes the L column
+an upper-bound estimate (the streamed kernel runs under the prefetcher), rather than claiming exact
+occupancy.
+
+**Prompt 12 — feedback: is my DRAM-bandwidth benchmark real?** Agent correctly identified the cache-reuse
+pitfall: a 16 KiB buffer reports 56 GiB/s (L1/L2 bandwidth), not DRAM; the honest DRAM-resident figure is
+~15 GiB/s (matches the intensity sweep). Detectors: bandwidth must not change with buffer size past the
+LLC, and must not exceed the ~45 GiB/s DDR4 ceiling. Also caught the huge-page assumption: THP=`always`
+does **not** mean huge pages were granted — `/proc/self/smaps_rollup` showed `AnonHugePages: 0 kB`, so the
+TLB experiment is reported as a verified negative, not "no effect."
+
+**Prompt 13 — feedback: AI-use note + rigor.** Produced the honest AI-use note and flagged the weak spots
+truthfully: no `perf` counters (cache/TLB experiments are runtime correlations; AMAT is illustrative), no
+Intel MLC cross-check, frequency floats (in-process effective GHz used for cycle counts), 8 reps with IQR
+bars. All recorded in the report §Limitations and `AI_USE_LOG.md`.
+
+**P2 outcome:** `make -C Cache_and_Memory_Performance_Profiling test` passes; `make memory`/`make final`
+build the report at 15 pages, 0 fatal, 0 undefined refs, **0** acs-warnings (every section filled from
+real data).
+
+## SSD (Project 3)
+
+**Prompt 14 — implement O_DIRECT benchmark.** Produced `blkbench.c` (libaio, O_DIRECT, QD-aware,
+p50/p95/p99/p99.9). *Worked:* keeps real queue depth in flight (Little's Law holds to ~1% at every QD).
+*Corrected:* an early version timed I/O *submission*, not *completion*; changed to completion latency,
+which is what the percentiles must describe.
+
+**Prompt 15 — safety guard + driver.** Produced `safety.sh` (hard-refuses devices, mountpoints, anything
+outside the scratch dir) and `run.sh`. *Worked:* `validate.sh` confirms it refuses `/dev/nvme0n1`,
+`/etc/passwd`, `/` and accepts only a disposable scratch file. *Improved during simulation:* the scratch
+location was made overridable via `ACS_SCRATCH` (same gate wherever it points) — this is what let the test
+be repointed from the HDD to the SSD (see prompt 18).
+
+**Prompt 16 — knee, Little's Law, tail.** Produced the queue-depth analysis: knee at QD≈64 (158k IOPS);
+Little's Law L=λW tracks the configured depth to within 1% out to QD=128, so the effective queue depth is
+real and the saturation is the device's, not the harness's. Tail: p99.9 ≈ 3× the median, worse at the
+knee.
+
+**Prompt 17 — feedback: impossibly-good SSD numbers.** Agent correctly diagnosed the buffered-I/O pitfall:
+dropping O_DIRECT reported **2.06M IOPS / 8.0 GiB/s / sub-µs** — the page cache serving from RAM, a 24×
+inflation over the real 86k IOPS / 337 MiB/s. Detectors: exceeds the interface ceiling, sub-µs "storage"
+latency is impossible for NAND, and it scales with region size. Also addressed effective-QD mislabeling
+(verify with the Little's Law table).
+
+**Prompt 18 — feedback: which device did I actually test?** This is the key correction. The agent read the
+run's `env.txt` and found `rotational=1`, model `WL2000GSA6472E`: the default in-repo `data/scratch/` lives
+on the box's 2 TB **SATA HDD**, so the first full dataset (QD=1 random latency in *milliseconds*) described
+a hard disk, not an SSD. An earlier assumption that "the NVMe is read-only to us" was simply wrong —
+disproved by a one-line write test to `/` (the Micron NVMe, 81 GB free, writable). Fix: repoint
+`ACS_SCRATCH=$HOME/acs_ssd_scratch` (on the NVMe) and re-run; QD=1 random read dropped to ~50 µs and the
+committed dataset now characterizes the SSD. Logged as the required honest-mistake example in the AI-use
+note. The disposable scratch file was removed after the run.
+
+**P3 outcome:** `make -C SSD_Performance_Profiling test` passes (safety refusals + physical-ordering +
+Little's Law sanity); `make ssd`/`make final` build the report at 14 pages, 0 fatal, 0 undefined refs,
+**0** acs-warnings. Device under test: Micron 2210 512 GB NVMe SSD, disposable file on its ext4 `/`.
+
+## Honest limitations carried into P2/P3 (documented, not faked)
+- No `perf`/hardware counters (`perf_event_paranoid=2`) → P2 cache/TLB experiments are runtime
+  correlations; no counter-based miss ratios.
+- No Intel MLC (P2) and no FIO (P3) → own microbenchmarks used; FIO-only niceties (histograms beyond
+  p99.9, `numjobs`, SMART integration) approximated or omitted.
+- SMART/thermal need root → P3 temperature/wear unavailable.
+- biber absent → `backend=bibtex` + `BIBINPUTS`; benign "re-run BibTeX" notice, no `[?]` markers.

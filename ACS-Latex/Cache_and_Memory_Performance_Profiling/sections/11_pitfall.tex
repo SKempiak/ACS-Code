@@ -4,17 +4,54 @@
 demonstration (with \cref{sec:ai-use}).}
 
 \begin{hypothesis}
-  \todo{What the flawed setup will report and why it looks plausible.}
+  A ``DRAM bandwidth'' benchmark that re-streams a buffer small enough to live in cache will report a
+  number several times higher than the real memory bandwidth, because every pass after the first hits
+  the cache instead of DRAM. We expect a buffer that fits in L1/L2 to report tens of
+  \unit{\gibi\byte\per\second} and a DRAM-resident buffer to settle near the
+  \ensuremath{\sim}\qty{15}{\gibi\byte\per\second} single-core figure from \cref{sec:intensity}.
 \end{hypothesis}
 
 \begin{knobs}
-  Pitfall     & \todo{e.g.\ measuring cache reuse instead of DRAM, unpinned threads, frequency scaling} \\
-  Wrong setup & \todo{} \\
-  Right setup & \todo{} \\
+  Pitfall     & Measuring cache reuse instead of DRAM: picking a buffer that fits in cache \\
+  Wrong setup & Working set \qty{16}{\kibi\byte} (L1-resident), re-streamed many times, one thread \\
+  Right setup & Working set \qtyrange{64}{512}{\mebi\byte} (well past the \qty{20}{\mebi\byte} LLC) \\
   Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh pitfall} \\
 \end{knobs}
 
-\todo{Figure or table comparing the two setups.}
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{pitfall}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, width=0.78\linewidth,
+                   xlabel={Streamed working-set size (bytes)}, ylabel={Reported read BW (GiB/s)},
+                   ymin=0, legend pos=north east]
+        \addplot+[iqr bars] table[x=wss_bytes, y=gib_s_median, iqr of=gib_s] {data/pitfall.csv};
+        \addlegendentry{single-thread read}
+        \acsvline{32768}{L1d \qty{32}{KiB}}
+        \acsvline{262144}{L2 \qty{256}{KiB}}
+        \acsvline{20971520}{L3 \qty{20}{MiB}}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{The same streaming kernel ``measures'' wildly different bandwidth depending only on the buffer
+  size. A \qty{16}{\kibi\byte} buffer reports \ensuremath{\sim}\qty{56}{\gibi\byte\per\second}; the honest
+  DRAM-resident figure is \ensuremath{\sim}\qty{15}{\gibi\byte\per\second}. Nothing about the code changed---only
+  where the data lived.}\label{fig:pitfall}
+\end{figure}
 
 \subsection{Explanation}
-\todo{Why the flawed number is wrong, how to detect it, and how the methodology avoids it.}
+At \qty{16}{\kibi\byte} the kernel reports \qty{56.5}{\gibi\byte\per\second}; at
+\qty{128}{\kibi\byte} (spilling L1) it drops to \qty{36.2}{\gibi\byte\per\second}; and once the set is
+\qty{64}{\mebi\byte} or larger---genuinely DRAM-resident---it settles at
+\qtyrange{14.8}{15.4}{\gibi\byte\per\second}, matching the one-thread DRAM bandwidth measured
+independently in \cref{sec:intensity}. The inflated small-buffer number is not DRAM bandwidth at all: it
+is L1/L2 bandwidth, reported by a loop that re-reads the same cached lines. An AI-generated bandwidth
+microbenchmark very easily falls into this trap, because a \qty{16}{\kibi\byte} array is a perfectly
+natural default and the resulting \qty{56}{\gibi\byte\per\second} looks like a plausible ``memory''
+number. Two cheap detectors flag it: (1) the reported bandwidth \emph{changes with buffer size}, which a
+true DRAM measurement must not once the set exceeds the LLC; and (2) the small-buffer figure exceeds the
+platform's theoretical DRAM ceiling (dual-channel DDR4 is \ensuremath{\sim}\qty{45}{\gibi\byte\per\second} aggregate,
+far below a plausible per-core cache bandwidth). Our methodology avoids the pitfall by sizing every
+bandwidth and latency point explicitly against the cache capacities (\cref{sec:method}) and, for the DRAM
+claims, using working sets at least $3\times$ the LLC so the first-touch pass cannot leave the data
+cached.

@@ -41,7 +41,7 @@ Sequential SAXPY rises only from \qty{0.08}{\nano\second} per element in L1 to
 stream into mostly-hit accesses. Random traversal rises from \qty{0.46}{\nano\second} to
 \qty{21.7}{\nano\second}, a \num{47}$\times$ span, with the steep climb beginning exactly where the
 footprint ($16N$ bytes) leaves the L3 near $N=2^{20}$. The gap between the two curves at large $N$
-(\num{\sim}27$\times$) \emph{is} the cache-miss cost that the prefetcher hides for sequential code; it is
+(\ensuremath{\sim}27$\times$) \emph{is} the cache-miss cost that the prefetcher hides for sequential code; it is
 the same prefetcher effect measured directly in \cref{sec:pattern}.
 
 \subsection{AMAT interpretation}

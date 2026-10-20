@@ -2,32 +2,56 @@
 \section{Methodology and Safety}\label{sec:method}
 \rubric{Safety and zero-queue baselines}{30}{Safe setup, direct I/O and alignment, and an accurate QD=1
 latency table (with \cref{sec:zero-queue}).}
-\rubric{Reproducibility and data hygiene}{25}{FIO configs, raw data, scripts, repeated trials and
+\rubric{Reproducibility and data hygiene}{25}{Configs, raw data, scripts, repeated trials and
 environment documentation.}
 
 \subsection{Platform}
+\newcommand{\acspinning}{a single I/O-issuing thread, not CPU-pinned (storage I/O is device-bound, not
+CPU-bound, below the host-saturation queue depths of \cref{sec:queue-depth})}
 \newcommand{\acsenvextra}{%
-  SSD       & \todo{model, capacity, firmware (\code{nvme id-ctrl} or \code{smartctl -i})} \\
-  Interface & \todo{NVMe PCIe generation and link width (\code{lspci -vv}, LnkSta), or SATA} \\
-  Target    & \todo{file on a filesystem (type, mount options) or raw partition; LBA range / file size} \\
+  SSD       & Micron 2210 MTFDHBA512QFD, \qty{512}{\giga\byte} (QLC NVMe); firmware not read
+              (\code{smartctl}/\code{nvme id-ctrl} need root) \\
+  Interface & NVMe over PCIe (\code{nvme0n1}); exact link generation/width not probed
+              (\code{lspci -vv} LnkSta needs root) \\
+  Target    & \qty{2}{\gibi\byte} disposable file on an ext4 filesystem (the SSD's \code{/} partition,
+              reached via \code{ACS_SCRATCH}); LBA range = the 2\,GiB file, not the whole device \\
 }
 \input{../common/environment_table}
 
+The machine has two drives: this Micron NVMe SSD and a \qty{2}{\tera\byte} SATA HDD
+(\code{/dev/sda1}). The project is about the SSD, so the disposable test file is placed on the SSD's
+filesystem (\cref{sec:device-state} and \cref{sec:anomalies} note the HDD cross-check). The device under
+test is recorded from \code{/sys/block/nvme0n1} and the \code{rotational}=0 flag in each run's
+\code{env.txt}, so the numbers cannot be silently mislabelled.
+
 \subsection{Data-loss safeguards}
 \begin{itemize}
-  \item Target: \todo{dedicated empty partition or scratch directory on the SSD under test}. The run
-        scripts refuse any other target (\code{scripts/safety.sh}): file targets must sit in a marked
-        scratch directory, and raw devices must be named explicitly and be unmounted.
-  \item \todo{What else was done (nothing of value on the device, backups).}
+  \item Target: a single disposable file (\code{testfile.bin}) in a dedicated scratch directory; nothing
+        else on the SSD's \code{/} filesystem is touched. The scratch location is set by
+        \code{ACS_SCRATCH} and defaults to the in-repo \code{data/scratch/}.
+  \item The run scripts refuse any other target. \code{scripts/safety.sh} is called before every run and
+        \textbf{hard-refuses} a block or character device, a mountpoint, any path outside the scratch
+        directory, or a non-regular file, and checks free space---verified in \code{scripts/validate.sh}
+        (it rejects \code{/dev/nvme0n1}, \code{/etc/passwd} and \code{/}). No raw device or partition is
+        ever opened.
 \end{itemize}
 
-\subsection{FIO configuration}
+\subsection{I/O engine configuration}
+FIO is the spec's recommended tool but is not installed on this host and cannot be installed (no root).
+We therefore drive the required experiments with \code{build/blkbench}, a small O\_DIRECT benchmark built
+on Linux \code{libaio}---the same asynchronous engine FIO's \code{libaio} ioengine uses
+\cite{axboe_fio}---so real queue depth is kept in flight and the full latency distribution is recorded.
 \begin{knobs}
-  Engine          & \todo{io\_uring or libaio}; \code{direct=1} (page cache bypassed) \\
-  Alignment       & random offsets aligned to the block size (\code{blockalign} defaults to \code{bs}) \\
-  Timing          & \tbd~s ramp (excluded) + \tbd~s measured; \tbd{} repetitions per point \\
-  Data pattern    & \todo{incompressible (\code{refill_buffers}, 0\% compressible) or other, held constant} \\
-  Latency metric  & \todo{completion latency (clat) or total latency} \\
-  Preconditioning & \todo{sequential fill + sustained random writes; evidence in \cref{sec:device-state}} \\
-  Job file        & \code{SSD_Performance_Profiling/fio/job.fio} \cite{axboe_fio} \\
+  Engine          & Linux \code{libaio}; \code{O_DIRECT} (page cache bypassed), block-aligned buffers and offsets \\
+  Timing          & \qty{4}{\second} measured per repetition (\qty{6}{\second} for tail runs); no separate
+                    ramp---preconditioning plus repetitions absorb warm-up \\
+  Repetitions     & 2 per point (3 for zero-queue and tail); median with inter-quartile-range error bars \\
+  Data pattern    & fixed \code{0xA5} fill, held constant across runs (the QLC controller does no inline
+                    compression; compressibility was not varied---see \cref{sec:anomalies}) \\
+  Latency metric  & per-I/O completion latency (p50/p95/p99/p99.9 from the sorted sample) \\
+  Preconditioning & full sequential O\_DIRECT write pass over the file before timed runs, so reads hit
+                    real allocated extents (evidence in \cref{sec:device-state}) \\
+  Driver          & \code{SSD_Performance_Profiling/scripts/run.sh}, benchmark \code{src/blkbench.c} \\
 \end{knobs}
+Because the issuing thread only submits and reaps completions, a single thread suffices to reach the
+device's queue; the host CPU is not the bottleneck until very high queue depths (\cref{sec:queue-depth}).

@@ -4,13 +4,15 @@
 identification and Little's Law reasoning (with \cref{sec:queue-depth}).}
 
 \begin{hypothesis}
-  \todo{Expected IOPS and latency for 100\% read, 70/30, 50/50 and 100\% write at a fixed block size, and why
-  mixing changes more than a weighted average would predict.}
+  At a fixed block size and queue depth, a mixed read/write workload should deliver \emph{fewer} total
+  IOPS than either pure workload, not a weighted average: reads and writes contend for the controller and
+  flash channels, and a read queued behind a slow program/erase inherits its latency. We expect pure
+  writes to post the highest IOPS at QD=16 (write-buffer absorption) and the 50/50 mix to be the worst.
 \end{hypothesis}
 
 \begin{knobs}
-  Fixed       & 4~KiB random; iodepth \tbd; numjobs 1; direct I/O \\
-  Varied      & read percentage: 100, 70, 50, 0 \\
+  Fixed       & \qty{4}{\kibi\byte} random; iodepth 16; one job; \code{O_DIRECT} \\
+  Varied      & reads per 10 I/Os: 10 (100\% R), 7 (70/30), 5 (50/50), 0 (100\% W) \\
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh rw_mix} \\
 \end{knobs}
 
@@ -18,17 +20,41 @@ identification and Little's Law reasoning (with \cref{sec:queue-depth}).}
   \centering
   \IfDataExists{rw_mix}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, ybar, bar width=10pt, width=0.7\linewidth, xtick={0,50,70,100}, enlarge x limits=0.15,
-                   xlabel={Reads (\%)}, ylabel={IOPS}, ymin=0, legend pos=north west]
-        \addplot+[iqr bars] table[x=rwmixread, y=iops_median, iqr of=iops, only if={direction}{read}] {data/rw_mix.csv};
-        \addlegendentry{read IOPS}
-        \addplot+[iqr bars] table[x=rwmixread, y=iops_median, iqr of=iops, only if={direction}{write}] {data/rw_mix.csv};
-        \addlegendentry{write IOPS}
+      \begin{axis}[acs, ybar, bar width=16pt, width=0.7\linewidth, xtick={0,5,7,10}, enlarge x limits=0.18,
+                   xlabel={Reads per 10 I/Os}, ylabel={Total IOPS}, ymin=0,
+                   xticklabels={0 (100\%\,W),50/50,70/30,100\%\,R}]
+        \addplot+[iqr bars] table[x=rwmix, y=iops_median, iqr of=iops] {data/rw_mix.csv};
       \end{axis}
     \end{tikzpicture}%
   }
-  \caption{Read and write IOPS across mixes. \todo{takeaway; add latency}}\label{fig:rw-mix}
+  \caption{Total \qty{4}{\kibi\byte} random IOPS at QD=16 across read/write mixes. Both pure workloads
+  beat the mixes; the 50/50 mix is the worst.}\label{fig:rw-mix}
 \end{figure}
 
+\begin{table}[tbp]
+  \centering\small
+  \caption{Read/write mix at QD=16, \qty{4}{\kibi\byte} random (medians).}\label{tab:rw-mix}
+  \begin{tabularx}{\linewidth}{@{}Xrrr@{}}
+    \toprule
+    Mix & Total IOPS & Mean lat (\si{\micro\second}) & p99 (\si{\micro\second}) \\
+    \midrule
+    100\% read & \num{104945} & \num{151.5} & \num{458} \\
+    70/30      & \num{85535}  & \num{185.8} & \num{707} \\
+    50/50      & \num{72119}  & \num{221.0} & \num{995} \\
+    100\% write& \num{185860} & \num{85.3}  & \num{857} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
 \subsection{Analysis}
-\todo{Total IOPS and per-direction latency across mixes, and the controller/FTL behavior that explains them.}
+The mix sweep confirms the hypothesis and then some. Pure writes are fastest
+(\qty{185860}{} IOPS, \qty{85}{\micro\second} mean) because at QD=16 the controller coalesces them into
+its SLC/DRAM buffer; pure reads reach \qty{104945}{} IOPS. But mixing is strictly worse than either pure
+case: the 70/30 mix drops to \qty{85535}{} and the 50/50 mix to \qty{72119}{} IOPS---below even the
+read-only number---because every write that lands mid-stream stalls the flash channel a read then queues
+behind, and read-modify interference defeats the write buffer's coalescing. Latency tells the same story
+from the tail: p99 climbs monotonically with the write fraction, from \qty{458}{\micro\second} (pure read)
+through \qty{707}{} and \qty{995}{\micro\second} for the mixes, as background program/erase operations
+inject outliers. The lesson is that a ``70\% read'' workload is not \num{0.7} of the read result plus
+\num{0.3} of the write result; the interaction term is large and negative, which is exactly why the spec
+requires measuring the mixes rather than interpolating them.

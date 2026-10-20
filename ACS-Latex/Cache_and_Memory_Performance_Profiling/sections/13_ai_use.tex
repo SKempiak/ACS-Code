@@ -4,9 +4,28 @@
 Summarized from \code{AI_USE_LOG.md} in the code repository.
 
 \begin{description}[style=nextline]
-  \item[Tools used] \todo{Tools and models, and for which parts of the project.}
-  \item[What they helped generate] \todo{e.g.\ repository scaffolding, build and run scripts, debugging help.}
-  \item[What was independently modified, tested, or rejected] \todo{Concrete examples, including at
-        least one AI suggestion that was wrong or misleading and how it was caught.}
-  \item[Validation] \todo{How measurements were checked independently (sanity checks, MLC cross-check, counters).}
+  \item[Tools used] Claude Code (Claude Opus~5) for coding, debugging and drafting this report;
+        GCC~\sysGCC{} for the builds. The AI wrote code and prose; every number comes from real runs on
+        the machine in \cref{tab:environment}.
+  \item[What they helped generate] The three microbenchmarks---\code{mem_latency} (Sattolo
+        pointer-chase), \code{mem_bandwidth} (multi-thread streaming with read/write/copy/triad/rwmix
+        modes) and \code{kernel_miss} (footprint-varying SAXPY)---the shared timer/allocation/pinning
+        helpers, the experiment driver (\code{run.sh}) and the first drafts of these sections.
+  \item[What was independently modified, tested, or rejected] Three concrete corrections.
+        (1)~The first latency benchmark used a \emph{sequential} stride, which the prefetcher turned
+        into a \ensuremath{\sim}\qty{5}{\nano\second} ``latency'' (really throughput); it was replaced with a random
+        Sattolo cycle so exactly one request is outstanding---the sequential number is now kept only as
+        a deliberate caveat row in \cref{tab:zero-queue}. (2)~The huge-page experiment initially
+        \emph{assumed} THP backing because the governor was \code{always}; adding a runtime
+        \code{/proc/self/smaps_rollup} check revealed \code{AnonHugePages: 0 kB}, turning a false
+        ``huge pages don't help'' into an honest limitation (\cref{sec:tlb}). (3)~An AI-suggested
+        bandwidth test defaulted to a small buffer and reported \qty{56}{\gibi\byte\per\second} as
+        ``DRAM bandwidth''; this is the cache-reuse pitfall and is now documented as the required
+        negative case (\cref{sec:pitfall}) rather than quoted as a result.
+  \item[Validation] Sanity checks in \code{scripts/validate.sh} assert the physically necessary
+        orderings (L1 $<$ L2 $<$ L3 $<$ DRAM latency; L1 bandwidth $>$ DRAM; multi-thread $>$
+        single-thread) and all pass. The hierarchy shape is cross-checked against the known cache
+        capacities; Intel MLC and \code{perf} counters were unavailable for an external cross-check and
+        this is stated as a limitation (\cref{sec:anomalies}). Every figure traces to a committed
+        raw/processed file (\cref{app:repro}).
 \end{description}

@@ -1,5 +1,18 @@
 % !TeX root = ../main.tex
 \section{Conclusion}\label{sec:conclusion}
 
-\todo{Three to five sentences: the latency and bandwidth picture of this hierarchy, where concurrency
-stops paying off, and the most important lesson about locality, cache and TLB behavior.}
+This hierarchy behaves exactly as its capacities predict, and the measurements make the shape
+quantitative. Zero-queue latency climbs in clean steps---\ensuremath{\sim}\qty{1}{\nano\second} (4--5 cycles) in L1,
+\ensuremath{\sim}\qty{4}{\nano\second} in L2, tens of cycles across the \qty{20}{\mebi\byte} L3, and
+\ensuremath{\sim}\qty{84}{\nano\second} (\ensuremath{\sim}\num{400} cycles) once the set spills to DRAM---while the random/
+sequential gap shows the prefetcher turning a \num{47}$\times$ latency penalty into a \num{10}$\times$
+one for regular streams. Bandwidth tells the concurrency half of the story: one core reaches only
+\ensuremath{\sim}\qty{14}{\gibi\byte\per\second} because it can keep \ensuremath{\sim}\num{10} lines in flight, and it takes four
+to six cores---\ensuremath{\sim}\num{42} outstanding lines by Little's Law---to saturate the dual-channel controller
+near \qty{30}{\gibi\byte\per\second}, after which more cores pay nothing. The most important lessons are
+about measurement discipline as much as hardware: a bandwidth benchmark must out-size the LLC or it
+silently measures cache reuse (\cref{sec:pitfall}); a latency benchmark must randomize or the prefetcher
+hides what it claims to measure; and a huge-page study must verify its backing or it mistakes a
+never-granted mapping for ``no effect'' (\cref{sec:tlb}). Locality, concurrency and page behaviour each
+move performance by an order of magnitude, and only controlled, verified sweeps separate the real effects
+from the artifacts.

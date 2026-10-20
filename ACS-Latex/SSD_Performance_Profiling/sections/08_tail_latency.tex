@@ -4,33 +4,44 @@
 thermal and garbage-collection effects (with \cref{sec:device-state}).}
 
 \begin{hypothesis}
-  \todo{How the gap between p50 and p99.9 should grow from a mid queue depth to the knee, and why.}
+  Moving from a mid queue depth to the near-knee depth should raise the median modestly but stretch the
+  upper percentiles much more: deeper queues mean more requests waiting behind the occasional slow
+  flash operation, so the p99/p99.9 gap over p50 should widen.
 \end{hypothesis}
 
 \begin{knobs}
-  Fixed       & 4~KiB random read; numjobs 1; \tbd~s runs \\
-  Varied      & iodepth: mid (\tbd) and near-knee (\tbd, from \cref{sec:queue-depth}) \\
+  Fixed       & \qty{4}{\kibi\byte} random read; one job; \qty{6}{\second} runs, 3 reps \\
+  Varied      & iodepth 8 (mid) and 32 (near-knee, from \cref{sec:queue-depth}) \\
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh tail} \\
 \end{knobs}
 
-% TODO: keep symbolic x coords in sync with the queue depths used in run.sh exp_tail.
 \begin{figure}[tbp]
   \centering
   \IfDataExists{tail}{%
     \begin{tikzpicture}
       \begin{axis}[acs, ybar, bar width=9pt, width=0.7\linewidth, ymode=log, log origin=infty,
-                   symbolic x coords={8,64}, xtick=data, enlarge x limits=0.5,
+                   symbolic x coords={8,32}, xtick=data, enlarge x limits=0.5,
                    xlabel={iodepth}, ylabel={Latency (\si{\micro\second})}, legend pos=north west, legend columns=2]
-        \addplot table[x=iodepth, y=p50_us_median] {data/tail.csv};   \addlegendentry{p50}
-        \addplot table[x=iodepth, y=p95_us_median] {data/tail.csv};   \addlegendentry{p95}
-        \addplot table[x=iodepth, y=p99_us_median] {data/tail.csv};   \addlegendentry{p99}
-        \addplot table[x=iodepth, y=p999_us_median] {data/tail.csv};  \addlegendentry{p99.9}
+        \addplot table[x=qd, y=lat_p50_us_median]  {data/tail.csv};  \addlegendentry{p50}
+        \addplot table[x=qd, y=lat_p95_us_median]  {data/tail.csv};  \addlegendentry{p95}
+        \addplot table[x=qd, y=lat_p99_us_median]  {data/tail.csv};  \addlegendentry{p99}
+        \addplot table[x=qd, y=lat_p999_us_median] {data/tail.csv};  \addlegendentry{p99.9}
       \end{axis}
     \end{tikzpicture}%
   }
-  \caption{Latency percentiles at mid and near-knee queue depth. \todo{takeaway}}\label{fig:tail}
+  \caption{Latency percentiles at a mid (QD=8) and near-knee (QD=32) queue depth. The median barely moves
+  but the upper tail stretches with queueing.}\label{fig:tail}
 \end{figure}
 
 \subsection{Analysis}
-\todo{Tail amplification with queueing; outliers from garbage collection or throttling; why tails matter more
-than means for this workload.}
+At QD=8 the percentiles are p50\,\qty{170}{}, p95\,\qty{281}{}, p99\,\qty{460}{}, p99.9\,\qty{635}{\micro\second}
+(\qty{46}{k} IOPS); at QD=32 they are p50\,\qty{255}{}, p95\,\qty{396}{}, p99\,\qty{563}{},
+p99.9\,\qty{808}{\micro\second} (\qty{126}{k} IOPS). The median rises only $1.5\times$ while IOPS nearly
+triples, but the whole distribution shifts up and the p99.9/p50 ratio stays around $3$--$3.7\times$: the
+tail is dominated by requests that arrive while the controller is busy with a background
+program/erase/GC operation, and a deeper queue makes a waiting request more likely. These tails are
+mild compared with a rotational disk (no seeks), but they still matter: at QD=32 one read in a thousand
+takes \ensuremath{\sim}\qty{800}{\micro\second}, \num{3}$\times$ the median, which for a latency-SLA service is the
+number that governs provisioning, not the mean. This is why the knee from \cref{sec:queue-depth} is a
+latency decision as much as a throughput one---running at QD=64+ buys little IOPS but inflates exactly
+these tails.

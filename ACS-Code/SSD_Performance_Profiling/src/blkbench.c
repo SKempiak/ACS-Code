@@ -11,15 +11,16 @@
  *
  * SAFETY: operates only on a regular file given by --file; it never opens a block
  * device or partition. scripts/safety.sh gates the target before any run, and
- * scripts/run.sh only ever points --file at a disposable file in data/scratch/.
+ * scripts/run.sh only ever points --file at a disposable file inside the scratch
+ * directory (data/scratch/ by default, or $ACS_SCRATCH on another device).
  * All I/O is O_DIRECT with block-aligned buffers and offsets (page-cache bypass).
  *
- * DEVICE-UNDER-TEST NOTE: in this sandbox the only writable filesystem is on a
- * rotational HDD (/dev/sda1); the NVMe SSD is mounted read-only to us. The
- * methodology is device-agnostic — a grader on a writable SSD runs the identical
- * code — but the committed numbers characterise the available HDD, labelled as
- * such in the report. (This is why QD=1 random latencies are in the millisecond,
- * not microsecond, range.)
+ * DEVICE-UNDER-TEST NOTE: the device measured is whatever filesystem holds the
+ * scratch file. The committed numbers were taken against a disposable file on the
+ * Micron 2210 NVMe SSD (mounted at /, reached via ACS_SCRATCH=$HOME/acs_ssd_scratch),
+ * so QD=1 random-read latency is in the tens of microseconds. The code is
+ * device-agnostic: pointing the scratch dir at any other writable filesystem
+ * profiles that device instead; the report labels the measured device explicitly.
  *
  *   --file PATH    disposable O_DIRECT target (must already be the right size)
  *   --bs BYTES     block size (must be a multiple of 4096 for O_DIRECT)
@@ -138,7 +139,8 @@ int main(int argc, char **argv) {
                 ssize_t got = is_read ? pread(fd, buf, bs, off) : pwrite(fd, buf, bs, off);
                 double us = (acs_now_sec() - s) * 1e6;
                 if (got != (ssize_t)bs) { perror("buffered io"); return 1; }
-                if (lat_n < lat_cap) lat[lat_n++] = us; ios++;
+                if (lat_n < lat_cap) lat[lat_n++] = us;
+                ios++;
             }
             double secs = acs_now_sec() - t0;
             qsort(lat, lat_n, sizeof(double), cmp_d);

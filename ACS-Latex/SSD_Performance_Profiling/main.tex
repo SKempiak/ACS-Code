@@ -13,8 +13,15 @@
 \maketitle
 
 \begin{abstract}
-  \todo{Two to four sentences: the SSD and interface, QD=1 latencies, peak IOPS and throughput, where the
-  queue-depth knee sits, and what tail latency and device state reveal.}
+  We profile a Micron 2210 \qty{512}{\giga\byte} NVMe SSD with an O\_DIRECT \code{libaio} benchmark on a
+  safe disposable file. At QD=1, \qty{4}{\kibi\byte} random reads cost \qty{49.6}{\micro\second}
+  (\qty{20}{k} IOPS) and writes \qty{14.7}{\micro\second} (\qty{68}{k} IOPS), the write buffer hiding the
+  flash program. Throughput moves from IOPS-limited to a \ensuremath{\sim}\qty{1.5}{\gibi\byte\per\second} sequential
+  ceiling with block size, and mixed read/write workloads fall below either pure case. The queue-depth
+  knee is at QD\,$\approx$\,64 (\qty{158}{k} IOPS), with Little's Law tracking the configured depth to
+  within a percent and p99.9 tail latency about \num{3}$\times$ the median. The required misleading-setup
+  case---dropping \code{O_DIRECT}---over-reports throughput \num{24}$\times$ by measuring the page cache;
+  honest limitations follow from the absence of FIO, hardware counters and root-only SMART access.
 \end{abstract}
 
 \ifacsdraft\tableofcontents\clearpage\fi

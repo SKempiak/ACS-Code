@@ -1,5 +1,19 @@
 % !TeX root = ../main.tex
 \section{Conclusion}\label{sec:conclusion}
 
-\todo{Three to five sentences: what limits this SSD at low and high queue depth, how much tails and device
-state matter, and the most important lesson for benchmarking storage honestly.}
+The Micron 2210 NVMe SSD shows the queueing-driven throughput--latency tradeoff the project set out to
+measure, and the numbers are unambiguous once the device is correctly targeted. At QD=1, \qty{4}{\kibi\byte}
+random reads cost \qty{49.6}{\micro\second} (\qty{20}{k} IOPS) and writes only \qty{14.7}{\micro\second}
+(\qty{68}{k} IOPS), because the controller's write buffer hides the flash program latency. Block size moves
+the bottleneck from IOPS-limited to throughput-limited---sequential reads saturate near
+\qty{1.5}{\gibi\byte\per\second}---and mixing reads with writes is strictly worse than either pure workload
+(the 50/50 mix drops to \qty{72}{k} IOPS, below the read-only \qty{105}{k}). The queue-depth sweep locates
+the knee at QD\,$\approx$\,64, where IOPS saturates at \qty{158}{k}; beyond it, latency grows linearly for
+no throughput, and Little's Law holds to within a percent at every depth---so the effective queue depth is
+real and the saturation is the device's, not the benchmark's. Tails are mild (no seeks) but p99.9 still
+runs \num{3}$\times$ the median and is the number a latency SLA must budget for. The sharpest lesson is
+methodological: the same workload \emph{without} \code{O_DIRECT} reported \qty{2}{} million IOPS of pure
+fiction (the page cache), and the first full dataset was accidentally taken against the machine's HDD
+until the \code{rotational} flag gave it away. Storage, like memory, is governed by queueing---but only a
+measurement that bypasses the cache, verifies its effective queue depth, and confirms which device it is
+even talking to can be trusted to say so.

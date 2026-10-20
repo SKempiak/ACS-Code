@@ -1,8 +1,13 @@
 % !TeX root = ../main.tex
 \section{Introduction}\label{sec:intro}
 
-\todo{Motivation: the SSD under test, its interface ceiling, and why storage shows the same
-queueing-driven throughput--latency tradeoff as memory.}
+Modern NVMe SSDs deliver high IOPS and throughput only when requests are issued concurrently: like
+memory, storage exhibits a queueing-driven throughput--latency tradeoff, where deeper queues improve
+device utilization until a saturation knee, past which latency climbs sharply for little extra
+throughput. This project characterizes that behaviour on a Micron 2210 \qty{512}{\giga\byte} NVMe SSD,
+measuring QD=1 latency, block-size and read/write-mix effects, the queue-depth knee, tail latency and
+device state, using an O\_DIRECT benchmark against a safe disposable file (FIO is not installed on the
+host, so we use a \code{libaio} stand-in; see \cref{sec:method}).
 
 This report answers:
 \begin{enumerate}
@@ -15,4 +20,9 @@ This report answers:
   \item Which setup mistake produces misleading numbers? (\cref{sec:pitfall})
 \end{enumerate}
 
-\todo{One-paragraph summary of the main findings.}
+In summary: QD=1 random reads cost \qty{49.6}{\micro\second} (\qty{20}{k} IOPS) and writes only
+\qty{14.7}{\micro\second} (\qty{68}{k} IOPS, write-buffer absorption); sequential reads saturate near
+\qty{1.5}{\gibi\byte\per\second}; the queue-depth knee sits at QD\,$\approx$\,64 (\qty{158}{k} IOPS) with
+Little's Law holding to within a percent at every depth; p99.9 tail latency runs \num{3}$\times$ the
+median; and the required misleading-setup case---buffered I/O---over-reports throughput \num{24}$\times$
+by measuring the page cache instead of the device.

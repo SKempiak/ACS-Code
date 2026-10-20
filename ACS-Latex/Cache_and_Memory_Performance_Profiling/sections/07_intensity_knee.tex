@@ -32,7 +32,7 @@ Little's Law connection.}
     \end{tikzpicture}%
   }
   \caption{Delivered read bandwidth vs.\ thread count. Throughput rises steeply to the four-to-six-core
-  knee, then flattens at the \num{\sim}\qty{30}{\gibi\byte\per\second} controller ceiling.}\label{fig:intensity}
+  knee, then flattens at the \ensuremath{\sim}\qty{30}{\gibi\byte\per\second} controller ceiling.}\label{fig:intensity}
 \end{figure}
 
 \subsection{Little's Law check}
@@ -65,7 +65,7 @@ Bandwidth climbs from \qty{14.4}{\gibi\byte\per\second} at one core to \qty{26.6
 at four and then flattens, reaching \qty{30.2}{\gibi\byte\per\second} at ten---a textbook knee around
 four to six cores. Beyond the knee each added core buys under \qty{1}{\gibi\byte\per\second}: the
 dual-channel DDR4 controller, not the cores, is the bottleneck. The Little's Law column makes the cause
-concrete: saturation requires \num{\sim}\num{42} concurrent line requests, far more than the \num{\sim}10
+concrete: saturation requires \ensuremath{\sim}\num{42} concurrent line requests, far more than the \ensuremath{\sim}10
 fill buffers of a single core, which is exactly why one core tops out at \qty{14}{\gibi\byte\per\second}
 and multiple cores are needed to fill the pipe. Two honest caveats. First, the streaming kernel runs
 under the prefetcher, so its \emph{effective} loaded latency is below the \qty{84}{\nano\second} random

@@ -11,10 +11,13 @@
 # build/blkbench runs — both emit the same CSV schema, reduced by tools/summarize
 # into data/processed/<experiment>.csv for the ACS-Latex figures.
 #
-# DEVICE NOTE: in this sandbox the only writable filesystem is a rotational HDD
-# (/dev/sda1); the NVMe SSD is read-only to us. The code is device-agnostic, but
-# the committed numbers characterise the HDD (QD=1 random latency in ms, not us) —
-# the report labels the device under test explicitly.
+# DEVICE NOTE: the device under test is whatever filesystem holds the scratch
+# directory. By default that is the in-repo data/scratch/ (here a rotational SATA
+# HDD, /dev/sda1). Set ACS_SCRATCH to a directory on another device to target it
+# instead — e.g. ACS_SCRATCH=$HOME/acs_ssd_scratch for the Micron NVMe SSD mounted
+# at /. The same safety gate (scripts/safety.sh) applies to whichever path is used:
+# the target must be a plain disposable file inside that scratch directory, never a
+# device, partition or mountpoint. The report labels the measured device explicitly.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -22,7 +25,7 @@ ROOT="$(pwd)"
 CODE_ROOT="$(cd .. && pwd)"
 SUMMARIZE="$CODE_ROOT/build/tools/summarize"
 BLK="$ROOT/build/blkbench"
-SCRATCH="$ROOT/data/scratch"
+SCRATCH="${ACS_SCRATCH:-$ROOT/data/scratch}"
 FILE="$SCRATCH/testfile.bin"
 
 FSIZE_MIB="${FSIZE_MIB:-2048}"     # disposable file size (MiB); LBA range used

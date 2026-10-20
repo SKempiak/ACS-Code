@@ -2,43 +2,50 @@
 \section{Device State and Working Set}\label{sec:device-state}
 
 \begin{hypothesis}
-  \todo{When sustained writes should exhaust the SLC cache and how far throughput should drop; whether
-  temperature should trigger throttling.}
+  Back-to-back sustained sequential writes should first ride the SLC/DRAM write cache (a burst), then
+  settle to a lower steady-state throughput once the cache must flush to QLC in the background. Occasional
+  latency spikes from garbage collection should appear in the upper tail even while mean throughput is
+  steady.
 \end{hypothesis}
 
 \begin{knobs}
-  Workload    & 4~KiB random write, iodepth 32, \tbd~s, per-second IOPS log \\
-  LBA range   & \tbd~GiB of \tbd~GiB capacity \todo{effect of range / fill level} \\
-  State       & \todo{fresh vs.\ preconditioned; TRIM state} \\
-  Script      & \code{SSD_Performance_Profiling/scripts/run.sh device_state} (and \code{precondition}) \\
+  Workload    & \qty{128}{\kibi\byte} sequential write, iodepth 4, eight back-to-back \qty{2}{\second} intervals \\
+  LBA range   & the \qty{2}{\gibi\byte} disposable file (a small fraction of the \qty{512}{\giga\byte} device) \\
+  State       & preconditioned (full sequential write pass) before the intervals \\
+  Script      & \code{SSD_Performance_Profiling/scripts/run.sh device_state} \\
 \end{knobs}
 
 \begin{figure}[tbp]
   \centering
-  \IfFileExists{data/device_state_iops.log}{%
+  \IfDataExists{device_state}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, height=0.4\linewidth, xlabel={Time (s)}, ylabel={Write IOPS}]
-        \addplot[no markers, thin, blue] table[header=false, x expr=\thisrowno{0}/1000, y index=1] {data/device_state_iops.log};
+      \begin{axis}[acs, height=0.42\linewidth, xlabel={Interval (\num{2}~s each)}, ylabel={Write MiB/s},
+                   ymin=0, xtick={0,1,2,3,4,5,6,7}]
+        \addplot[mark=*, thick] table[x=rep, y=mibps] {data/device_state.csv};
       \end{axis}
     \end{tikzpicture}%
-  }{\acsmissing{data/device_state_iops.log}}
-  \caption{Sustained random-write IOPS over time. \todo{mark SLC exhaustion / throttling}}\label{fig:device-state}
+  }
+  \caption{Sustained \qty{128}{\kibi\byte} random-free sequential-write throughput over eight
+  \qty{2}{\second} intervals. Throughput dips early (cache flush) then holds a steady
+  \ensuremath{\sim}\qty{1060}{\mebi\byte\per\second}.}\label{fig:device-state}
 \end{figure}
 
-\begin{table}[tbp]
-  \centering\small
-  \caption{SMART snapshot before and after the sustained-write run.}\label{tab:smart}
-  \begin{tabular}{@{}lrr@{}}
-    \toprule
-    Attribute & Before & After \\
-    \midrule
-    Temperature (\si{\celsius}) & \tbd & \tbd \\
-    Data units written          & \tbd & \tbd \\
-    Media errors                & \tbd & \tbd \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
 \subsection{Analysis}
-\todo{Burst vs.\ steady-state throughput, SLC cache size estimate, garbage-collection or thermal effects,
-and what this means for the steady-state results in the earlier sections.}
+Throughput is not a clean monotonic SLC cliff at this file size: the first interval delivers
+\qty{959}{\mebi\byte\per\second}, dips to \qty{631}{} and \qty{776}{\mebi\byte\per\second} in intervals~1--2
+(the controller flushing buffered data to QLC), then recovers to a steady
+\ensuremath{\sim}\qty{1060}{\mebi\byte\per\second} for the remaining five intervals. Because the working set is only
+\qty{2}{\gibi\byte} of a \qty{512}{\giga\byte} drive and the run is short, we do not drive the SLC cache to
+exhaustion---so there is no dramatic steady-state collapse, only the initial flush transient. The tail
+tells the GC story the mean hides: p99.9 latency sits at \qty{17}{}--\qty{19}{\milli\second} in every
+interval even while mean throughput is flat, i.e.\ periodic background flush/garbage-collection pauses
+punctuate otherwise-fast writes. This is the honest device-state picture for a small-footprint run; a
+full-capacity, minutes-long write would be needed to measure the true SLC-cache size and steady-state QLC
+write rate, which we did not do (the disposable file is deliberately small).
+
+\subsection{SMART / thermal}
+SMART attributes (temperature, data-units-written, media errors) and NVMe health logs require root on this
+host---\code{smartctl -i /dev/nvme0n1} returns \emph{Permission denied}---so we cannot report
+before/after temperature or wear counters. No thermal throttling was inferred from the throughput trace
+(it recovers and holds rather than decaying), but we cannot confirm this from the controller directly;
+this is recorded as a limitation (\cref{sec:anomalies}).

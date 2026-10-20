@@ -4,10 +4,30 @@
 Summarized from \code{AI_USE_LOG.md} in the code repository.
 
 \begin{description}[style=nextline]
-  \item[Tools used] \todo{Tools and models, and for which parts of the project.}
-  \item[What they helped generate] \todo{e.g.\ FIO job files, run and parsing scripts, debugging help.}
-  \item[What was independently modified, tested, or rejected] \todo{Concrete examples, including at
-        least one AI suggestion that was wrong or misleading and how it was caught.}
-  \item[Validation] \todo{How measurements were checked independently (iostat cross-check, interface ceiling,
-        effective queue depth).}
+  \item[Tools used] Claude Code (Claude Opus~5) for coding, debugging and drafting this report;
+        GCC~\sysGCC{} for the builds. The AI wrote code and prose; every number comes from real runs on
+        the machine in \cref{tab:environment}.
+  \item[What they helped generate] \code{blkbench.c} (the O\_DIRECT \code{libaio} benchmark standing in
+        for FIO), the data-safety gate (\code{safety.sh}), the experiment driver (\code{run.sh}) and its
+        CSV reduction, and the first drafts of these sections.
+  \item[What was independently modified, tested, or rejected] Three concrete corrections.
+        (1)~\emph{The wrong device was being tested.} The scratch directory defaulted to the in-repo
+        \code{data/scratch/}, which lives on the box's \qty{2}{\tera\byte} SATA \emph{HDD}
+        (\code{rotational}=1), so the first full dataset showed QD=1 random latencies in the
+        \emph{milliseconds}---textbook rotational behaviour, not an SSD. Reading the \code{env.txt}
+        \code{rotational} flag caught it; the scratch path was made overridable (\code{ACS_SCRATCH}) and
+        repointed at the Micron NVMe SSD mounted at \code{/}, after which QD=1 random read dropped to
+        \ensuremath{\sim}\qty{50}{\micro\second}. The AI's original claim that ``the NVMe is read-only to us''
+        was simply false and was disproved by a one-line write test. (2)~An early version measured
+        \emph{submission} latency (time to enqueue) rather than \emph{completion} latency; it was changed
+        to time each I/O to completion, which is what the percentiles must describe. (3)~A convenience
+        default left the page cache enabled, reporting \ensuremath{\sim}\num{2}~million IOPS; rather than quote
+        it, it became the required pitfall (\cref{sec:pitfall}), and \code{O_DIRECT} was made the default
+        for every real run.
+  \item[Validation] The safety gate is unit-tested in \code{validate.sh} (it must refuse
+        \code{/dev/nvme0n1}, \code{/etc/passwd} and \code{/}). Direct-vs-buffered I/O differs by two
+        orders of magnitude, proving the page cache is bypassed; sequential throughput stays under the
+        interface ceiling; and the Little's-Law table (\cref{tab:littles-law}) is the in-band
+        effective-queue-depth check in place of an \code{iostat}/\code{perf} cross-check (neither
+        available here). Every figure traces to a committed raw/processed file (\cref{app:repro}).
 \end{description}

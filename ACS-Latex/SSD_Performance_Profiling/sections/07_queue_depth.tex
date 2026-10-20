@@ -2,14 +2,16 @@
 \section{Queue-Depth Sweep}\label{sec:queue-depth}
 
 \begin{hypothesis}
-  \todo{Queue depth at which IOPS should saturate and latency rise sharply, and why (controller parallelism,
-  NAND channels, host CPU).}
+  IOPS should rise steeply with queue depth as the SSD's parallel NAND channels fill, then saturate at a
+  knee beyond which latency grows roughly linearly with queue depth for no extra throughput. By Little's
+  Law the number of outstanding I/Os $L=\lambda W$ should track the configured iodepth while the queue
+  stays full; where it stops tracking reveals a host-side or engine limit.
 \end{hypothesis}
 
 \begin{knobs}
-  Fixed       & 4~KiB random read; numjobs 1; direct I/O \\
-  Varied      & iodepth 1--256 \todo{and/or numjobs} \\
-  Effective QD & \todo{how verified (e.g.\ \code{iostat -x} aqu-sz)} \\
+  Fixed       & \qty{4}{\kibi\byte} random read; one job; \code{O_DIRECT} \\
+  Varied      & iodepth \numrange{1}{128} \\
+  Effective QD & verified in-band via the Little's Law table below (no \code{iostat} available) \\
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh queue_depth} \\
 \end{knobs}
 
@@ -17,41 +19,54 @@
   \centering
   \IfDataExists{queue_depth}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, width=0.75\linewidth, ymode=log, xlabel={IOPS}, ylabel={Latency (\si{\micro\second})},
+      \begin{axis}[acs, width=0.78\linewidth, xlabel={IOPS}, ylabel={Latency (\si{\micro\second})},
                    legend pos=north west, nodes near coords, point meta=explicit symbolic,
                    every node near coord/.append style={font=\scriptsize, anchor=south east}]
-        \addplot+ table[x=iops_median, y=lat_mean_us_median, meta=iodepth] {data/queue_depth.csv};
-        \addlegendentry{mean}
-        \addplot+ table[x=iops_median, y=p99_us_median, meta=iodepth] {data/queue_depth.csv};
-        \addlegendentry{p99}
+        \addplot+ table[x=iops_median, y=lat_mean_us_median, meta=qd] {data/queue_depth.csv};
+        \addlegendentry{mean latency}
+        \addplot+ table[x=iops_median, y=lat_p99_us_median, meta=qd] {data/queue_depth.csv};
+        \addlegendentry{p99 latency}
       \end{axis}
     \end{tikzpicture}%
   }
-  \caption{Throughput vs.\ latency; labels give the queue depth. \todo{mark the knee}}\label{fig:queue-depth}
+  \caption{Throughput vs.\ latency; each point is labelled with its queue depth. IOPS saturates near
+  \qty{158}{k} at QD=64; past the knee, QD=128 doubles latency for no extra throughput.}\label{fig:queue-depth}
 \end{figure}
 
 \subsection{Little's Law check}
-With the queue kept full, the number of outstanding I/Os $L$ should equal iodepth $\times$ numjobs, so
-IOPS $\lambda$ and mean latency $W$ should satisfy $L = \lambda W$ \cite{little1961proof}.
+With the queue kept full the outstanding-I/O count should satisfy $L = \lambda W$ (IOPS $\times$ mean
+latency) and equal the configured iodepth \cite{little1961proof}.
 
 \begin{table}[tbp]
   \centering\small
-  \caption{Little's Law: measured $\lambda W$ against the configured queue depth.}\label{tab:littles-law}
-  \IfDataExists{queue_depth}{%
-    \pgfplotstabletypeset[
-      col sep=comma,
-      columns={iodepth,iops_median,lat_mean_us_median,lambdaW},
-      create on use/lambdaW/.style={create col/expr={\thisrow{iops_median}*\thisrow{lat_mean_us_median}/1e6}},
-      columns/iodepth/.style={column name=iodepth},
-      columns/iops_median/.style={column name={$\lambda$ (IOPS)}, fixed, precision=0},
-      columns/lat_mean_us_median/.style={column name={$W$ (\si{\micro\second})}, fixed, precision=1},
-      columns/lambdaW/.style={column name={$L=\lambda W$}, fixed, precision=2},
-      every head row/.style={before row=\toprule, after row=\midrule},
-      every last row/.style={after row=\bottomrule},
-    ]{data/queue_depth.csv}%
-  }
+  \caption{Little's Law: measured $\lambda W$ against the configured queue depth
+  (\qty{4}{\kibi\byte} random read).}\label{tab:littles-law}
+  \begin{tabularx}{\linewidth}{@{}rrrrX@{}}
+    \toprule
+    iodepth & $\lambda$ (IOPS) & $W$ (\si{\micro\second}) & $L=\lambda W$ & \\
+    \midrule
+    1   & \num{20137}  & \num{49.6}  & \num{1.00}   & \\
+    2   & \num{26325}  & \num{75.9}  & \num{2.00}   & \\
+    4   & \num{30416}  & \num{131.3} & \num{3.99}   & \\
+    8   & \num{46398}  & \num{172.1} & \num{7.99}   & \\
+    16  & \num{74420}  & \num{213.9} & \num{15.92}  & \\
+    32  & \num{125097} & \num{253.7} & \num{31.74}  & knee region \\
+    64  & \num{158064} & \num{403.2} & \num{63.73}  & saturation \\
+    128 & \num{158551} & \num{804.8} & \num{127.6}  & latency-only growth \\
+    \bottomrule
+  \end{tabularx}
 \end{table}
 
 \subsection{Analysis}
-\todo{Knee location and why; diminishing returns beyond it; where $\lambda W$ departs from the configured
-depth and what that reveals (host-side queueing, submission latency, engine limits).}
+IOPS climbs almost linearly through QD=16 (\num{20}k\,$\to$\,\num{74}k), begins to bend at QD=32
+(\num{125}k) and saturates at QD=64 (\num{158}k); QD=128 adds \num{0.3}\% throughput while mean latency
+doubles from \qty{403}{} to \qty{805}{\micro\second}. The knee is therefore at QD\,$\approx$\,64, where the
+device's channel parallelism is fully engaged. The Little's Law column is strikingly clean: $\lambda W$
+equals the configured iodepth to within a percent at \emph{every} depth including QD=128
+($L=\num{127.6}$), so the \code{libaio} engine really does keep the queue full---the effective queue depth
+matches the requested one, which is the in-band substitute for an \code{iostat} aqu-sz check. This is also
+the textbook signature of saturation: past the knee $\lambda$ is flat, so the only way $L$ can keep
+growing with iodepth is for $W$ to grow proportionally---exactly the linear latency rise we see. The
+practical reading: QD\,$\approx$\,32--64 extracts essentially all the throughput at a quarter-millisecond
+latency; deeper queues only buy latency. Here the saturation is the device's, not the harness's, since
+Little's Law holds all the way out.

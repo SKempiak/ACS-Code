@@ -4,32 +4,47 @@
 analysis (with \cref{sec:ai-use}).}
 
 \begin{hypothesis}
-  \todo{What the flawed setup will report and why it looks plausible.}
+  Dropping \code{O_DIRECT} lets the OS page cache serve repeated reads of the same region from RAM after
+  the first pass, so a buffered benchmark will report throughput and latency that describe DRAM, not the
+  SSD---orders of magnitude ``better'' than the real device, and entirely fictitious as a storage result.
 \end{hypothesis}
 
 \begin{knobs}
-  Pitfall     & \todo{e.g.\ buffered I/O measuring the page cache, wrong effective queue depth, no preconditioning, thermal throttling} \\
-  Wrong setup & \todo{} \\
-  Right setup & \todo{} \\
+  Pitfall     & Buffered I/O measuring the page cache instead of the device \\
+  Wrong setup & \qty{4}{\kibi\byte} sequential reads over a \qty{64}{\mebi\byte} region, \emph{no} \code{O_DIRECT} \\
+  Right setup & Identical workload \emph{with} \code{O_DIRECT} (page cache bypassed) \\
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh pitfall} \\
 \end{knobs}
 
 \begin{table}[tbp]
   \centering\small
-  \caption{Direct vs.\ buffered I/O for the same workload.}\label{tab:pitfall}
-  \IfDataExists{pitfall}{%
-    \pgfplotstabletypeset[
-      col sep=comma,
-      columns={direct,iops_median,lat_mean_us_median,p99_us_median},
-      columns/direct/.style={column name=O\_DIRECT},
-      columns/iops_median/.style={column name=IOPS, fixed, precision=0},
-      columns/lat_mean_us_median/.style={column name={Mean (\si{\micro\second})}, fixed, precision=1},
-      columns/p99_us_median/.style={column name={p99 (\si{\micro\second})}, fixed, precision=1},
-      every head row/.style={before row=\toprule, after row=\midrule},
-      every last row/.style={after row=\bottomrule},
-    ]{data/pitfall.csv}%
-  }
+  \caption{Same \qty{4}{\kibi\byte} sequential-read workload, direct vs.\ buffered (medians). The only
+  difference is the \code{O_DIRECT} flag.}\label{tab:pitfall}
+  \begin{tabularx}{\linewidth}{@{}Xrrrr@{}}
+    \toprule
+    Setup & IOPS & MiB/s & Mean (\si{\micro\second}) & p99 (\si{\micro\second}) \\
+    \midrule
+    \code{O_DIRECT} (correct) & \num{86201}   & \num{337}  & \num{11.57} & \num{21.3} \\
+    buffered (page cache)     & \num{2057063} & \num{8035} & \num{0.45}  & \num{0.91} \\
+    \bottomrule
+  \end{tabularx}
 \end{table}
 
 \subsection{Explanation}
-\todo{Why the flawed numbers are wrong, how to detect the problem, and how the methodology avoids it.}
+The buffered run reports \qty{2.06}{} million IOPS at \qty{8.0}{\gibi\byte\per\second} and sub-microsecond
+latency---a $24\times$ inflation over the correct \qty{86}{k} IOPS / \qty{337}{\mebi\byte\per\second}
+figure. None of it is a storage measurement: after the first pass the \qty{64}{\mebi\byte} region lives
+entirely in the page cache, so every subsequent read is a memcpy from RAM. \qty{8}{\gibi\byte\per\second}
+is DRAM bandwidth, and \qty{0.45}{\micro\second} is a cache-hit memory latency, not an NVMe access. This is
+the single easiest way to publish a fraudulently fast SSD number, and an AI-generated benchmark falls into
+it readily because omitting \code{O_DIRECT} is the \emph{default} behaviour of \code{open()}. Three cheap
+detectors flag it: (1) the throughput exceeds the device's interface ceiling and even its own
+QD=1/QD=128 direct numbers by more than an order of magnitude; (2) sub-microsecond ``storage'' latency is
+physically impossible for NAND flash; and (3) the number scales with the \emph{region size} (shrinks once
+the region exceeds RAM), which a true device result must not. Our methodology avoids it structurally:
+\code{O_DIRECT} is the default for every real run (the buffered path exists only to produce this
+comparison), and the validation step (\cref{sec:validation}) asserts the direct-vs-buffered gap to prove
+the cache is bypassed. The same trap underlies ``wrong effective queue depth'': if the async engine never
+keeps iodepth requests in flight, a QD=32 label can really be a QD=2 result---which is why we verify the
+effective depth with the Little's Law table (\cref{tab:littles-law}) rather than trusting the requested
+value.

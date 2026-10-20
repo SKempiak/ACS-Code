@@ -4,11 +4,48 @@
 
 \subsection{Unexpected results}
 \begin{itemize}
-  \item \todo{Observation $\rightarrow$ plausible hypothesis $\rightarrow$ how it was (or could be) tested.}
+  \item \textbf{Huge pages produced no measurable change.} We expected \qty{2}{\mebi\byte} pages to
+        shave random-access time once the footprint exceeded the TLB reach. The base-page and
+        huge-page curves are instead identical (\cref{fig:tlb}). Hypothesis: THP was never actually
+        granted. Tested: \code{/proc/self/smaps_rollup} reported \code{AnonHugePages: 0 kB} on every
+        run despite \code{madvise(MADV_HUGEPAGE)} and \qty{2}{\mebi\byte} alignment, confirming the
+        allocation stayed on base pages. This is a reported limitation, not a ``huge pages don't help''
+        conclusion (\cref{sec:tlb}).
+  \item \textbf{A 70/30 read/write mix is far slower than 100\% reads, not 30\% slower.} At ten threads,
+        pure reads deliver \qty{27.2}{\gibi\byte\per\second} but the 70/30 mix drops to
+        \qty{8.1}{\gibi\byte\per\second} (\cref{sec:rw-mix}). Hypothesis: each store first issues a
+        read-for-ownership and the controller pays a write-to-read bus turnaround, so a ``30\% writes''
+        workload moves far more than 30\% extra traffic. Consistent with the write-allocate behaviour of
+        the cache hierarchy; a non-temporal (streaming-store) path would avoid the RFO but was out of
+        scope for the required mixes.
+  \item \textbf{The L2$\to$L3 transition has a shoulder, not a step.} Latency near \qty{2}{\mebi\byte}
+        sits well below the LLC-edge value (\cref{fig:working-set}). Hypothesis: the adjacent-line and
+        stream prefetchers partly hide L3 latency until the set is several times the L2 size; the effect
+        disappears for the fully random pointer chase at larger sizes.
 \end{itemize}
 
 \subsection{Limitations}
 \begin{itemize}
-  \item \todo{e.g.\ single machine and memory configuration, sampled latency resolution, counters
-        covering initialization, THP backing not guaranteed.}
+  \item \textbf{No hardware counters.} \code{perf} is not installed and \code{perf_event_paranoid} is
+        \sysPerfParanoid{}, so cache-miss and TLB-miss \emph{ratios} could not be recorded. The
+        cache-miss and TLB experiments (\cref{sec:cache-miss,sec:tlb}) are therefore runtime
+        correlations against footprint and page size, and the AMAT reading is illustrative rather than
+        fitted to measured $m_{Li}$.
+  \item \textbf{Intel MLC not available.} \sysMLC{}, so latency and bandwidth come from our own
+        pointer-chase and streaming benchmarks; the hierarchy shape and the 4--5 cycle L1 anchor are the
+        internal cross-checks in place of an MLC baseline.
+  \item \textbf{Frequency not fixed.} Governor \sysGovernor{} with turbo \sysTurbo{}; neither is
+        changeable here. Cycle figures use an in-process effective frequency
+        (\qtyrange{4.4}{4.8}{\giga\hertz}) and carry a few-percent uncertainty.
+  \item \textbf{One machine; THP uncontrolled; SMT on.} All numbers come from a single i9-10900F,
+        single NUMA node, THP \sysHugePages{} (and not actually granted, above), SMT on with the pinned
+        core's sibling left idle but not offlined.
+  \item \textbf{Loaded-latency axis inferred.} The intensity knee (\cref{sec:intensity}) is measured as
+        aggregate throughput vs.\ offered concurrency; we do not measure an independent loaded latency,
+        so the ``latency rises past the knee'' half of the tradeoff is inferred. Project~3 measures both
+        axes directly.
+  \item \textbf{Report build backend.} Builds cleanly with \code{make memory} and \code{make final};
+        the host has \code{bibtex} but not \code{biber}, so \code{biblatex} uses \code{backend=bibtex}.
+        The only artifact is a benign \enquote{Please (re)run BibTeX} notice---no unresolved \code{[?]}
+        markers---which disappears if \code{biber} is installed.
 \end{itemize}

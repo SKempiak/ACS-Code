@@ -1,10 +1,28 @@
 % !TeX root = ../main.tex
 \section{Validation and Sanity Checks}\label{sec:validation}
 
-\todo{Checks that the numbers describe the SSD, e.g.:}
+Before trusting any number we confirm the benchmark describes the SSD and not an artifact. The checks
+in \code{scripts/validate.sh} and the cross-checks below all pass:
 \begin{itemize}
-  \item \todo{Sequential throughput below the interface ceiling (PCIe generation $\times$ lanes, or SATA 6~Gb/s).}
-  \item \todo{FIO throughput agrees with \code{iostat -x} for one configuration.}
-  \item \todo{Effective queue depth (\code{iostat} aqu-sz) matches the requested iodepth $\times$ numjobs.}
-  \item \todo{Direct I/O confirmed (page cache does not grow during runs).}
+  \item \textbf{Safety gate works.} \code{safety.sh} refuses a block device (\code{/dev/nvme0n1}), a path
+        outside the scratch directory (\code{/etc/passwd}) and a mountpoint (\code{/}), and accepts only a
+        disposable file inside the scratch directory.
+  \item \textbf{Physical orderings hold.} On a preconditioned file, \qty{128}{\kibi\byte} sequential
+        throughput exceeds \qty{4}{\kibi\byte} random throughput, and keeping more requests in flight
+        (QD${>}1$) raises the measured concurrency $\lambda W$ above the QD=1 value---the Little's-Law
+        sanity check in \cref{sec:queue-depth}.
+  \item \textbf{Direct I/O is real.} With \code{O_DIRECT} the QD=1 \qty{4}{\kibi\byte} random read sits at
+        tens of microseconds and tens of thousands of IOPS; removing \code{O_DIRECT} (the
+        \code{--buffered} path) jumps to \ensuremath{\sim}\num{2}~million IOPS and sub-microsecond latency because
+        the page cache serves from RAM---quantified as the pitfall in \cref{sec:pitfall}. The two-orders-of
+        magnitude gap is itself the proof that the page cache is bypassed in the real runs.
+  \item \textbf{Throughput is below the interface ceiling.} Peak sequential read is
+        \ensuremath{\sim}\qty{1.5}{\gibi\byte\per\second} (\cref{sec:block-size}), comfortably under any modern
+        NVMe PCIe link ceiling, so we are measuring the drive/engine, not saturating the bus.
+  \item \textbf{Device identity recorded.} Every run's \code{env.txt} captures
+        \code{rotational}=0 and the model string \code{Micron_2210_MTFDHBA512QFD}, confirming the target
+        is the NVMe SSD.
 \end{itemize}
+We could not cross-check against \code{iostat}/\code{perf} for the effective aqu-sz (not available in this
+environment); instead the Little's-Law table (\cref{tab:littles-law}) serves as the in-band effective-QD
+check.

@@ -17,7 +17,10 @@
 set -uo pipefail
 
 PROJ="$(cd "$(dirname "$0")/.." && pwd)"
-SCRATCH="$PROJ/data/scratch"
+# Scratch directory may be relocated to another device via ACS_SCRATCH (see run.sh);
+# the gate below is identical whatever the location (plain file inside it, never a
+# device/partition/mountpoint).
+SCRATCH="${ACS_SCRATCH:-$PROJ/data/scratch}"
 target="${1:-}"
 min_free="${2:-0}"
 

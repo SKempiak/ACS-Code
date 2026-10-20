@@ -19,7 +19,7 @@ This report answers:
 
 \paragraph{Summary of findings.} Zero-queue latency climbs from \qty{1.0}{\nano\second}
 (\num{4.8}~cycles) in L1 to \qty{3.0}{\nano\second} in L2, \qtyrange{11}{23}{\nano\second} across L3,
-and \qty{84}{\nano\second} (\num{\sim}\num{400}~cycles) in DRAM; the hardware prefetcher collapses the
+and \qty{84}{\nano\second} (\ensuremath{\sim}\num{400}~cycles) in DRAM; the hardware prefetcher collapses the
 DRAM figure to \qty{5}{\nano\second} for sequential access. A single core reaches
 \qty{14.8}{\gibi\byte\per\second} of sequential read bandwidth, and ten cores saturate the controller at
 \qty{30}{\gibi\byte\per\second}---a throughput--latency knee near four to six cores. Random access to a

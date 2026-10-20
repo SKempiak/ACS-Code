@@ -1,17 +1,24 @@
 % !TeX root = ../main.tex
 \section{Reproducibility}\label{app:repro}
 
-Code, FIO job files, scripts and raw data: \coderepo, commit \todo{hash}.
+Code, scripts and raw data: \coderepo, on the \code{class-wide-project} submission branch (the exact
+commit is recorded in \code{git log}).
 
 \begin{lstlisting}[language=bash]
 git clone https://github.com/SKempiak/ACS-Code.git && cd ACS-Code
 git checkout <commit>
-scripts/collect_env.sh
-export TARGET=<scratch dir>/test.fio-scratch SIZE=<size> DEVICE=<nvme device>
-SSD_Performance_Profiling/scripts/run.sh precondition
-SSD_Performance_Profiling/scripts/run.sh all
+make tools                                    # tools/summarize
+make -C SSD_Performance_Profiling             # build/blkbench (O_DIRECT, libaio)
+make -C SSD_Performance_Profiling test        # safety + physical-ordering sanity checks
+scripts/collect_env.sh --tex > ../ACS-Latex/common/system_info.tex
+# Point the disposable-file scratch at the device you want to profile (here the NVMe SSD at /):
+ACS_SCRATCH="$HOME/acs_ssd_scratch" SSD_Performance_Profiling/scripts/run.sh all
 scripts/sync_data.sh SSD_Performance_Profiling
 \end{lstlisting}
+
+The \code{ACS_SCRATCH} override selects the device under test; the \code{safety.sh} gate is identical
+wherever it points (a plain disposable file inside the scratch directory, never a device or mountpoint).
+Omitting it profiles the in-repo \code{data/scratch/} filesystem instead.
 
 \begin{table}[h]
   \centering\small
@@ -20,13 +27,18 @@ scripts/sync_data.sh SSD_Performance_Profiling
     \toprule
     Figure / table & Raw run directory (\code{SSD_Performance_Profiling/data/raw/...}) \\
     \midrule
-    \Cref{tab:zero-queue} & \todo{\code{zero_queue/<timestamp>}} \\
-    \Cref{fig:block-size} & \todo{\code{block_size/<timestamp>}} \\
-    \Cref{fig:rw-mix} & \todo{\code{rw_mix/<timestamp>}} \\
-    \Cref{fig:queue-depth}, \cref{tab:littles-law} & \todo{\code{queue_depth/<timestamp>}} \\
-    \Cref{fig:tail} & \todo{\code{tail/<timestamp>}} \\
-    \Cref{fig:device-state}, \cref{tab:smart} & \todo{\code{device_state/<timestamp>, precondition/<timestamp>}} \\
-    \Cref{tab:pitfall} & \todo{\code{pitfall/<timestamp>}} \\
+    \Cref{tab:zero-queue} & \code{zero_queue/20261020-001056} \\
+    \Cref{fig:block-size} & \code{block_size/20261020-001056} \\
+    \Cref{fig:rw-mix} & \code{rw_mix/20261020-001056} \\
+    \Cref{fig:queue-depth}, \cref{tab:littles-law} & \code{queue_depth/20261020-001056} \\
+    \Cref{fig:tail} & \code{tail/20261020-001056} \\
+    \Cref{fig:device-state} & \code{device_state/20261020-001056} \\
+    \Cref{tab:pitfall} & \code{pitfall/20261020-001056} \\
     \bottomrule
   \end{tabularx}
 \end{table}
+
+Each raw directory holds \code{raw.csv} (one row per repetition, with full configuration metadata) and
+\code{env.txt} (the \code{collect_env.sh} snapshot plus the device model and \code{rotational} flag); the
+processed CSVs plotted above come from \code{tools/summarize} and are copied into this report's
+\code{data/} by \code{scripts/sync_data.sh}. Every number quoted traces to one of these files.

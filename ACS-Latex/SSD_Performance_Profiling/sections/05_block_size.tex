@@ -4,13 +4,15 @@
 against latency.}
 
 \begin{hypothesis}
-  \todo{How IOPS, MiB/s and latency should change from 4~KiB to 1~MiB, for random vs.\ sequential access,
-  and where the interface or controller limit should appear.}
+  As the block grows from \qty{4}{\kibi\byte} to \qty{256}{\kibi\byte} at QD=1, small-block I/O should be
+  \emph{IOPS-limited} (throughput $=$ IOPS $\times$ block, rising with block size) and large-block I/O
+  should approach a \emph{throughput ceiling} where IOPS falls as $1/\text{block}$. Sequential should beat
+  random at every block size, with the gap largest at small blocks where per-op overhead dominates.
 \end{hypothesis}
 
 \begin{knobs}
-  Fixed       & iodepth \tbd; numjobs 1; direct I/O; reads \todo{and writes} \\
-  Varied      & block size 4~KiB--256~KiB (512~KiB, 1~MiB sequential); pattern \\
+  Fixed       & iodepth 1; one job; \code{O_DIRECT}; 100\% read \\
+  Varied      & block size \qtyrange{4}{256}{\kibi\byte}; pattern random vs.\ sequential \\
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh block_size} \\
 \end{knobs}
 
@@ -19,11 +21,11 @@ against latency.}
   \IfDataExists{block_size}{%
     \begin{subfigure}[t]{0.49\linewidth}
       \begin{tikzpicture}
-        \begin{axis}[acs, height=0.85\linewidth, symbolic x coords={4k,16k,32k,64k,128k,256k,512k,1m},
-                     xtick=data, xlabel={Block size}, ylabel={Throughput (MiB/s)}, legend pos=north west]
-          \addplot+[iqr bars] table[x=bs, y=bw_mib_s_median, iqr of=bw_mib_s, only if={rw}{randread}] {data/block_size.csv};
+        \begin{axis}[acs, height=0.85\linewidth, xmode=log, log basis x=2,
+                     xlabel={Block size (bytes)}, ylabel={Throughput (MiB/s)}, ymin=0, legend pos=north west]
+          \addplot+[iqr bars] table[x=bs, y=mibps_median, iqr of=mibps, only if={pattern}{rand}] {data/block_size.csv};
           \addlegendentry{random}
-          \addplot+[iqr bars] table[x=bs, y=bw_mib_s_median, iqr of=bw_mib_s, only if={rw}{read}] {data/block_size.csv};
+          \addplot+[iqr bars] table[x=bs, y=mibps_median, iqr of=mibps, only if={pattern}{seq}] {data/block_size.csv};
           \addlegendentry{sequential}
         \end{axis}
       \end{tikzpicture}
@@ -31,18 +33,31 @@ against latency.}
     \end{subfigure}\hfill
     \begin{subfigure}[t]{0.49\linewidth}
       \begin{tikzpicture}
-        \begin{axis}[acs, height=0.85\linewidth, ymode=log, symbolic x coords={4k,16k,32k,64k,128k,256k,512k,1m},
-                     xtick=data, xlabel={Block size}, ylabel={Mean latency (\si{\micro\second})}]
-          \addplot+[iqr bars] table[x=bs, y=lat_mean_us_median, iqr of=lat_mean_us, only if={rw}{randread}] {data/block_size.csv};
-          \addplot+[iqr bars] table[x=bs, y=lat_mean_us_median, iqr of=lat_mean_us, only if={rw}{read}] {data/block_size.csv};
+        \begin{axis}[acs, height=0.85\linewidth, xmode=log, log basis x=2, ymode=log,
+                     xlabel={Block size (bytes)}, ylabel={Mean latency (\si{\micro\second})}]
+          \addplot+[iqr bars] table[x=bs, y=lat_mean_us_median, iqr of=lat_mean_us, only if={pattern}{rand}] {data/block_size.csv};
+          \addplot+[iqr bars] table[x=bs, y=lat_mean_us_median, iqr of=lat_mean_us, only if={pattern}{seq}] {data/block_size.csv};
         \end{axis}
       \end{tikzpicture}
-      \caption{Latency (same runs).}
+      \caption{Mean latency (same runs).}
     \end{subfigure}%
   }
-  \caption{Block-size sweep. \todo{takeaway; add the write side}}\label{fig:block-size}
+  \caption{QD=1 read block-size sweep. Random throughput rises with block size while IOPS stays bounded;
+  sequential saturates near \qty{1.5}{\gibi\byte\per\second}. Random is far slower at small blocks and the
+  gap narrows as transfers dominate per-op cost.}\label{fig:block-size}
 \end{figure}
 
 \subsection{Analysis}
-\todo{Transition from IOPS-limited to throughput-limited behavior; the interface/controller ceiling;
-random vs.\ sequential gap and its causes.}
+The two patterns behave exactly as the IOPS-vs-throughput model predicts. \textbf{Sequential} reads start
+at \num{87}k IOPS / \qty{341}{\mebi\byte\per\second} for \qty{4}{\kibi\byte} and climb to a throughput
+plateau of \ensuremath{\sim}\qty{1.5}{\gibi\byte\per\second} by \qty{256}{\kibi\byte} (IOPS then falling as $1/$block:
+\num{6013} IOPS at \qty{256}{\kibi\byte}); the device is throughput-limited once the block is large enough
+to amortise per-command overhead. \textbf{Random} reads are IOPS-bound: IOPS only drops from \num{20240}
+(\qty{4}{\kibi\byte}) to \num{3885} (\qty{256}{\kibi\byte}) while throughput rises from
+\qty{79}{\mebi\byte\per\second} to \qty{971}{\mebi\byte\per\second}, because each QD=1 random access pays
+the fixed \ensuremath{\sim}\qty{50}{\micro\second} flash-read latency regardless of size (mean latency grows only
+\qty{49}{}$\to$\qty{257}{\micro\second} over a $64\times$ block range). The sequential/random gap is
+widest at \qty{4}{\kibi\byte} ($4.3\times$ throughput) and narrows to $1.5\times$ at
+\qty{256}{\kibi\byte}, where both approach the same per-transfer regime. Note these are QD=1 numbers; the
+device's full sequential bandwidth would need a deeper queue or larger blocks, so \qty{1.5}{\gibi\byte\per\second}
+is a single-request floor, not the interface ceiling.

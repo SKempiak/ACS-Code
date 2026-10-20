@@ -1,14 +1,17 @@
 % !TeX root = ../main.tex
 \section{Reproducibility}\label{app:repro}
 
-Code, scripts and raw data: \coderepo, commit \todo{hash}.
+Code, scripts and raw data: \coderepo, on the \code{class-wide-project} submission branch (the exact
+commit is recorded in \code{git log}).
 
 \begin{lstlisting}[language=bash]
 git clone https://github.com/SKempiak/ACS-Code.git && cd ACS-Code
 git checkout <commit>
-make && make test
-scripts/collect_env.sh
-ACS_CPU=2 ACS_CPUS=2,4,6,8 PERF=1 Cache_and_Memory_Performance_Profiling/scripts/run.sh all
+make tools                                            # tools/summarize
+make -C Cache_and_Memory_Performance_Profiling        # mem_latency / mem_bandwidth / kernel_miss
+make -C Cache_and_Memory_Performance_Profiling test   # safety + physical-ordering sanity checks
+scripts/collect_env.sh --tex > ../ACS-Latex/common/system_info.tex
+CPU_PIN=2 Cache_and_Memory_Performance_Profiling/scripts/run.sh all
 scripts/sync_data.sh Cache_and_Memory_Performance_Profiling
 \end{lstlisting}
 
@@ -19,13 +22,18 @@ scripts/sync_data.sh Cache_and_Memory_Performance_Profiling
     \toprule
     Figure / table & Raw run directory (\code{Cache_and_Memory_Performance_Profiling/data/raw/...}) \\
     \midrule
-    \Cref{tab:zero-queue} & \todo{\code{zero_queue/<timestamp>}} \\
-    \Cref{fig:pattern} & \todo{\code{pattern/<timestamp>}} \\
-    \Cref{fig:rw-mix} & \todo{\code{rw_mix/<timestamp>}} \\
-    \Cref{fig:intensity}, \cref{tab:littles-law} & \todo{\code{intensity/<timestamp>}} \\
-    \Cref{fig:working-set} & \todo{\code{working_set/<timestamp>}} \\
-    \Cref{fig:cache-miss} & \todo{\code{cache_miss/<timestamp>}} \\
-    \Cref{fig:tlb} & \todo{\code{tlb/<timestamp>}} \\
+    \Cref{tab:zero-queue}, \cref{fig:working-set} & \code{latency/20261019-232253} \\
+    \Cref{fig:pattern} & \code{latency/20261019-232253}, \code{granularity/20261019-232253} \\
+    \Cref{fig:rw-mix} & \code{rwmix/20261019-232253} \\
+    \Cref{fig:intensity}, \cref{tab:littles-law} & \code{intensity/20261019-232253} \\
+    \Cref{fig:cache-miss} & \code{cache_miss/20261019-232253} \\
+    \Cref{fig:tlb} & \code{tlb/20261019-233449} \\
+    \Cref{fig:pitfall} & \code{pitfall/20261019-232253} \\
     \bottomrule
   \end{tabularx}
 \end{table}
+
+Each raw directory holds \code{raw.csv} (one row per repetition, with full configuration metadata) and
+\code{env.txt} (a snapshot of \code{collect_env.sh}); the processed CSVs plotted above are produced from
+them by \code{tools/summarize} and copied into this report's \code{data/} by \code{scripts/sync_data.sh}.
+Every number quoted in the report traces to one of these files.

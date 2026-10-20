@@ -2,36 +2,46 @@
 \section{Zero-Queue Baselines}\label{sec:zero-queue}
 
 \begin{hypothesis}
-  \todo{Expected QD=1 latency for 4~KiB random and 128~KiB sequential reads and writes, and why reads
-  and writes differ.}
+  At QD=1 a single I/O is in flight, so latency is the full host-stack + controller + flash path. We
+  expect \qty{4}{\kibi\byte} random reads in the tens of microseconds (flash read dominates) and
+  \qty{128}{\kibi\byte} sequential transfers to be bandwidth-limited at a few hundred
+  \unit{\micro\second}. Writes should be \emph{faster} than reads at QD=1 because the SSD's DRAM/SLC
+  write buffer acknowledges them before the flash program completes.
 \end{hypothesis}
 
 \begin{knobs}
-  Fixed       & iodepth 1; numjobs 1; direct I/O \\
+  Fixed       & iodepth 1; one job; \code{O_DIRECT} \\
   Cases       & 4~KiB random read, 4~KiB random write, 128~KiB sequential read, 128~KiB sequential write \\
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh zero_queue} \\
 \end{knobs}
 
 \begin{table}[tbp]
   \centering\small
-  \caption{QD=1 performance (medians over repetitions; latencies in \si{\micro\second}).}\label{tab:zero-queue}
-  \IfDataExists{zero_queue}{%
-    \pgfplotstabletypeset[
-      col sep=comma,
-      columns={rw,bs,iops_median,bw_mib_s_median,lat_mean_us_median,p50_us_median,p95_us_median,p99_us_median},
-      columns/rw/.style={column name=Pattern, string type},
-      columns/bs/.style={column name=Block, string type},
-      columns/iops_median/.style={column name=IOPS, fixed, precision=0},
-      columns/bw_mib_s_median/.style={column name=MiB/s, fixed, precision=1},
-      columns/lat_mean_us_median/.style={column name=Mean, fixed, precision=1},
-      columns/p50_us_median/.style={column name=p50, fixed, precision=1},
-      columns/p95_us_median/.style={column name=p95, fixed, precision=1},
-      columns/p99_us_median/.style={column name=p99, fixed, precision=1},
-      every head row/.style={before row=\toprule, after row=\midrule},
-      every last row/.style={after row=\bottomrule},
-    ]{data/zero_queue.csv}%
-  }
+  \caption{QD=1 performance on the Micron 2210 NVMe SSD (medians of 3 reps; latencies in
+  \si{\micro\second}). Random reads pay the full flash-read latency; random writes are faster because the
+  write buffer absorbs them.}\label{tab:zero-queue}
+  \begin{tabularx}{\linewidth}{@{}llrrrrrrX@{}}
+    \toprule
+    Pattern & Block & IOPS & MiB/s & Mean & p50 & p95 & p99 & p99.9 \\
+    \midrule
+    rand read  & \qty{4}{\kibi\byte}   & \num{20150} & \num{78.7}  & \num{49.6}  & \num{47.5} & \num{50.0} & \num{68}  & \num{460} \\
+    rand write & \qty{4}{\kibi\byte}   & \num{68037} & \num{265.8} & \num{14.7}  & \num{12.5} & \num{14.3} & \num{26}  & \num{440} \\
+    seq read   & \qty{128}{\kibi\byte} & \num{1813}  & \num{226.6} & \num{551.4} & \num{549}  & \num{847}  & \num{1000}& \num{1349} \\
+    seq write  & \qty{128}{\kibi\byte} & \num{5959}  & \num{744.9} & \num{167.8} & \num{94.2} & \num{396}  & \num{1417}& \num{2097} \\
+    \bottomrule
+  \end{tabularx}
 \end{table}
 
 \subsection{Analysis}
-\todo{Latency composition at QD=1 (host stack, controller, flash read/program), variability, and caveats.}
+The QD=1 numbers confirm an NVMe SSD, not a rotational disk: \qty{4}{\kibi\byte} random read latency is
+\qty{49.6}{\micro\second} (not the milliseconds a HDD would show), dominated by the NAND read plus the
+NVMe/\code{libaio} host path rather than any seek. Random \emph{writes} are over three times faster
+(\qty{14.7}{\micro\second}, \num{68}k IOPS) because the controller acknowledges them from its DRAM/SLC
+write buffer before the flash program finishes---a latency the QD=1 read cannot hide. The
+\qty{128}{\kibi\byte} sequential rows are bandwidth-bound: at \qty{227}{\mebi\byte\per\second} (read) and
+\qty{745}{\mebi\byte\per\second} (write) each transfer takes hundreds of microseconds, and the single
+outstanding request leaves the device under-fed---\cref{sec:block-size,sec:queue-depth} show throughput
+climbing sharply once larger blocks or deeper queues keep more data moving. Two caveats: QD=1 reads
+cannot be prefetched by the device for a cold random stream, so this is a genuine floor; and the p99.9
+column already shows occasional \qty{440}{}--\qty{2100}{\micro\second} outliers from background flush/GC,
+previewing the tail behaviour in \cref{sec:tail}.

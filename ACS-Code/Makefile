@@ -11,7 +11,7 @@ CFLAGS   := -std=gnu11 -O2 -g -Wall -Wextra -Icommon/include
 COMMON   := $(wildcard common/src/*.c)
 HEADERS  := $(wildcard common/include/*.h)
 
-C_PROJECTS := SIMD_Advantage_Profiling Cache_and_Memory_Performance_Profiling
+C_PROJECTS := SIMD_Advantage_Profiling Cache_and_Memory_Performance_Profiling SSD_Performance_Profiling
 
 .PHONY: all tools clean $(C_PROJECTS)
 
