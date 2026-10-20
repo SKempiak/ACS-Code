@@ -3,26 +3,42 @@
 \rubric{Experimental rigor}{25}{Pinning and isolation, repetitions, documented settings and reproducible scripts.}
 
 \subsection{Platform}
+\newcommand{\acspinning}{single-thread runs pinned with \code{--cpu 2} (a physical P-core, not CPU~0);
+the intensity sweep pins thread~$i$ to physical core~$i$}
 \newcommand{\acsenvextra}{%
-  Memory configuration & \todo{DIMM count, capacity, rated vs.\ configured speed, channels} \\
+  Memory configuration & \qty{64}{\gibi\byte} total, single NUMA node; per-DIMM count/speed not
+  probed (needs root/\code{dmidecode}); dual-channel DDR4 is standard for this platform \\
 }
 \input{../common/environment_table}
 
 \subsection{Tools}
+All three microbenchmarks share the harness in \code{ACS-Code/common} (monotonic raw timer, aligned
+allocation, CPU pinning) and reduce raw per-repetition rows with \code{tools/summarize} (median, IQR).
 \begin{knobs}
-  \code{mem_latency}   & single-thread access latency for a working set of a given size \\
-  \code{mem_bandwidth} & bandwidth and sampled per-operation latency with $T$ pinned threads \\
-  \code{kernel_miss}   & simple loop kernel under \code{perf stat} for cache/TLB correlation \\
-  Intel MLC            & \todo{version and options, if used \cite{intel_mlc}} \\
+  \code{mem_latency}   & single-thread pointer-chase latency for a working set of a given size \\
+  \code{mem_bandwidth} & streaming bandwidth with $T$ pinned threads (read/write/copy/triad/rwmix) \\
+  \code{kernel_miss}   & SAXPY loop whose footprint, order and page size vary (cache/TLB correlation) \\
+  Intel MLC            & \sysMLC{}---not used \cite{intel_mlc} \\
   perf                 & \sysPerf{} \cite{linux_perf} \\
 \end{knobs}
+Intel MLC and \code{perf} are the spec's recommended tools, but neither is available on the test host
+(\code{perf} is not installed and \code{perf\_event\_paranoid}~=~\sysPerfParanoid{} blocks counters), so
+we measure latency and bandwidth directly with our own benchmarks and treat counter-based experiments as
+runtime correlations (\cref{sec:cache-miss,sec:tlb}, and \cref{sec:anomalies}).
 
 \subsection{Controls}
 \begin{itemize}
-  \item Pinning and isolation: \todo{CPUs used, one logical CPU per physical core, P-cores only?}
-  \item Frequency: governor \sysGovernor, turbo \sysTurbo. \todo{justify / what was changed}
-  \item Pre-faulting and warm-up: \todo{how buffers are faulted in and warmed before timing}
-  \item Repetitions: \tbd{} per point; median with IQR error bars. \todo{justify}
-  \item Page size: base \sysPageSize; transparent huge pages: \sysHugePages. \todo{how huge-page backing was verified}
-  \item Background load: \todo{how the machine was kept quiet}
+  \item \textbf{Pinning and isolation:} \acspinning. SMT siblings are avoided; the box is otherwise idle.
+  \item \textbf{Frequency:} governor \sysGovernor, turbo \sysTurbo{} (neither is changeable in this
+        environment). Because frequency is not fixed, the per-access \emph{cycle} figures use an
+        effective GHz that each run measures in-process from a dependent add chain
+        (\qtyrange{4.4}{4.8}{\giga\hertz} observed), rather than a nominal clock.
+  \item \textbf{Pre-faulting and warm-up:} every buffer is written once to fault in its pages, then the
+        access ring or stream is traversed two to three times before timing, so neither page faults nor
+        cold-cache effects fall inside the timed region.
+  \item \textbf{Repetitions:} 8 per point; we report the median with inter-quartile-range error bars.
+  \item \textbf{Page size:} base \sysPageSize; THP is \sysHugePages. Huge-page backing is checked at
+        runtime from \code{/proc/self/smaps\_rollup} (\code{AnonHugePages}); see \cref{sec:tlb}.
+  \item \textbf{Timing:} each timed interval is calibrated to last $\geq$\qty{40}{\milli\second}, far
+        above the \qtyrange{1}{40}{\nano\second} timer resolution, so timer overhead is negligible.
 \end{itemize}

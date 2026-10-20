@@ -1,10 +1,24 @@
 % !TeX root = ../main.tex
 \section{Validation and Sanity Checks}\label{sec:validation}
 
-\todo{Checks that the tools measure what they claim, e.g.:}
+The microbenchmarks have no reference output to diff, so \code{scripts/validate.sh} gates them against
+physical invariants that must hold on any sane hierarchy; all pass on the test host:
 \begin{itemize}
-  \item \todo{L1 latency on the order of a few CPU cycles at the measured frequency.}
-  \item \todo{Single-thread sequential bandwidth below the theoretical DIMM/channel limit.}
-  \item \todo{Cross-check against Intel MLC or another reference for at least one configuration.}
-  \item \todo{Timer and loop overhead measured with an empty access loop and subtracted or bounded.}
+  \item \textbf{Monotone levels.} Latency grows strictly across levels: L1 \qty{1.0}{\nano\second} $<$
+        L2 \qty{3.9}{\nano\second} $<$ L3 \qty{13}{\nano\second} $<$ DRAM \qty{86}{\nano\second}
+        (\cref{sec:zero-queue}).
+  \item \textbf{Prefetcher check.} Sequential DRAM latency (\qty{5.3}{\nano\second}) is more than
+        $2\times$ below random DRAM latency, confirming the stride prefetcher is engaged for sequential
+        access and defeated by the randomized pointer chase.
+  \item \textbf{Bandwidth ceiling.} Single-core L1-resident read bandwidth
+        (\qty{57}{\gibi\byte\per\second}) exceeds the DRAM-resident rate
+        (\qty{14}{\gibi\byte\per\second}), and ten threads exceed one thread---both required for a
+        trustworthy bandwidth benchmark.
+  \item \textbf{Frequency plausibility.} The in-process effective-GHz probe lands in
+        \qtyrange{4.4}{4.8}{\giga\hertz}, consistent with this CPU's turbo range, so the ns$\to$cycle
+        conversion is sound. An L1 latency of \num{4.8}~cycles matches the published 4--5 cycle L1 load
+        latency for this microarchitecture.
 \end{itemize}
+Timer and loop overhead are bounded by calibrating every timed interval to tens of milliseconds
+(\cref{sec:method}); the pointer-chase loop body is a single dependent load, so no overhead subtraction
+is needed.

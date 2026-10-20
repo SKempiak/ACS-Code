@@ -1,17 +1,29 @@
 % !TeX root = ../main.tex
 \section{Introduction}\label{sec:intro}
 
-\todo{Motivation: the L1/L2/L3/DRAM hierarchy on this machine (sizes, expected latencies) and why
-locality, concurrency and page size decide real performance.}
+Every memory reference on this machine is served by one of four levels that differ by more than two
+orders of magnitude in latency: a \qty{32}{\kibi\byte} per-core L1 data cache, a \qty{256}{\kibi\byte}
+per-core L2, a \qty{20}{\mebi\byte} shared L3, and DDR4 DRAM. Which level a kernel hits---and how many
+independent references it keeps in flight---decides its performance far more than its instruction count.
+This report measures that hierarchy on the Intel i9-10900F with purpose-built microbenchmarks and
+interprets the numbers with AMAT and Little's Law.
 
 This report answers:
 \begin{enumerate}
   \item What is the zero-queue access latency of each level, and the DRAM bandwidth under different
         patterns, granularities and read/write mixes? (\cref{sec:zero-queue,sec:pattern,sec:rw-mix})
   \item Where does added concurrency stop buying throughput, and does Little's Law hold? (\cref{sec:intensity})
-  \item How do working-set size, cache misses and TLB misses show up in runtime and counters?
-        (\cref{sec:working-set,sec:cache-miss,sec:tlb})
+  \item How do working-set size, cache misses and TLB misses show up in runtime? (\cref{sec:working-set,sec:cache-miss,sec:tlb})
   \item Which benchmark mistake produces misleading numbers? (\cref{sec:pitfall})
 \end{enumerate}
 
-\todo{One-paragraph summary of the main findings.}
+\paragraph{Summary of findings.} Zero-queue latency climbs from \qty{1.0}{\nano\second}
+(\num{4.8}~cycles) in L1 to \qty{3.0}{\nano\second} in L2, \qtyrange{11}{23}{\nano\second} across L3,
+and \qty{84}{\nano\second} (\num{\sim}\num{400}~cycles) in DRAM; the hardware prefetcher collapses the
+DRAM figure to \qty{5}{\nano\second} for sequential access. A single core reaches
+\qty{14.8}{\gibi\byte\per\second} of sequential read bandwidth, and ten cores saturate the controller at
+\qty{30}{\gibi\byte\per\second}---a throughput--latency knee near four to six cores. Random access to a
+DRAM-resident footprint runs \num{47}$\times$ slower per element than an L1-resident one, while the same
+sweep under sequential access slows only \num{10}$\times$ because prefetching hides the misses. Finally,
+a one-line change of working-set size turns a \qty{15}{\gibi\byte\per\second} DRAM result into a
+fictitious \qty{57}{\gibi\byte\per\second} ``bandwidth'' that is really L1 reuse (\cref{sec:pitfall}).

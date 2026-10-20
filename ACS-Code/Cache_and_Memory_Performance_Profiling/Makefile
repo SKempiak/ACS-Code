@@ -7,8 +7,11 @@
 
 CC      ?= cc
 BUILD   ?= build
-# TODO: choose (and justify) optimization flags.
-CFLAGS  := -std=gnu11 -g -Wall -Wextra -pthread -I../common/include
+# -O3 -march=native: the memory system (not scalar codegen) is what we measure,
+# so we want the compiler to emit the widest loads/stores and vectorized
+# streaming loops the CPU supports; -fno-tree-vectorize would only add artificial
+# overhead to the bandwidth kernels. -march=native targets this host's AVX2+FMA.
+CFLAGS  := -std=gnu11 -O3 -march=native -g -Wall -Wextra -pthread -I../common/include
 LDLIBS  := -lm -pthread
 
 PROGRAMS := mem_latency mem_bandwidth kernel_miss

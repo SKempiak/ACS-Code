@@ -2,28 +2,42 @@
 \section{Read/Write Mix}\label{sec:rw-mix}
 
 \begin{hypothesis}
-  \todo{Expected throughput and latency for 100\% read, 100\% write, 70/30 and 50/50, and why writes
-  differ (read-for-ownership, cache pollution, write-combining).}
+  Pure reads should reach the highest bandwidth. Any write fraction should cost extra, because an
+  ordinary store first issues a read-for-ownership (RFO) of the target line, so writes move roughly twice
+  the DRAM traffic per byte stored and add read/write turnaround on the bus. We therefore expect mixed
+  streams to fall \emph{below} both pure read and pure write.
 \end{hypothesis}
 
 \begin{knobs}
-  Fixed       & 1 thread; random access; granularity \tbd~bytes; region \tbd \\
-  Varied      & read percentage: 100, 70, 50, 0 \\
-  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh rw_mix} \\
+  Fixed       & 10 threads (one per physical core); random-free unit stride; \qty{1.25}{\gibi\byte} total \\
+  Varied      & reads per 10 accesses: 10 (100/0), 7 (70/30), 5 (50/50), 0 (0/100) \\
+  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh rwmix} \\
 \end{knobs}
 
 \begin{figure}[tbp]
   \centering
-  \IfDataExists{rw_mix}{%
+  \IfDataExists{rwmix}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, ybar, bar width=14pt, width=0.6\linewidth, xtick={0,50,70,100},
-                   xlabel={Reads (\%)}, ylabel={Bandwidth (GiB/s)}, ymin=0, enlarge x limits=0.15]
-        \addplot+[iqr bars] table[x=read_pct, y=gib_per_s_median, iqr of=gib_per_s] {data/rw_mix.csv};
+      \begin{axis}[acs, ybar, bar width=20pt, width=0.62\linewidth, ymin=0,
+                   xtick={0,5,7,10}, xticklabels={0/100,50/50,70/30,100/0},
+                   xlabel={Read/write mix}, ylabel={Bandwidth (GiB/s)}, enlarge x limits=0.18]
+        \addplot+[iqr bars] table[x=reads10, y=gib_s_median, iqr of=gib_s, only if={kernel}{rwmix}] {data/rwmix.csv};
       \end{axis}
     \end{tikzpicture}%
   }
-  \caption{Bandwidth across read/write mixes. \todo{takeaway; add latency}}\label{fig:rw-mix}
+  \caption{Aggregate bandwidth across read/write mixes (10 threads). Pure reads dominate; any write
+  fraction falls sharply because stores incur read-for-ownership traffic and bus turnaround.}\label{fig:rw-mix}
 \end{figure}
 
 \subsection{Analysis}
-\todo{Compare throughput and latency across mixes and explain the differences.}
+The 10-thread aggregate is \qty{27.2}{\gibi\byte\per\second} for 100\% reads but only
+\qty{8.1}{\gibi\byte\per\second} at 70/30 and \qty{7.6}{\gibi\byte\per\second} at 50/50, recovering to
+\qty{9.7}{\gibi\byte\per\second} at 100\% writes. The dip at 50/50 is the predicted effect: a mixed
+stream pays both for RFO traffic on every store and for frequent read$\leftrightarrow$write turnaround on
+the DDR bus, so it underperforms either pure direction. Pure writes beat the mixes because, with no
+interleaved reads, the controller can batch same-direction transactions. As same-kernel references, the
+\code{copy} (\qty{16.3}{\gibi\byte\per\second}) and \code{triad} (\qty{19.8}{\gibi\byte\per\second})
+streaming kernels bracket these mixes and show the effect of counting RFO traffic. One honest caveat:
+our \code{rwmix} kernel reads into a single accumulator and stores it, so the absolute mix numbers carry
+a read$\to$write dependency and are best read as a \emph{relative} comparison across mixes rather than as
+peak bandwidth (\cref{sec:anomalies}).

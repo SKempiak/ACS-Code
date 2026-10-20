@@ -4,27 +4,43 @@
 \cref{sec:cache-miss,sec:tlb}).}
 
 \begin{hypothesis}
-  \todo{Where latency steps should appear given L1d = \tbd, L2 = \tbd, LLC = \tbd{} on this CPU.}
+  Pointer-chase latency should trace the capacity staircase: flat while the set fits in L1
+  (\qty{32}{\kibi\byte}), a step up through the \qty{256}{\kibi\byte} L2, a wider plateau across the
+  \qty{20}{\mebi\byte} L3, and a final jump to the DRAM latency once the set exceeds LLC. Transitions
+  should be gradual, not sharp, because of set-associativity and prefetcher spill.
 \end{hypothesis}
 
 \begin{knobs}
-  Fixed       & 1 thread pinned; random reads; granularity \tbd~bytes; base pages \\
-  Varied      & working-set size from \qty{4}{\kibi\byte} to \tbd~\si{\gibi\byte} \\
-  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh working_set} \\
+  Fixed       & 1 thread pinned to CPU~2; random pointer chase; one node per \qty{64}{\byte} line; base pages \\
+  Varied      & working-set size from \qty{8}{\kibi\byte} to \qty{512}{\mebi\byte} \\
+  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh latency} \\
 \end{knobs}
 
 \begin{figure}[tbp]
   \centering
-  \IfDataExists{working_set}{%
+  \IfDataExists{latency}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, xlabel={Working-set size (bytes)}, ylabel={Latency (ns/access)}]
-        \addplot+[iqr bars] table[x=size_bytes, y=ns_per_access_median, iqr of=ns_per_access, only if={huge_requested}{0}] {data/working_set.csv};
-        % TODO: cache boundaries in bytes, e.g. \acsvline{48000}{L1d} \acsvline{1280000}{L2} \acsvline{30000000}{LLC}
+      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, width=0.78\linewidth,
+                   xlabel={Working-set size (bytes)}, ylabel={Latency (ns/access)}, legend pos=north west]
+        \addplot+[iqr bars] table[x=bytes, y=ns_per_access_median, iqr of=ns_per_access, only if={pattern}{random}] {data/latency.csv};
+        \addlegendentry{random}
+        \acsvline{32768}{L1d \qty{32}{KiB}}
+        \acsvline{262144}{L2 \qty{256}{KiB}}
+        \acsvline{20971520}{L3 \qty{20}{MiB}}
       \end{axis}
     \end{tikzpicture}%
   }
-  \caption{Access latency across working-set sizes. \todo{takeaway}}\label{fig:working-set}
+  \caption{Random-access latency across working-set sizes, with cache capacities marked. Each level is a
+  plateau; latency steps up as the set outgrows L1, L2 and finally the L3.}\label{fig:working-set}
 \end{figure}
 
 \subsection{Analysis}
-\todo{Transition regions, and how sharp or gradual they are and why (shared LLC, prefetchers, TLB reach).}
+The curve has four clear regimes separated at the marked capacities. It is flat at
+\num{\sim}\qty{1}{\nano\second} up to \qty{32}{\kibi\byte} (L1), rises through
+\qtyrange{3}{4}{\nano\second} across the L2 region, sits at \qtyrange{10}{23}{\nano\second} while the set
+is LLC-resident, and saturates near \qty{84}{\nano\second} once it exceeds \qty{20}{\mebi\byte}. The
+transitions are gradual rather than step functions: associativity means some lines spill a level early,
+and the L2$\to$L3 shoulder near \qty{2}{\mebi\byte} shows the adjacent-line/stream prefetchers partly
+hiding L3 latency until the set is several times the L2 size. This staircase is the direct input to the
+AMAT model in \cref{sec:cache-miss}; the per-level plateaus here are the $t_{\text{L1}} \ldots
+t_{\text{DRAM}}$ terms.

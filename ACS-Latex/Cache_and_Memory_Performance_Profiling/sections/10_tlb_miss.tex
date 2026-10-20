@@ -2,32 +2,47 @@
 \section{TLB-Miss Impact}\label{sec:tlb}
 
 \begin{hypothesis}
-  \todo{Expected effect of 2~MiB pages on dTLB misses and runtime for random access over large
-  footprints, given the TLB sizes of this CPU.}
+  For random access over a footprint far larger than the TLB reach ($\sim$1536 entries $\times$
+  \qty{4}{\kibi\byte} $\approx$ \qty{6}{\mebi\byte} on this core), \qty{2}{\mebi\byte} huge pages should cut
+  dTLB misses and page-walk cost and shave runtime, because one TLB entry then covers 512$\times$ more
+  memory.
 \end{hypothesis}
 
 \begin{knobs}
-  Kernel      & $z_i = x_i \cdot y_i$ (float64), random traversal \\
-  Varied      & page size (base, transparent huge pages); $N$ \\
-  Verification & \todo{how huge-page backing was confirmed (AnonHugePages)} \\
-  Script      & \code{PERF=1 Cache_and_Memory_Performance_Profiling/scripts/run.sh tlb} \\
+  Kernel       & $y_i = a\,x_i + y_i$ (float64), random traversal \\
+  Varied       & page size (base \qty{4}{\kibi\byte} vs.\ transparent huge pages); $N = 2^{18} \ldots 2^{24}$ \\
+  Verification & \code{AnonHugePages} read from \code{/proc/self/smaps\_rollup} at runtime \\
+  Script       & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh tlb} \\
 \end{knobs}
 
 \begin{figure}[tbp]
   \centering
   \IfDataExists{tlb}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, xmode=log, log basis x=2, xlabel={$N$ (elements)}, ylabel={Time per element (ns)}, legend pos=north west]
-        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={huge_requested}{0}] {data/tlb.csv};
-        \addlegendentry{base pages}
-        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={huge_requested}{1}] {data/tlb.csv};
-        \addlegendentry{huge pages}
+      \begin{axis}[acs, xmode=log, log basis x=2, width=0.78\linewidth,
+                   xlabel={$N$ (elements)}, ylabel={Time per element (ns)}, legend pos=north west]
+        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={pages}{4k}] {data/tlb.csv};
+        \addlegendentry{base \qty{4}{KiB} pages}
+        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={pages}{huge}] {data/tlb.csv};
+        \addlegendentry{huge pages (requested)}
       \end{axis}
     \end{tikzpicture}%
   }
-  \caption{Runtime with base vs.\ huge pages. \todo{takeaway; add dTLB-load-misses}}\label{fig:tlb}
+  \caption{Random SAXPY runtime with base vs.\ requested huge pages. The curves coincide because huge
+  pages were \emph{not actually granted} in this environment---an honest negative result, not a measured
+  ``no effect''.}\label{fig:tlb}
 \end{figure}
 
 \subsection{Analysis}
-\todo{TLB reach (entries $\times$ page size) vs.\ footprint; change in dTLB misses and page walks;
-runtime effect and its limits.}
+The base-page and huge-page curves are statistically identical (e.g.\ at $N=2^{24}$,
+\qty{21.6}{\nano\second} vs.\ \qty{21.4}{\nano\second}). The reason is not that huge pages fail to help:
+despite THP being set to \code{always}, a \qty{2}{\mebi\byte}-aligned mapping and
+\code{madvise(MADV\_HUGEPAGE)}, \code{/proc/self/smaps\_rollup} reported \code{AnonHugePages: 0 kB} on
+every run, so the allocation was never backed by huge pages. Short-lived processes do not give
+\code{khugepaged} time to collapse pages, and this sandbox appears to withhold THP from the cgroup.
+Isolating a real TLB effect would require explicit \code{hugetlbfs} (\code{MAP\_HUGETLB} with reserved
+pages, which needs privileges we do not have) or \code{perf}'s \code{dTLB-load-misses} counter (not
+installed). We therefore report this as a limitation rather than a result: the experiment and its
+verification are in place and will show the expected gap on a host where huge pages are actually granted.
+The verification hook is itself the useful outcome---it caught a silent failure that a naive benchmark
+would have mistaken for ``huge pages don't help.''

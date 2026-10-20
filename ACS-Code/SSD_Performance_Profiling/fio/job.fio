@@ -1,9 +1,32 @@
-; job.fio — FIO job(s) for the Project 3 sweeps.
+; job.fio — reference FIO job for the Project 3 sweeps.
 ;
-; TODO:
-;   - Target: a dedicated empty partition, a raw test device, or a large disposable file
-;     (checked by scripts/safety.sh before any run).
-;   - Direct I/O; block-aligned random offsets.
-;   - Varied per run: block size, sequential/random, read/write mix, iodepth and/or numjobs.
-;   - Fixed and documented: runtime and ramp time, data pattern, I/O engine.
-;   - Latency percentiles p50 / p95 / p99 / p99.9; machine-readable output for parsing.
+; FIO is not installed on the test host, so the committed data was produced by the
+; libaio-based stand-in src/blkbench.c (scripts/run.sh falls back to it). This file
+; is the equivalent FIO configuration for a host that HAS fio: run e.g.
+;
+;   BS=4k QD=32 RW=randread FSIZE=2g \
+;     fio --output-format=json job.fio | scripts/fio_to_csv.sh > out.csv
+;
+; It targets a large disposable file with direct I/O (never a raw device); the
+; offsets are block-aligned and the data pattern is fixed. Knobs come from the
+; environment so one file drives the whole matrix.
+
+[global]
+ioengine=libaio
+direct=1                       ; O_DIRECT: bypass the page cache
+filename=${FILENAME}           ; a disposable file under data/scratch/ (gated by safety.sh)
+size=${FSIZE}                  ; e.g. 2g
+bs=${BS}                       ; 4k 16k 32k 64k 128k 256k ...
+rw=${RW}                       ; randread randwrite read write randrw
+rwmixread=${RWMIXREAD}         ; for randrw: 100 70 50 0
+iodepth=${QD}                  ; 1 2 4 8 16 32 64 128 256
+numjobs=1
+runtime=${RUNTIME}             ; e.g. 5
+ramp_time=2                    ; discard warm-up before steady-state measurement
+time_based=1
+norandommap=1
+randrepeat=1
+group_reporting=1
+percentile_list=50:95:99:99.9  ; the tail-latency points the report needs
+
+[workload]
