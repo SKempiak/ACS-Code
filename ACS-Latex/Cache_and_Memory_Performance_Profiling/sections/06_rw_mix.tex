@@ -18,11 +18,10 @@
 
 \paragraph{Mix definition.} Of every 10 consecutive \qty{64}{\byte} lines, the first $R$ are read and
 the remaining $10-R$ are fully overwritten. Mixing at \emph{line} granularity makes the ratio hold for the
-traffic the memory system sees. The previous version of this experiment mixed individual \qty{8}{\byte}
-elements: with 7 reads and 3 writes per 10 elements, every line of the source was read \emph{and} every
-line of the destination written, so a nominal ``70/30'' moved roughly three lines per useful line and its
-result (\qty{8.1}{\gibi\byte\per\second} vs.\ \qty{27.2}{\gibi\byte\per\second} for reads) measured the
-bug, not the mix. ``Demand'' bandwidth counts the bytes the program reads or writes; ``est.\ traffic''
+traffic the memory system sees. Mixing individual \qty{8}{\byte} elements instead is a
+methodological trap: with 7 reads and 3 writes per 10 elements, every line of the source is read
+\emph{and} every line of the destination written, so a nominal ``70/30'' moves about three lines per
+useful line and measures the access pattern, not the mix (\cref{sec:ai-use}). ``Demand'' bandwidth counts the bytes the program reads or writes; ``est.\ traffic''
 adds one RFO line per written line (written lines count twice).
 
 \begin{figure}[tbp]
@@ -81,8 +80,7 @@ demand bandwidth is \valqty{rw_10_t1_gib}{\gibi\byte\per\second} for reads, \emp
 its estimated traffic grows from \valqty{rw_10_t1_traffic}{\gibi\byte\per\second} to
 \valqty{rw_0_t1_traffic}{\gibi\byte\per\second}. A plausible explanation, not tested here, is that stores retire into the store
 buffer without waiting for their RFO, so a core can keep more lines moving when part of its stream is writes than when every line is a
-load it must wait for. The probe barely notices one core (\valqty{rw_10_t1_ns}{\nano\second} to
-\valqty{rw_0_t1_ns}{\nano\second}). As named-kernel references on all
+load it must wait for. The probe barely notices one core: \val{rw_t1_ns_min}--\valqty{rw_t1_ns_max}{\nano\second} across the four mixes. As named-kernel references on all
 ten cores, \code{copy} delivers \valqty{rw_ref_copy}{\gibi\byte\per\second} and \code{triad}
 \valqty{rw_ref_triad}{\gibi\byte\per\second} (demand bytes; 1:1 and 2:1 read:write). Non-temporal
 stores, which skip the RFO, were out of scope for the required mixes.

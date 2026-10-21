@@ -14,7 +14,7 @@
 ; stops at RUNTIME seconds or after IOSIZE bytes, whichever comes first (run.sh
 ; sets IOSIZE to the per-rep write cap for write points, else 1 TiB); if IOSIZE
 ; exceeds SIZE, fio wraps within the region. No ramp_time, to match blkbench
-; (the test file is preconditioned before every experiment).
+; (run.sh preconditions the test file before every experiment, also inside `all`).
 ;
 ; Data pattern: fio's default buffer contents are pseudo-random (incompressible),
 ; matching blkbench's xorshift64* fill; refill_buffers is left off (generated once),

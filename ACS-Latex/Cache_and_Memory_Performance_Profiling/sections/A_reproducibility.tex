@@ -13,7 +13,7 @@ make -C Cache_and_Memory_Performance_Profiling        # mem_latency mem_bandwidt
 make -C Cache_and_Memory_Performance_Profiling test   # physical-ordering sanity checks (validate.sh)
 scripts/collect_env.sh --tex > ../ACS-Latex/common/system_info.tex
 Cache_and_Memory_Performance_Profiling/scripts/run.sh zero_queue pattern rw_mix intensity \
-    working_set cache_miss tlb pitfall mlc            # or: run.sh all (CPU_PIN=2 by default)
+    working_set cache_miss tlb pitfall mlc clock_check   # or: run.sh all (CPU_PIN=2 by default)
 scripts/sync_data.sh Cache_and_Memory_Performance_Profiling
 cd ../ACS-Latex && make memory
 \end{lstlisting}
@@ -36,6 +36,7 @@ cd ../ACS-Latex && make memory
     \Cref{fig:tlb} & \code{tlb} & \code{tlb_chase}, \code{tlb_saxpy} & \code{tlb/20261021-004356} \\
     \Cref{fig:pitfall} & \code{pitfall} & \code{pitfall} & \code{pitfall/20261021-004356} \\
     \Cref{sec:validation} (MLC) & \code{mlc} & --- & \code{mlc/20261021-004356} \\
+    \Cref{sec:method,sec:anomalies} (clock) & \code{clock_check} & --- (\code{summary.csv}) & \code{clock_check/20261021-194648} \\
     \bottomrule
   \end{tabularx}
 \end{table}
@@ -44,7 +45,6 @@ Each raw directory holds the raw rows (one per repetition, with full configurati
 \code{env.txt}, \code{build.txt}, \code{commands.txt} and \code{validate.txt} (\cref{sec:method}). The
 processed CSVs are produced from them by \code{tools/summarize}; \code{scripts/derive.py} computes the
 derived tables and \code{summary.csv}, from which every number in the text is typeset; and
-\code{scripts/sync_data.sh} copies all of them into this report's \code{data/}. All nine directories come from a single \code{run.sh all} invocation
-(2026-10-21, 00:43--00:55; one shared timestamp). The superseded runs of 2026-10-19 (\code{latency/},
-\code{granularity/}, \code{rwmix/}, \code{intensity/}, \code{cache_miss/}, \code{pitfall/} and both
-\code{tlb/} runs) and their processed CSVs were removed from the repository.
+\code{scripts/sync_data.sh} copies all of them into this report's \code{data/}. The nine experiment directories come from a single \code{run.sh all} invocation (2026-10-21,
+00:43--00:55; one shared timestamp). The \code{clock_check} diagnostic of \cref{sec:anomalies} was run
+separately the same day (\code{clock_check/20261021-194648}).

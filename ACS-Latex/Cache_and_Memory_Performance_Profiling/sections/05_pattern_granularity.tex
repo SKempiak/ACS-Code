@@ -100,8 +100,8 @@ Sequential useful bandwidth is \valqty{pat_stride_seq_8}{\gibi\byte\per\second} 
 stride and \valqty{pat_stride_seq_64}{\gibi\byte\per\second} at \qty{64}{\byte}. At \qty{64}{\byte} stride
 every access still pulls a whole line, so the \emph{line} traffic is $8\times$ the useful bandwidth:
 \valqty{pat_stride_seq_64_line}{\gibi\byte\per\second}, i.e.\ \val{pat_stride64_over_unit}$\times$ the
-unit-stride rate. The line traffic of the \qty{64}{\byte}-stride kernel is thus higher than the
-``single-core peak'' quoted in the previous version of this report, which was the unit-stride figure. The
+unit-stride rate. A unit-stride scalar read is therefore \emph{not} a measure of the single-core
+streaming limit, although it is the obvious kernel to use for one. The
 explanation is on the core side, not in memory: the unit-stride scalar kernel spends eight loads and eight
 FP adds on every line, so fewer distinct lines fit in the out-of-order window and fewer misses are in
 flight. Kernels that spend fewer instructions per line move more lines: one load per line

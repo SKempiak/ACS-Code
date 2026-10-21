@@ -4,8 +4,9 @@
 Summarized from \code{AI_USE_LOG.md} in the code repository.
 
 \begin{description}[style=nextline]
-  \item[Tools used] Claude Code (Claude Opus~5) for coding, debugging, analysing the data and drafting
-        this report; GCC~\sysGCC{} for the builds. The AI wrote the code and the prose. The timed runs were
+  \item[Tools used] Claude Code for coding, debugging, analysing the data and drafting this report.
+        Claude Opus~5 did the initial harness and report, up to 2026-10-20. Claude Opus~5.5 did the
+        2026-10-21 rework and the analysis of the final runs. GCC~\sysGCC{} built the code. The AI wrote the code and the prose. The timed runs were
         executed by the author in a terminal on the machine in \cref{tab:environment}, using the scripts
         Claude Code wrote (\code{run.sh all}, then \code{SUSTAIN_GIB=60 run.sh device_state}). Claude Code
         ran no timed benchmark; every number comes from those runs.

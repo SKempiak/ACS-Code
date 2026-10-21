@@ -4,7 +4,7 @@
 reproducible scripts and a documented environment (with \cref{sec:correctness,sec:baseline}).}
 
 \subsection{Platform}
-\newcommand{\acspinning}{Each run is pinned to one physical P-core
+\newcommand{\acspinning}{Each run is pinned to one physical core
 (\code{--cpu 2}, \code{sched_setaffinity}); SMT is disabled, so the core has no sibling
 thread, and no other pinning/isolation is used.}
 \input{../common/environment_table}
@@ -60,6 +60,21 @@ non-fused order and stays a trustworthy oracle. We deliberately do \emph{not} pa
 \code{-ffast-math} to any variant: this keeps float results reproducible but, as
 \cref{sec:vectorization,sec:negative} show, it also prevents the compiler from reassociating the
 dot-product reduction---an effect we wanted to measure rather than hide.
+
+\subsection{Data collection and hypotheses}
+All measurements in this report were collected on \textbf{2026-10-21}: every experiment in one
+\code{run.sh all} session (00:34--00:43 local time, raw directories \code{*/20261021-003450}),
+except the alignment/tail sweep. That sweep was re-run at 19:40 (\code{alignment/20261021-194049})
+after we found that offsets \qtyrange{40}{56}{\byte} were missing from its offset list. The re-run
+used the same settings (governor, no turbo, no SMT, pinned to CPU~2), checked before the run. The
+vectorization evidence was generated the same day (\cref{app:repro}). Each experiment section
+opens with a hypothesis derived from first principles (lane counts, cache sizes, port counts). The
+hypotheses for the experiments added on 2026-10-21 (ceilings, extended alignment/tail, AVX2 gather,
+counters) were drafted before that session. The others date from an earlier, superseded
+turbo-clock sweep and may have been influenced by it. The repository history cannot prove either
+ordering. We therefore
+present them only as predictions that we compare against the data, and we report explicitly where
+the data contradicted them.
 
 \subsection{Timing and statistics}
 \begin{itemize}

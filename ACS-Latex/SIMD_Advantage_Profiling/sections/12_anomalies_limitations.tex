@@ -20,7 +20,7 @@
         native, \num{0.025} scalar, versus at most \num{0.0002} below). The speedup peak sits at the
         largest $N$ that is still fully L1-resident.
   \item \textbf{Stencil keeps a $2.7\times$ advantage in DRAM} while SAXPY and multiply fall to
-        $1.5\text{--}1.9\times$. Its native build is just as bandwidth-bound as theirs: it runs at
+        $1.7\text{--}1.9\times$ (SAXPY) and $1.4\text{--}1.5\times$ (multiply). Its native build is just as bandwidth-bound as theirs: it runs at
         \SI{107}{\percent} of the DRAM roof (\cref{sec:roofline}). Its scalar build, however, needs
         \num{5}~FLOP per element of serial \code{mulss}/\code{addss} work and reaches only
         \qtyrange{4.0}{5.0}{\giga\flop\per\second} at every size (\qty{4.2}{\giga\flop\per\second},
@@ -43,6 +43,14 @@
         element at an IPC of \num{3.5}, versus \num{1.53} in L1), while native sits at the bandwidth
         roof (IPC \num{0.6}). The ratio of the two, $1.67$, matches the measured speedup, and it
         depends on the clock: the earlier turbo-clock sweep measured only $1.3\text{--}1.4\times$.
+  \item \textbf{Two-state scalar SAXPY.} With L2/L3-resident data, scalar SAXPY runs at either
+        $\approx1.6$ or $\approx1.8$ cycles per element (\qtyrange{0.57}{0.65}{\nano\second} at
+        \qty{2.8}{\giga\hertz}). The state is chosen per process, independent of the code path
+        (\cref{sec:stride}), and shows up as the alternating scalar points of
+        \cref{fig:locality}, and possibly also as the scalar DRAM alignment scatter. Candidate causes are physical
+        page placement or a front-end/loop-stream-detector effect. We could not separate them
+        without root-only tools, so cache-resident scalar baselines carry about $\pm$\SI{6}{\percent}
+        of process-to-process uncertainty, which propagates into the speedups.
   \item \textbf{Hardware gather loses to scalar.} The explicit \code{vgatherdps} kernel takes
         \qty{3.20}{\nano\second} per element at $N=\num{32768}$ versus \qty{1.92}{} (native scalar
         loop) and \qty{2.08}{\nano\second} (scalar build), i.e.\ $1.5\text{--}1.7\times$
@@ -75,12 +83,17 @@
         so the \qty{512}{bit} regime is out of scope.
   \item \textbf{THP always-on; no core isolation.} Transparent huge pages are \code{always}, and
         the pinned core is not isolated from the scheduler (no \code{isolcpus}). Neither is controlled
-        for; the machine was otherwise idle.
-  \item \textbf{Report build backend.} This report compiles cleanly with \code{make simd}
-        (draft) and \code{make final}. The build host has \code{bibtex} but not \code{biber}, so
-        \code{biblatex} is configured with \code{backend=bibtex}; the single citation and the
-        bibliography resolve correctly. One benign, unavoidable artifact of that backend is a
-        \enquote{Package biblatex Warning: Please (re)run BibTeX} notice on the final pass---it does
-        not affect the output (no unresolved \code{[?]} markers) and disappears if \code{biber} is
-        installed and \code{backend=biber} restored.
+        for. The main session ran on an otherwise idle machine. During the alignment re-run
+        (19:40) background work was active: a kernel worker at $\approx\SI{12}{\percent}$ of
+        CPU~0, \code{udev} workers, and a web browser whose threads the scheduler could place on
+        CPU~2. We kept CPU~2 for consistency with the other experiments. The cache-resident
+        alignment medians reproduce the first pass to within \SI{2}{\percent}, but several
+        configurations have upper-quartile outliers of up to \SI{14}{\percent} (visible as one-sided
+        error bars). The DRAM-resident results are noisier than in the first pass
+        (\cref{sec:alignment}).
+  \item \textbf{Report build backend.} The build host has \code{bibtex} but not \code{biber}, so
+        \code{biblatex} uses \code{backend=bibtex}. With that backend, the \code{ieee} style's
+        citation-order sorting made every run request another BibTeX pass (``There were undefined
+        references'', although the citation resolved). This report therefore sorts its single
+        reference by name/year, and it compiles in final mode without that warning.
 \end{itemize}

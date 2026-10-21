@@ -36,6 +36,12 @@ import os
 import sys
 
 KIB, MIB = 1024, 1024 * 1024
+# ns -> core cycles. Runs were taken with turbo disabled and the performance governor, so the core
+# clock is the fixed 2.8 GHz base frequency (= the TSC rate). The in-process add-chain probe
+# (`ghz` column) is NOT used: in the 2026-10-21 data it reads either ~2.79 or ~2.41 GHz run to run,
+# while the user-mode cycle counter over the same timed windows gives ~2.77 GHz for both groups
+# (see ws_ctr_ghz / ws_ctr_ghz_lowprobe below), i.e. the low readings are a probe artifact.
+F_NOM_GHZ = float(os.environ.get("P2_CORE_GHZ", "2.8"))
 C_L1, C_L2, C_L3 = 32 * KIB, 256 * KIB, 20 * MIB      # i9-10900F per-core L1d/L2, shared L3
 LINE = 64
 GIB = 1024.0 ** 3
@@ -149,7 +155,7 @@ def zero_queue(proc, S):
     for name, lo, hi, label in levels:
         sel = [r for r in prim if lo <= int(r["bytes"]) <= hi]
         ns = plateau(prim, lo, hi, "ns_per_access")
-        cyc = plateau(prim, lo, hi, "cycles_per_access")
+        cyc = ns * F_NOM_GHZ if ok(ns) else math.nan
         vals = [num(r["ns_per_access_median"]) for r in sel]
         xns = plateau(xchk, lo, hi, "ns_per_access")
         hns = plateau(huge, lo, hi, "ns_per_access") if name == "DRAM" else math.nan
@@ -171,9 +177,13 @@ def zero_queue(proc, S):
     d4 = num(S.get("zq_DRAM_ns")); dh = num(S.get("zq_DRAM_hugens"))
     if ok(d4) and ok(dh):
         S["zq_DRAM_walk_ns"] = fmt(d4 - dh)
-    ghz = median([num(r.get("cycles_per_access_median")) / num(r.get("ns_per_access_median"))
-                  for r in prim])
-    S["zq_ghz"] = fmt(ghz)
+    S["zq_ghz"] = fmt(F_NOM_GHZ)
+    # what the add-chain probe would have given (median over sizes, and its low mode)
+    pg = [num(r.get("cycles_per_access_median")) / num(r.get("ns_per_access_median")) for r in prim]
+    pg = [g for g in pg if ok(g)]
+    if pg:
+        S["zq_probe_ghz_max"] = fmt(max(pg)); S["zq_probe_ghz_min"] = fmt(min(pg))
+        S["zq_DRAM_cyc_probe"] = fmt(plateau(prim, 4 * C_L3, 1 << 62, "cycles_per_access"))
 
 
 def working_set(proc, S):
@@ -185,6 +195,8 @@ def working_set(proc, S):
         return num(r[0][col + "_median"]) if r else math.nan
     big = 536870912
     S["ws_dram_rand4k_ns"] = fmt(at("random", "4k", big, "ns_per_access"))
+    S["ws_dram256_rand4k_ns"] = fmt(at("random", "4k", 268435456, "ns_per_access"))
+    freq_check(proc, S)
     S["ws_dram_randhuge_ns"] = fmt(at("random", "huge", big, "ns_per_access"))
     S["ws_dram_seq_ns"] = fmt(at("sequential", "4k", big, "ns_per_access"))
     S["ws_dram_rand4k_dtlb"] = fmt(at("random", "4k", big, "ctr_dtlb_miss_pa"))
@@ -199,6 +211,60 @@ def working_set(proc, S):
     cov = [num(r.get("ctr_cover_median")) for r in rows]
     if any(ok(c) for c in cov):
         S["ws_ctr_cover_min"] = fmt(min(c for c in cov if ok(c)))
+
+
+def freq_check(proc, S):
+    """Core clock during the timed windows, from the raw working_set rows: user-mode cycle
+    counter / wall time, split by what the add-chain probe (`ghz`) reported for that run."""
+    import glob
+    dirs = sorted(glob.glob(os.path.join(proc, "..", "raw", "working_set", "*", "raw.csv")))
+    if not dirs:
+        return
+    hi, lo, nlo, n = [], [], 0, 0
+    with open(dirs[-1], newline="") as f:
+        for r in csv.DictReader(f):
+            g, c, t = num(r.get("ghz")), num(r.get("ctr_cycles_pa")), num(r.get("ns_per_access"))
+            if not (ok(g) and ok(c) and ok(t)) or t <= 0:
+                continue
+            n += 1
+            (lo if g < 2.7 else hi).append(c / t)
+            nlo += g < 2.7
+    if hi + lo:
+        S["ws_ctr_ghz"] = fmt(median(hi + lo))
+    if hi:
+        S["ws_ctr_ghz_hiprobe"] = fmt(median(hi))
+    if lo:
+        S["ws_ctr_ghz_lowprobe"] = fmt(median(lo))
+    if n:
+        S["ws_probe_low_pct"] = fmt(100.0 * nlo / n, 2)
+
+
+def clock_check(proc, S):
+    """Diagnostic run of build/clock_check: core clock, fraction of wall time the pinned thread
+    actually executes, add-chain probe reading, and ACPI GPE activity per window."""
+    import glob
+    files = sorted(glob.glob(os.path.join(proc, "..", "raw", "clock_check", "*", "raw.csv")))
+    if not files:
+        return
+    rows = list(csv.DictReader(open(files[-1], newline="")))
+    if not rows:
+        return
+    gpe = [r for r in rows if num(r["gpe"]) > 0]
+    quiet = [r for r in rows if num(r["gpe"]) == 0]
+    S["cc_core_ghz"] = fmt(median([num(r["core_ghz"]) for r in rows]))
+    S["cc_windows"] = str(len(rows))
+    S["cc_gpe_pct"] = fmt(100.0 * len(gpe) / len(rows), 2)
+    for tag, sel in (("gpe", gpe), ("quiet", quiet)):
+        if sel:
+            S[f"cc_userfrac_{tag}"] = fmt(median([num(r["user_frac"]) for r in sel]), 3)
+            S[f"cc_core_ghz_{tag}"] = fmt(median([num(r["core_ghz"]) for r in sel]))
+            pr = [num(r["probe_ghz"]) for r in sel if r["kind"] == "probe"]
+            if pr:
+                S[f"cc_probe_{tag}"] = fmt(median(pr))
+    g = [num(r["gpe"]) for r in gpe]
+    if g:
+        S["cc_gpe_per_window"] = fmt(median(g), 3)
+        S["cc_window_ms"] = fmt(1000 * median([num(r["wall_s"]) for r in rows]), 3)
 
 
 def pattern(proc, S):
@@ -246,6 +312,11 @@ def rw_mix(proc, S):
         S[tag + "_gib"] = fmt(num(r["total_gib_s_median"]))
         S[tag + "_traffic"] = fmt(num(r["traffic_gib_s_median"]))
         S[tag + "_ns"] = fmt(num(r["probe_ns_median"]))
+    for t in ("1", "9"):
+        v = [num(r["probe_ns_median"]) for r in rows or [] if r["threads"] == t]
+        v = [x for x in v if ok(x)]
+        if v:
+            S[f"rw_t{t}_ns_min"] = fmt(min(v)); S[f"rw_t{t}_ns_max"] = fmt(max(v))
     ref = read(proc, "rw_mix_ref")
     for r in ref or []:
         S[f"rw_ref_{r['kernel']}"] = fmt(num(r["gib_s_median"]))
@@ -349,9 +420,33 @@ def intensity(proc, S):
             lmem = lam * 1e6 * wm * 1e-9 if ok(wm) else math.nan
             out.append([t, k, t * k, num(r["gen_gib_s_median"]), lam, W, L,
                         L / (t * k) if ok(L) else math.nan, wm, lmem])
+        # per-repetition IQR of bandwidth and L_mem, from the raw rows (pgfplots error bars)
+        import glob
+        raws = sorted(glob.glob(os.path.join(proc, "..", "raw", "intensity", "*", "raw_mlp.csv")))
+        reps = {}
+        if raws:
+            with open(raws[-1], newline="") as f:
+                for r in csv.DictReader(f):
+                    key = (int(r["threads"]), int(r["chains"]))
+                    g, w = num(r["gen_gib_s"]), num(r["probe_ns"])
+                    reps.setdefault(key, []).append((g, g * GIB / LINE * w * 1e-9 if ok(w) else math.nan))
+
+        def q(v, p):
+            v = sorted(x for x in v if ok(x))
+            if not v:
+                return math.nan
+            i = p * (len(v) - 1); lo = int(i)
+            return v[lo] if lo + 1 >= len(v) else v[lo] + (i - lo) * (v[lo + 1] - v[lo])
+        for o in out:
+            rr = reps.get((o[0], o[1]), [])
+            if rr:   # L_mem as the median of per-repetition products, consistent with its IQR
+                o[9] = q([b for _, b in rr], .5)
+            o += [q([a for a, _ in rr], .25), q([a for a, _ in rr], .75),
+                  q([b for _, b in rr], .25), q([b for _, b in rr], .75)]
         out.sort(key=lambda x: (x[0], x[1]))
         write_csv(proc, "mlp_littles", ["threads", "chains", "N", "gib_s", "mlines_s", "w_ns", "L",
-                                        "L_over_N", "wmem_ns", "L_mem"], out)
+                                        "L_over_N", "wmem_ns", "L_mem", "gib_s_q25", "gib_s_q75",
+                                        "L_mem_q25", "L_mem_q75"], out)
         one = [o for o in out if o[0] == 1]
         if one:
             best = max(one, key=lambda o: o[3])
@@ -443,7 +538,7 @@ def tlb(proc, S):
         a, b = num(S.get(f"tlb_4k_{n}_ns")), num(S.get(f"tlb_huge_{n}_ns"))
         if ok(a) and ok(b):
             S[f"tlb_gap_{n}_ns"] = fmt(a - b)
-            S[f"tlb_gap_{n}_cyc"] = fmt((a - b) * num(S.get("zq_ghz", "nan")))
+            S[f"tlb_gap_{n}_cyc"] = fmt((a - b) * F_NOM_GHZ)
             S[f"tlb_ratio_{n}"] = fmt(a / b, 3)
     sx = read(proc, "tlb_saxpy")
     for r in sx or []:
@@ -461,8 +556,10 @@ def pitfall(proc, S):
         return
     rows = sorted(rows, key=lambda r: int(r["wss_bytes"]))
     S["pit_small_gib"] = fmt(num(rows[0]["gib_s_median"]))
-    S["pit_small_kib"] = str(int(rows[0]["wss_bytes"]) // 1024)
-    big = [num(r["gib_s_median"]) for r in rows if int(r["wss_bytes"]) >= 64 * MIB]
+    S["pit_small_kib"] = str(round(int(rows[0]["wss_bytes"]) / 1024))   # 16320 B -> 16
+    S["pit_small_bytes"] = rows[0]["wss_bytes"]
+    # DRAM-resident: >= 3x the LLC (the "64 MiB" point is 67108800 B after rounding to loop units)
+    big = [num(r["gib_s_median"]) for r in rows if int(r["wss_bytes"]) >= 3 * C_L3]
     if big:
         S["pit_dram_lo"] = fmt(min(big)); S["pit_dram_hi"] = fmt(max(big))
         S["pit_ratio"] = fmt(num(rows[0]["gib_s_median"]) / median(big), 2)
@@ -472,7 +569,7 @@ def main():
     proc = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "..", "data", "processed")
     S = {}
-    for fn in (zero_queue, working_set, pattern, rw_mix, intensity, cache_miss, tlb, pitfall):
+    for fn in (zero_queue, working_set, clock_check, pattern, rw_mix, intensity, cache_miss, tlb, pitfall):
         try:
             fn(proc, S)
         except (KeyError, ValueError, ZeroDivisionError) as e:   # schema drift: skip, don't die

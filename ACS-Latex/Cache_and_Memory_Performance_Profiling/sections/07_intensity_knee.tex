@@ -77,8 +77,8 @@ bottleneck: requests no longer finish faster, they queue.
 \subsection{Little's Law with measured latency}
 For every load level we compute the mean number of lines in flight, $L = \lambda W$
 \cite{little1961proof}, with $\lambda$ the delivered line rate and $W$ the \emph{measured} loaded latency
-of that same window. For comparison, $L_0 = \lambda W_0$ uses the unloaded latency, as the previous version
-of this report did. $L_0$ rises to \valnum{int_L0max} lines at saturation and then stays flat: that is the
+of that same window. For comparison, $L_0 = \lambda W_0$ uses the unloaded latency, the usual shortcut
+when loaded latency is not measured. $L_0$ rises to \valnum{int_L0max} lines at saturation and then stays flat: that is the
 concurrency the memory system can actually \emph{serve} at about \qty{30}{\gibi\byte\per\second}. $L$, in
 contrast, keeps growing to \valnum{int_Lmax} lines at $T=9$; the difference $L - L_0$ is requests waiting in
 queues, which is exactly why latency rises without any bandwidth gain. At the knee,
@@ -111,9 +111,9 @@ $L=\valnum{int_knee_lines}$.
       \begin{axis}[acs, height=0.85\linewidth, xmode=log, log basis x=2, ymode=log, log basis y=2,
                    xlabel={Offered concurrency $N=T\cdot k$}, ylabel={$L_{\text{mem}}=\lambda W_{\text{mem}}$}, legend pos=north west,
                    legend style={font=\scriptsize}]
-        \addplot+[mark=*] table[x=N, y=L_mem, only if={threads}{1}, col sep=comma] {data/mlp_littles.csv};
+        \addplot+[mark=*, iqr bars] table[x=N, y=L_mem, only if={threads}{1}, col sep=comma, lmem iqr] {data/mlp_littles.csv};
         \addlegendentry{$T=1$, $k=1\ldots32$}
-        \addplot+[mark=square*] table[x=N, y=L_mem, only if={chains}{8}, col sep=comma] {data/mlp_littles.csv};
+        \addplot+[mark=square*, iqr bars] table[x=N, y=L_mem, only if={chains}{8}, col sep=comma, lmem iqr] {data/mlp_littles.csv};
         \addlegendentry{$k=8$, $T=1\ldots9$}
         \addplot[densely dashed, black!50, domain=1:80, samples=2] {x};
         \addlegendentry{$L=N$}
@@ -127,23 +127,24 @@ $L=\valnum{int_knee_lines}$.
       \begin{axis}[acs, height=0.85\linewidth, xmode=log, log basis x=2, ymin=0,
                    xlabel={Offered concurrency $N=T\cdot k$}, ylabel={Bandwidth (GiB/s)}, legend pos=north west,
                    legend style={font=\scriptsize}]
-        \addplot+[mark=*] table[x=N, y=gib_s, only if={threads}{1}, col sep=comma] {data/mlp_littles.csv};
+        \addplot+[mark=*, iqr bars] table[x=N, y=gib_s, only if={threads}{1}, col sep=comma, gib iqr] {data/mlp_littles.csv};
         \addlegendentry{$T=1$}
-        \addplot+[mark=square*] table[x=N, y=gib_s, only if={chains}{8}, col sep=comma] {data/mlp_littles.csv};
+        \addplot+[mark=square*, iqr bars] table[x=N, y=gib_s, only if={chains}{8}, col sep=comma, gib iqr] {data/mlp_littles.csv};
         \addlegendentry{$k=8$}
       \end{axis}
     \end{tikzpicture}}
     \caption{Random-read bandwidth vs.\ $N$.}
   \end{subfigure}
-  \caption{Known-concurrency sweep: $k$ independent random chases per core. $L_{\text{mem}}$ uses the
+  \caption{Known-concurrency sweep: $k$ independent random chases per core (median of 8 windows, bars:
+  IQR). $L_{\text{mem}}$ uses the
   memory latency $W_{\text{mem}}$ measured by the concurrent probe; the dashed line is $L=N$, which would be
   reached only if every chain always had a request in the memory system.}\label{fig:mlp}
 \end{figure}
 
-\paragraph{What the known-concurrency sweep shows.} A first analysis computed $L=\lambda W$ from each
-chain's own step time and found $L/N$ between \val{mlp_LN_min} and \val{mlp_LN_max}. That is \emph{not} a
-validation of Little's Law: with $W$ defined as the time per chain step, $\lambda W = N$ holds by
-construction, so it only confirms the progress accounting. The informative quantity is
+\paragraph{What the known-concurrency sweep shows.} Computing $L=\lambda W$ with $W$ taken as each
+chain's own step time gives $L/N$ between \val{mlp_LN_min} and \val{mlp_LN_max}. That is \emph{not} a
+validation of Little's Law: with that $W$, $\lambda W = N$ holds by construction, so it only confirms the
+progress accounting. The informative quantity is
 $L_{\text{mem}} = \lambda W_{\text{mem}}$, where $W_{\text{mem}}$ is the latency of a memory request measured
 at the same time by the probe (\valqty{mlp_t1_wmem}{\nano\second} on average with one generator core). One
 core reaches its best random-read bandwidth, \valqty{mlp_t1_peak_gib}{\gibi\byte\per\second}, at
@@ -163,8 +164,7 @@ one core $L=\valnum{int_t1_L}$ lines in flight at \valqty{int_t1_gib}{\gibi\byte
 (\cref{tab:littles-law}), almost three times the \valnum{mlp_t1_Lmem_max} demand misses one core sustains.
 There is no contradiction: in a sequential stream most lines are brought in by the L2 hardware prefetcher,
 whose requests are tracked in the L2's own request queue rather than in the L1 fill buffers, so a streaming
-core keeps more lines in flight than a core issuing random demand misses. The previous version of this
-report claimed ``\ensuremath{\sim}10 fill buffers'' next to a table showing 20 lines for one core and did not
-explain the difference; the two measurements now quantify both limits. The \valnum{int_L0max} lines the
+core keeps more lines in flight than a core issuing random demand misses. Quoting the fill-buffer count
+as the per-core limit is correct only for demand misses; the two measurements quantify both limits. The \valnum{int_L0max} lines the
 controller serves at saturation are about two streaming cores' worth of concurrency (with queueing, four
 cores are needed to reach 95\% of peak), but six random-access cores' worth.

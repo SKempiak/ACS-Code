@@ -11,7 +11,7 @@ bandwidth, and a justified compute- vs.\ memory-bound conclusion.}
   should come closest to the compute roof.
 \end{hypothesis}
 \begin{hypothesis}
-  (Added with the measured ceilings, before they were run.) Even the L1 bandwidth roof should put the
+  (For the measured ceilings.) Even the L1 bandwidth roof should put the
   ridge point above \qty{0.5}{\flop\per\byte}, so the cache-resident native kernels should also be
   bounded by bandwidth (or by the load/store ports that define it), not by the FMA units.
 \end{hypothesis}
@@ -100,16 +100,16 @@ cache-aware roofline). Both ceilings are \emph{measured by separate microbenchma
           \addlegendentry{scalar peak}
         }{}
         \addplot+[only marks, mark=*, nodes near coords, point meta=explicit symbolic,
-                  every node near coord/.style={font=\tiny, anchor=south west}]
-          table[x=ai, y=gflops_median, meta=kernel, only if={variant}{native}, only if={level}{L1}] {data/roofline_points.csv};
+                  every node near coord/.style={font=\tiny, anchor=south west}, iqr bars]
+          table[x=ai, y=gflops_median, iqr of=gflops, meta=kernel, only if={variant}{native}, only if={level}{L1}] {data/roofline_points.csv};
         \addlegendentry{native, L1-resident}
-        \addplot+[only marks, mark=square*] table[x=ai, y=gflops_median, only if={variant}{native}, only if={level}{L2}] {data/roofline_points.csv};
+        \addplot+[only marks, mark=square*, iqr bars] table[x=ai, y=gflops_median, iqr of=gflops, only if={variant}{native}, only if={level}{L2}] {data/roofline_points.csv};
         \addlegendentry{native, L2-resident}
-        \addplot+[only marks, mark=triangle*] table[x=ai, y=gflops_median, only if={variant}{native}, only if={level}{L3}] {data/roofline_points.csv};
+        \addplot+[only marks, mark=triangle*, iqr bars] table[x=ai, y=gflops_median, iqr of=gflops, only if={variant}{native}, only if={level}{L3}] {data/roofline_points.csv};
         \addlegendentry{native, L3-resident}
-        \addplot+[only marks, mark=diamond*] table[x=ai, y=gflops_median, only if={variant}{native}, only if={level}{DRAM}] {data/roofline_points.csv};
+        \addplot+[only marks, mark=diamond*, iqr bars] table[x=ai, y=gflops_median, iqr of=gflops, only if={variant}{native}, only if={level}{DRAM}] {data/roofline_points.csv};
         \addlegendentry{native, DRAM}
-        \addplot+[only marks, mark=o, black] table[x=ai, y=gflops_median, only if={variant}{scalar}, only if={level}{DRAM}] {data/roofline_points.csv};
+        \addplot+[only marks, mark=o, black, iqr bars] table[x=ai, y=gflops_median, iqr of=gflops, only if={variant}{scalar}, only if={level}{DRAM}] {data/roofline_points.csv};
         \addlegendentry{scalar, DRAM}
       \end{axis}
     \end{tikzpicture}%
@@ -117,7 +117,7 @@ cache-aware roofline). Both ceilings are \emph{measured by separate microbenchma
   \caption{Cache-aware roofline for one core. Roofs: measured triad bandwidth per level, capped by the
   measured AVX2-FMA float32 peak; thin red lines: the measured SSE and scalar peaks that bound the
   \code{autovec} and \code{scalar} builds. Points: kernel GFLOP/s from \cref{sec:baseline} at
-  $N=\num{1024}$, \num{16384}, \num{524288} and \num{16777216} (L1, L2, L3, DRAM).}\label{fig:roofline}
+  $N=\num{1024}$, \num{16384}, \num{524288} and \num{16777216} (L1, L2, L3, DRAM), median with IQR error bars (mostly smaller than the markers).}\label{fig:roofline}
 \end{figure}
 
 \subsection{Analysis}
@@ -148,8 +148,8 @@ the copy stream (\qty{26.3}{\gibi\byte\per\second} actual) shows that the sustai
 depends a little on the pattern; the triad roof is a reference, not an upper bound to the byte.
 Because the roof now comes from a different loop, a kernel landing on it is evidence, not a
 tautology. The scalar DRAM points sit at \SIrange{39}{68}{\percent} of the same roof. They are the
-instruction-bound loops of \cref{sec:locality}, which is why SIMD still pays $1.5\text{--}2.8\times$
-there.
+instruction-bound loops of \cref{sec:locality}, which is why SIMD still pays $1.49\times$ (multiply), $1.85\times$ (SAXPY)
+and $2.76\times$ (stencil) at these points.
 
 \emph{Cache-resident kernels.} The L3-resident native points sit at \SIrange{96}{101}{\percent} of the
 L3 roof (SAXPY \SI{100}{\percent}, multiply \SI{101}{\percent}, stencil \SI{96}{\percent}), so L3

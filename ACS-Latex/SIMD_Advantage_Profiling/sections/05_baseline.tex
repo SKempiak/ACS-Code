@@ -42,8 +42,9 @@ across working-set sizes.}
     \end{tikzpicture}%
   }
   \caption{Speedup of the SIMD builds over scalar (median; error bars: range implied by the two
-  IQRs, \cref{sec:method}). Gains peak while data is cache-resident and compress in DRAM (to
-  $\approx1.4$--$1.9\times$, stencil $2.7\times$); the dot product never benefits.}\label{fig:baseline-speedup}
+  IQRs, \cref{sec:method}). Gains peak while data is cache-resident and compress in DRAM (at
+  $N=2^{24}$: SAXPY $1.85\times$, multiply $1.49\times$, stencil $2.76\times$); the dot product
+  never benefits.}\label{fig:baseline-speedup}
 \end{figure}
 
 \begin{figure}[tbp]
@@ -93,7 +94,7 @@ By $N=\num{16777216}$ (\qty{128}{\mebi\byte}, far past L3) every speedup has com
 $1.85\times$, multiply $1.49\times$, stencil $2.76\times$, dot $1.00\times$.
 \Cref{fig:baseline-throughput} shows the asymmetry behind this. Native SAXPY falls from
 \num{20.1} to \qty{4.8}{\giga\flop\per\second} on a DRAM plateau, while scalar only falls from
-\numrange{3.3}{3.6} to \qtyrange{2.6}{2.8}{\giga\flop\per\second}. The two plateaus do not merge
+about \qty{3.5}{\giga\flop\per\second} (\numrange{3.3}{3.6} in cache) to about \qty{2.7}{\giga\flop\per\second} (\numrange{2.6}{2.8} in DRAM). The two plateaus do not merge
 because scalar SAXPY is close to its own instruction-throughput limit even in DRAM: it needs
 \numrange{1.5}{1.8}~cycles of core work per element with all data in cache and only
 $\approx2.0$~cycles per element from DRAM (\cref{sec:locality}). At the fixed

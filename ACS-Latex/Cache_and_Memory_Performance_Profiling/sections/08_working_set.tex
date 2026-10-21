@@ -45,13 +45,13 @@
       \begin{axis}[acs, xmode=log, log basis x=2, height=0.85\linewidth, ymin=0,
                    xlabel={Working-set size (bytes)}, ylabel={Events per access}, legend pos=north west,
                    legend style={font=\scriptsize}]
-        \addplot+[mark=*] table[x=bytes, y=ctr_l1d_miss_pa_median, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
+        \addplot+[mark=*, iqr bars] table[x=bytes, y=ctr_l1d_miss_pa_median, iqr of=ctr_l1d_miss_pa, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
         \addlegendentry{L1D miss}
-        \addplot+[mark=square*] table[x=bytes, y=ctr_llc_ref_pa_median, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
+        \addplot+[mark=square*, iqr bars] table[x=bytes, y=ctr_llc_ref_pa_median, iqr of=ctr_llc_ref_pa, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
         \addlegendentry{LLC ref (L2 miss)}
-        \addplot+[mark=triangle*] table[x=bytes, y=ctr_llc_miss_pa_median, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
+        \addplot+[mark=triangle*, iqr bars] table[x=bytes, y=ctr_llc_miss_pa_median, iqr of=ctr_llc_miss_pa, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
         \addlegendentry{LLC miss}
-        \addplot+[mark=diamond*] table[x=bytes, y=ctr_dtlb_miss_pa_median, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
+        \addplot+[mark=diamond*, iqr bars] table[x=bytes, y=ctr_dtlb_miss_pa_median, iqr of=ctr_dtlb_miss_pa, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
         \addlegendentry{dTLB walk}
         \acsvline{32768}{L1d}
         \acsvline{262144}{L2}

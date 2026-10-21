@@ -44,7 +44,12 @@ float32/int32 pairing confirms the effect is lane count and not a floating-point
 L2/L3-bound, it narrows ($1.97\times$ vs $1.40\times$).
 
 In DRAM the picture changes as predicted: at $N=\num{16777216}$ every speedup has compressed (f32
-$1.38\times$, f64 $1.17\times$), and float64's \emph{absolute} throughput is half of float32's
+$1.38\times$, f64 $1.17\times$). The float32 multiply figure is lower than the $1.49\times$ the
+baseline sweep measured at the same $N$ (\cref{sec:baseline}). The two are separate runs: the native
+throughput agrees (\num{1.65} vs \qty{1.64}{\giga\flop\per\second}), but the scalar run was faster
+here (\num{1.19} vs \qty{1.10}{\giga\flop\per\second}). That is the same per-process scalar
+variability seen elsewhere (\cref{sec:anomalies}), so we quote multiply's DRAM speedup as
+$1.4\text{--}1.5\times$. Float64's \emph{absolute} throughput is half of float32's
 (\num{0.82} vs \qty{1.65}{\giga\flop\per\second}) because each element moves \qty{8}{\byte} instead of
 \num{4} and the kernel is bandwidth-bound. So data type acts through two separate mechanisms: lane
 count sets the cache-resident speedup ceiling, while bytes-per-element sets the DRAM throughput. A

@@ -38,7 +38,8 @@ cores() {
   cps=$(lscpu 2>/dev/null | awk -F: '/Core\(s\) per socket/{gsub(/ /,"",$2);print $2}')
   tpc=$(lscpu 2>/dev/null | awk -F: '/Thread\(s\) per core/{gsub(/ /,"",$2);print $2}')
   local logical; logical=$(nproc --all 2>/dev/null)
-  echo "${sockets:-?} socket(s), ${cps:-?} cores/socket, ${tpc:-?} threads/core (${logical:-?} logical)"
+  local online; online=$(nproc 2>/dev/null)
+  echo "${sockets:-?} socket(s), ${cps:-?} cores/socket, ${tpc:-?} threads/core (${online:-?} of ${logical:-?} logical CPUs online)"
 }
 smt() {
   local tpc; tpc=$(lscpu 2>/dev/null | awk -F: '/Thread\(s\) per core/{gsub(/ /,"",$2);print $2}')

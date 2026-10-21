@@ -423,6 +423,9 @@ int main(int argc, char **argv) {
         fprintf(stderr, "warning: could not pin to CPU %d\n", c.cpu);
 
     data_t d = alloc_data(&c);
+    if (getenv("ACS_DEBUG_ADDR")) /* diagnostics only: array placement (4K-aliasing checks) */
+        fprintf(stderr, "x=%p y=%p (y-x) mod 4096 = %ld\n", d.x.ptr, d.y.ptr,
+                (long)(((uintptr_t)d.y.ptr - (uintptr_t)d.x.ptr) & 4095u));
 
     if (c.do_check) {
         double err = 0.0;

@@ -21,3 +21,13 @@
 \newcommand{\valnum}[1]{\IfVal{#1}{\num{\csname acsval@#1\endcsname}}{\tbd}}
 \newcommand{\valqty}[2]{\IfVal{#1}{\qty{\csname acsval@#1\endcsname}{#2}}{\tbd\,\unit{#2}}}
 \makeatother
+
+%% IQR error bars for derived columns written by derive.py (mlp_littles.csv)
+\pgfplotsset{
+  /pgfplots/table/lmem iqr/.style={
+    y error plus expr={\thisrow{L_mem_q75}-\thisrow{L_mem}},
+    y error minus expr={\thisrow{L_mem}-\thisrow{L_mem_q25}}},
+  /pgfplots/table/gib iqr/.style={
+    y error plus expr={\thisrow{gib_s_q75}-\thisrow{gib_s}},
+    y error minus expr={\thisrow{gib_s}-\thisrow{gib_s_q25}}},
+}

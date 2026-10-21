@@ -72,9 +72,15 @@ FIO instead.
                     generator. \code{make test} checks that \code{gzip} cannot compress the result \\
   Latency metric  & per-I/O submit$\to$completion latency; p50/p95/p99/p99.9 from the full sorted
                     sample, with no reservoir truncation \\
-  Preconditioning & before each experiment, one sequential O\_DIRECT write pass over the
-                    \code{fallocate}d test file; repeated before every \emph{sequential-read} group
-                    because random writes scatter the physical layout (\cref{sec:device-state}) \\
+  Preconditioning & one sequential O\_DIRECT write pass over the \code{fallocate}d test file,
+                    repeated before every \emph{sequential-read} group, because random writes scatter
+                    the physical layout (\cref{sec:device-state}). The current \code{run.sh} also
+                    preconditions before \emph{every} experiment, including inside \code{all}. In the
+                    reported 2026-10-21 run, \code{all} preconditioned only once, before
+                    \code{zero_queue}. Later experiments started from the file the previous one left;
+                    only the sequential-read groups of \code{zero_queue}, \code{block_size},
+                    \code{pitfall} and \code{layout} were re-filled. \code{rerun_clean.sh}
+                    (\cref{app:repro}) preconditions before each experiment \\
   Temperature     & NVMe composite temperature recorded with every repetition (\code{temp_c}) \\
   Driver          & \code{SSD_Performance_Profiling/scripts/run.sh}; benchmark \code{src/blkbench.c} \\
 \end{knobs}
@@ -84,8 +90,9 @@ full. The Little's-Law check in \cref{sec:queue-depth} shows where this stops be
 \subsection{Execution and run order}
 The timed runs were executed by the author in a terminal, using the scripts described here, with the
 CPU governor at \code{performance}, turbo off and SMT off. \code{run.sh all} ran the experiments in the
-order of \cref{tab:budget} from 10:32 to 10:54. \code{SUSTAIN_GIB=60 run.sh device_state} followed
-immediately, from 10:54 to 11:23. The drive's state carries over from one experiment to the next, and
+order of \cref{tab:budget} on 2026-10-21, from 10:32 to 10:54. \code{SUSTAIN_GIB=60 run.sh
+device_state} followed immediately, from 10:54 to 11:23. Harness development and a discarded pilot run took place from 2026-10-12 to 2026-10-20; all reported
+numbers come from the 2026-10-21 runs. The drive's state carries over from one experiment to the next, and
 nothing in between trims or idles it: the SLC-cache fill level and the background folding/GC backlog
 are both inherited. Several results below depend on this, and each says so: the write collapse in
 \cref{sec:block-size}, the tail runs in \cref{sec:tail}, and the whole of \cref{sec:device-state}.

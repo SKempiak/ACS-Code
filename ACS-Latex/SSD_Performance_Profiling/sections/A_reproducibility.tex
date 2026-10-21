@@ -14,10 +14,35 @@ make -C SSD_Performance_Profiling test        # safety + sanity checks (~70 MiB 
 scripts/collect_env.sh --tex > ../ACS-Latex/common/system_info.tex
 export ACS_SCRATCH="$HOME/acs_ssd_scratch"    # a directory on the SSD under test
 SSD_Performance_Profiling/scripts/run.sh dryrun        # device, link, temperature, space; writes nothing
-SSD_Performance_Profiling/scripts/run.sh all           # 2 GiB-file sweeps + fio_check (~35 min)
+SSD_Performance_Profiling/scripts/run.sh all           # 2 GiB-file sweeps + fio_check (~23 min measured)
 SUSTAIN_GIB=60 SSD_Performance_Profiling/scripts/run.sh device_state  # sustained + working set (needs 70 GiB free)
 scripts/sync_data.sh SSD_Performance_Profiling
 cd ../ACS-Latex && make ssd
+\end{lstlisting}
+
+\paragraph{Clean re-run.} Several results in this report are shaped by the run order: \code{all}
+followed directly by \code{device_state}, with no TRIM and no idle (\cref{sec:method}).
+\code{scripts/rerun_clean.sh} repeats the affected experiments in an order that avoids these confounds.
+It first checks free space (at least \code{SUSTAIN_GIB}$+$\qty{10}{\gibi\byte}), drive idleness
+(\code{/sys/block/nvme0n1/stat} over \qty{10}{\second}) and recent-TRIM evidence in the journal. It then
+runs:
+\begin{enumerate}[nosep]
+  \item the \qty{60}{\gibi\byte} sustained fill on the fresh drive;
+  \item a \qty{20}{\minute} idle, then the working set with spans forward and reverse;
+  \item a \qty{10}{\minute} idle, then tail on a freshly preconditioned file;
+  \item zero-queue;
+  \item block-size, now with QD=32 random reads and a \qty{15}{\second} pause before each write point;
+  \item queue-depth;
+  \item \code{fio_check} with alternating engine order.
+\end{enumerate}
+Steps 5--7 each follow a \qty{5}{\minute} rest. The upper bound is \ensuremath{\sim}\qty{135}{\gibi\byte}
+written in \ensuremath{\sim}\qty{2}{\hour}; peak space in use is \qty{60}{\gibi\byte}.
+\begin{lstlisting}[language=bash]
+sudo fstrim -v /                 # then leave the machine idle >= 30 min
+export ACS_SCRATCH="$HOME/acs_ssd_scratch"
+SSD_Performance_Profiling/scripts/rerun_clean.sh dryrun
+SSD_Performance_Profiling/scripts/rerun_clean.sh
+scripts/sync_data.sh SSD_Performance_Profiling
 \end{lstlisting}
 
 \code{ACS_SCRATCH} selects the device under test, and the \code{safety.sh} gate is identical wherever it

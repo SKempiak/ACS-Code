@@ -12,7 +12,7 @@
 \end{hypothesis}
 
 \begin{hypothesis}
-  (Added for the extended sweep, before it was run.) The explicit AVX2 gather
+  (For the extended sweep.) The explicit AVX2 gather
   (\code{vgatherdps}, \cref{sec:vectorization}) loads eight lanes per instruction but still needs one
   cache line per element and eight scalar stores, so we expect it to be at best modestly faster than
   the scalar gather in cache and no faster in DRAM. On this CPU the \enquote{Gather Data Sampling}
@@ -89,7 +89,16 @@
 
 \subsection{Analysis}
 \Cref{tab:stride} makes the pattern stark. Only unit stride lets \code{native} beat \code{scalar}:
-$3.90\times$ at $N=\num{32768}$ and $1.99\times$ in DRAM. At stride~2 and beyond the three builds
+$3.4\text{--}3.9\times$ at $N=\num{32768}$ and $1.99\times$ in DRAM. The range at
+$N=\num{32768}$ comes from the scalar build, not from the kernels. The table's \emph{unit} row
+(plain \code{saxpy_f32}, scalar \qty{0.635}{\nano\second}, $3.90\times$) and the stride-1 point of
+\cref{fig:stride}a (\code{saxpy_f32_stride} with $s=1$, scalar \qty{0.568}{\nano\second},
+$3.39\times$) compile to the identical scalar loop (same four instructions, same alignment, checked
+in the disassembly) and use the same allocation. Scalar SAXPY at this size runs in one of two
+states, $\approx1.6$ or $\approx1.8$ cycles per element, and the state is picked per process and
+occasionally changes within one. Twelve alternating check runs (six each, cycle counter on) gave
+\qtyrange{0.58}{0.64}{\nano\second} for \emph{unit} and \qtyrange{0.57}{0.65}{\nano\second} for
+stride~1. We did not identify the cause (\cref{sec:anomalies}). At stride~2 and beyond the three builds
 agree within \numrange{1.00}{1.02}$\times$ (native vs.\ scalar) at both sizes; \code{autovec} is
 within \SI{10}{\percent} of them everywhere, as expected since its strided loop is equally scalar.
 Two things happen at once. First, the effective bandwidth collapses. In DRAM the time per processed
@@ -108,7 +117,7 @@ prefetcher. Even at $N=\num{32768}$ it costs \qty{1.92}{\nano\second}, $12\times
 \emph{Hardware gather.} The explicit AVX2 kernel takes \num{3.20} and \qty{10.56}{\nano\second} per
 element at $N=\num{32768}$ and \num{4194304}. That is $1.54\times$ and $1.03\times$ the time of the
 scalar build's gather, i.e.\ \emph{slower}, decisively so when the data is cache-resident. The
-hypothesis written before the run anticipated this. Each 8-lane step issues two \code{vgatherdps},
+hypothesis above anticipated this. Each 8-lane step issues two \code{vgatherdps},
 which the active Gather Data Sampling microcode mitigation is known to make expensive, followed by
 eight scalar stores. In DRAM the random line fetches dominate either way and the difference
 shrinks to \SI{3}{\percent}. We could not run without the mitigation (that needs a reboot with

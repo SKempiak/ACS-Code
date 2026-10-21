@@ -46,8 +46,12 @@
 #define MP_HUGE_ALIGN ((size_t)2 * 1024 * 1024)
 
 /* ------------------------------------------------------------ frequency */
-/* Realised core GHz: one dependent ADD per iteration (1-cycle latency; SUB/JNZ
- * macro-fuse), so iterations/second == core cycles/second. */
+/* Add-chain frequency probe: one dependent ADD per iteration, iterations / wall second.
+ * CAUTION (see clock_check.c and the report): this is NOT a reliable clock measurement.
+ * It assumes the loop runs at exactly 1 iteration/cycle (code-alignment dependent) and that
+ * the thread owns all of the wall time; on the test host ~1/3 of 0.3 s windows lose ~13% of
+ * wall time to ACPI GPE bursts, so it reads ~2.41 instead of ~2.79 GHz. The analysis
+ * converts ns -> cycles with the fixed 2.8 GHz clock instead (scripts/derive.py). */
 static inline double mp_measure_ghz(void) {
     uint64_t a = 1, n = 1000000000ull;
     double t0 = acs_now_sec();

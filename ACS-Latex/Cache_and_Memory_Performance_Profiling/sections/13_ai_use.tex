@@ -4,48 +4,57 @@
 Summarized from \code{AI_USE_LOG.md} in the code repository.
 
 \begin{description}[style=nextline]
-  \item[Tools used] Claude Code (Claude Opus~5) for coding, debugging and drafting this report;
-        GCC~\sysGCC{} for the builds. The AI wrote code and prose. The timed experiments were also run by Claude Code, on the
-        user's machine (\cref{tab:environment}) and with the user's approval, after the user had set the
-        frequency governor, disabled turbo and taken the SMT siblings offline. Every number comes from
-        those runs.
+  \item[Tools used] Claude Code throughout: with Claude Opus~5 for the first implementation
+        (2026-10-12 to 10-20), and with Claude Opus~5.5 for the rework of 2026-10-21 that produced every
+        measurement in this report. GCC~\sysGCC{} was used for the builds. The AI wrote the code and the
+        prose. Claude Code also ran the timed experiments, on the user's machine (\cref{tab:environment})
+        and with the user's approval, after the user had set the performance governor, disabled turbo
+        and taken the SMT siblings offline (these settings need root). Every number comes from those runs.
   \item[What they helped generate] The four microbenchmarks---\code{mem_latency} (Sattolo
-        pointer-chase with access-size, page-size and counter options), \code{mem_bandwidth} (multi-thread
+        pointer chase with access-size, page-size and counter options), \code{mem_bandwidth} (multi-thread
         streaming with read/write/copy/triad/rwmix and access-size modes), \code{mem_loaded} (loaded-latency
         probe with streaming, read/write and known-concurrency generators) and \code{kernel_miss}
-        (footprint-varying SAXPY with counters)---the shared helpers, the \code{perf_event_open} counter
-        code, the experiment driver (\code{run.sh}), \code{derive.py} and drafts of these sections.
-  \item[What was independently modified, tested, or rejected] Eight concrete corrections.
-        (1)~The first latency benchmark used a \emph{sequential} stride, which the prefetcher turned
-        into a \ensuremath{\sim}\qty{5}{\nano\second} ``latency'' (really throughput); it was replaced with a random
-        Sattolo cycle so exactly one request is outstanding---the sequential curve is now kept only as
-        a deliberate contrast in \cref{fig:working-set}. (2)~The huge-page experiment initially
-        \emph{assumed} THP backing because the governor was \code{always}; adding a runtime
-        \code{/proc/self/smaps_rollup} check revealed \code{AnonHugePages: 0 kB}, turning a false
-        ``huge pages don't help'' into an honest limitation (\cref{sec:tlb}). (3)~An AI-suggested
-        bandwidth test defaulted to a small buffer and reported \qty{56}{\gibi\byte\per\second} as
-        ``DRAM bandwidth''; this is the cache-reuse pitfall and is now documented as the required
-        negative case (\cref{sec:pitfall}) rather than quoted as a result. A review of the first
-        report against the rubric then found four more problems, all fixed and re-measured:
-        (4)~the read/write-mix kernel mixed \qty{8}{\byte} elements, so every line moved in both
-        directions (\cref{sec:rw-mix}); (5)~the throughput--latency knee was placed by eye and Little's
-        Law used the zero-queue latency---replaced by a concurrent loaded-latency probe, an objective
-        knee criterion and a known-concurrency check (\cref{sec:intensity}); (6)~the scalar unit-stride
-        kernel had been quoted as the single-core peak although strided data contradicted it
-        (\cref{sec:pattern}); (7)~a ``\qty{4}{\kibi\byte}'' buffer could silently receive huge pages
-        under THP \code{always}, so the page policy is now set explicitly and verified
-        (\cref{sec:tlb}). Table and prose numbers are now generated from the CSVs, after a hand-copied
-        table was found to disagree with its data file.
-        (8)~When the final data were analysed, the AI's first ``validation'' of Little's Law
-        ($L/N\approx1$ in the known-concurrency sweep) turned out to be an accounting identity; it was
-        replaced by $L_{\text{mem}}$ with the probe-measured memory latency (\cref{sec:intensity}). The
-        knee rule was likewise changed to follow offered load rather than delivered bandwidth, which is
-        noisy past saturation.
-  \item[Validation] Sanity checks in \code{scripts/validate.sh} assert the physically necessary
-        orderings (L1 $<$ L2 $<$ L3 $<$ DRAM latency; L1 bandwidth $>$ DRAM; multi-thread $>$
-        single-thread; loaded $>$ unloaded latency); its output is saved with every experiment. Hardware counters (read directly through
-        \code{perf_event_open}) confirm the miss level behind every latency step. Intel MLC was
+        (footprint-varying SAXPY with counters)---plus the shared helpers, the \code{perf_event_open} counter
+        code, the experiment driver (\code{run.sh}), \code{validate.sh}, \code{derive.py} and drafts of
+        every section.
+  \item[What was independently modified, tested, or rejected] Each item below is an AI output that was
+        wrong and was caught by a check, a review or the data:
+        \begin{enumerate}[(1),nosep,leftmargin=*]
+          \item The first latency benchmark used a \emph{sequential} ring, so the prefetcher turned it
+                into a \ensuremath{\sim}\qty{5}{\nano\second} ``latency''. It was replaced by a random Sattolo
+                cycle; the sequential curve is kept only as a contrast (\cref{fig:working-set}).
+          \item The first huge-page experiment assumed THP backing because THP was set to
+                \code{always}. A runtime \code{smaps_rollup} check showed \code{AnonHugePages: 0 kB}, so
+                its ``huge pages don't help'' would have been false. The allocation was rebuilt
+                (\qty{2}{\mebi\byte}-aligned mapping, \code{madvise} before first touch); the grant is now
+                verified for every run, and huge pages give a \val{tlbs_speedup}$\times$ speedup
+                (\cref{sec:tlb}).
+          \item The converse also happened: under THP \code{always}, a ``\qty{4}{\kibi\byte}'' buffer
+                could silently get huge pages. \code{MADV_NOHUGEPAGE} is now set explicitly.
+          \item An AI-suggested bandwidth test defaulted to a cache-resident buffer and reported tens of
+                \unit{\gibi\byte\per\second} as ``DRAM bandwidth''; this is now the documented pitfall
+                (\cref{sec:pitfall}).
+          \item The read/write-mix kernel mixed \qty{8}{\byte} elements, so every line moved in both
+                directions; mixes are now line-granular (\cref{sec:rw-mix}).
+          \item The throughput--latency knee was placed by eye, and Little's Law used the zero-queue
+                latency. Both were replaced by a concurrent loaded-latency probe and a stated knee rule
+                that follows offered load (\cref{sec:intensity}).
+          \item A ``validation'' of Little's Law ($L/N\approx1$) turned out to be an accounting identity.
+                It was replaced by $L_{\text{mem}}$ with the probe-measured memory latency.
+          \item The scalar unit-stride kernel was quoted as the single-core peak although the strided data
+                contradicted it (\cref{sec:pattern}).
+          \item A hand-copied table disagreed with its CSV. All tables and quoted numbers are now
+                generated from the data (\code{derive.py}, \code{summary.csv}).
+          \item Cycle counts were first converted with the in-process add-chain frequency probe, which
+                misreads the clock in about a third of runs (\cref{sec:method,sec:anomalies}). An
+                independent review caught this; conversion now uses the fixed \qty{2.8}{\giga\hertz}
+                clock, confirmed with the cycle counter.
+        \end{enumerate}
+  \item[Validation] \code{scripts/validate.sh} asserts the physically necessary orderings (L1 $<$ L2
+        $<$ L3 $<$ DRAM latency; L1 bandwidth $>$ DRAM; multi-thread $>$ single-thread; loaded $>$
+        unloaded latency) and agreement of the two latency methods; its output is saved with every
+        experiment. Hardware counters confirm the miss level behind every latency step. Intel MLC was
         unavailable for an external cross-check; the substitutes and their limits are stated in
-        \cref{sec:validation,sec:anomalies}. Every figure traces to a committed
-        raw/processed file (\cref{app:repro}).
+        \cref{sec:validation,sec:anomalies}. Every figure traces to a committed raw/processed file
+        (\cref{app:repro}).
 \end{description}

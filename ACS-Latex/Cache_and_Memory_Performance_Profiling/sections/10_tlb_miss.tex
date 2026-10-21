@@ -46,9 +46,9 @@ TLB reach and page-walk cost.
       \begin{axis}[acs, xmode=log, log basis x=2, height=0.85\linewidth, ymin=0,
                    xlabel={Pages touched}, ylabel={dTLB walks per access}, legend pos=north west,
                    legend style={font=\scriptsize}]
-        \addplot+[mark=*] table[x=nodes, y=ctr_dtlb_miss_pa_median, only if={pages}{4k}] {data/tlb_chase.csv};
+        \addplot+[mark=*, iqr bars] table[x=nodes, y=ctr_dtlb_miss_pa_median, iqr of=ctr_dtlb_miss_pa, only if={pages}{4k}] {data/tlb_chase.csv};
         \addlegendentry{\qty{4}{\kibi\byte} pages}
-        \addplot+[mark=square*] table[x=nodes, y=ctr_dtlb_miss_pa_median, only if={pages}{huge}] {data/tlb_chase.csv};
+        \addplot+[mark=square*, iqr bars] table[x=nodes, y=ctr_dtlb_miss_pa_median, iqr of=ctr_dtlb_miss_pa, only if={pages}{huge}] {data/tlb_chase.csv};
         \addlegendentry{\qty{2}{\mebi\byte} pages}
         \acsvline{64}{L1 dTLB}
         \acsvline{1536}{STLB}
@@ -84,15 +84,12 @@ For random SAXPY at $N=2^{24}$, \qty{2}{\mebi\byte} pages cut page walks from \v
 \val{tlb_ratio_65536}$\times$ of the dependent chase. Overlapping independent misses therefore does not
 hide the walks: each walk adds dependent page-table reads in front of its data miss.
 
-\paragraph{Huge pages are now verified, not assumed.} The previous TLB runs
-(\code{tlb/20261019-232253} and its repeat \code{tlb/20261019-233449}) recorded
-\code{AnonHugePages: 0 kB} on every run, so their ``huge'' curve was really \qty{4}{\kibi\byte} pages and the
-experiment showed nothing; the allocation path has since been replaced, so the cause can no longer be
-established. The benchmarks now map \qty{2}{\mebi\byte}-aligned regions and call \code{madvise} before the
+\paragraph{Huge pages are verified, not assumed.} Requesting huge pages does not guarantee them: a
+benchmark that only asks for THP can silently run on \qty{4}{\kibi\byte} pages and report ``no effect''
+(\cref{sec:anomalies}). The benchmarks map \qty{2}{\mebi\byte}-aligned regions and call \code{madvise} before the
 first touch; each row records the granted \code{AnonHugePages} (summarised in the run's
 \code{anon_thp.txt}), \code{validate.sh} checks the grant before each experiment, and the dTLB-walk counter
 independently confirms the page size in effect. In this run every ``huge'' configuration was
 fully backed: \code{AnonHugePages} equals the buffer size at every point (for example
 \qty{266240}{\kibi\byte} for the 65536-page chase, and \qty{327680}{\kibi\byte} for SAXPY at $N=2^{24}$,
-i.e.\ $x$, $y$ and the index array), and every \qty{4}{\kibi\byte} row records \qty{0}{\kibi\byte}. The
-superseded raw directories were removed from the repository.
+i.e.\ $x$, $y$ and the index array), and every \qty{4}{\kibi\byte} row records \qty{0}{\kibi\byte}.

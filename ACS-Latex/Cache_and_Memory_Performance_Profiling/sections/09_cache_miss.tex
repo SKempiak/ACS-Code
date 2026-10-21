@@ -44,15 +44,15 @@
       \begin{axis}[acs, xmode=log, log basis x=2, height=0.85\linewidth, ymin=0,
                    xlabel={$N$ (elements)}, ylabel={Events per element}, legend pos=north west,
                    legend style={font=\scriptsize}]
-        \addplot+[mark=*] table[x=n, y=ctr_l1d_miss_pe_median, only if={pattern}{random}] {data/cache_miss_ctr.csv};
+        \addplot+[mark=*, iqr bars] table[x=n, y=ctr_l1d_miss_pe_median, iqr of=ctr_l1d_miss_pe, only if={pattern}{random}] {data/cache_miss_ctr.csv};
         \addlegendentry{L1D miss (rand)}
-        \addplot+[mark=triangle*] table[x=n, y=ctr_llc_miss_pe_median, only if={pattern}{random}] {data/cache_miss_ctr.csv};
+        \addplot+[mark=triangle*, iqr bars] table[x=n, y=ctr_llc_miss_pe_median, iqr of=ctr_llc_miss_pe, only if={pattern}{random}] {data/cache_miss_ctr.csv};
         \addlegendentry{LLC miss (rand)}
-        \addplot+[mark=diamond*] table[x=n, y=ctr_dtlb_miss_pe_median, only if={pattern}{random}] {data/cache_miss_ctr.csv};
+        \addplot+[mark=diamond*, iqr bars] table[x=n, y=ctr_dtlb_miss_pe_median, iqr of=ctr_dtlb_miss_pe, only if={pattern}{random}] {data/cache_miss_ctr.csv};
         \addlegendentry{dTLB walk (rand)}
-        \addplot+[mark=o, dashed] table[x=n, y=ctr_l1d_miss_pe_median, only if={pattern}{sequential}] {data/cache_miss_ctr.csv};
+        \addplot+[mark=o, dashed, iqr bars] table[x=n, y=ctr_l1d_miss_pe_median, iqr of=ctr_l1d_miss_pe, only if={pattern}{sequential}] {data/cache_miss_ctr.csv};
         \addlegendentry{L1D miss (seq)}
-        \addplot+[mark=x, dashed] table[x=n, y=ctr_llc_miss_pe_median, only if={pattern}{sequential}] {data/cache_miss_ctr.csv};
+        \addplot+[mark=x, dashed, iqr bars] table[x=n, y=ctr_llc_miss_pe_median, iqr of=ctr_llc_miss_pe, only if={pattern}{sequential}] {data/cache_miss_ctr.csv};
         \addlegendentry{LLC miss (seq)}
         \acsvline{2048}{L1d}
         \acsvline{16384}{L2}

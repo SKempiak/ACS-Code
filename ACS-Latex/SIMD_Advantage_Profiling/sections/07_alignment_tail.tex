@@ -11,7 +11,7 @@ effects with a convincing explanation (with \cref{sec:stride}).}
   (tens of percent) and to recur with \qty{64}{\byte} period as the offset sweeps a cache line.
 \end{hypothesis}
 \begin{hypothesis}
-  (Added for the extended sweep, before it was run.) The \code{scalar} build issues \qty{4}{\byte}
+  (For the extended sweep.) The \code{scalar} build issues \qty{4}{\byte}
   loads that never straddle a line, so it should be insensitive to the offset; \code{autovec}
   (\qty{16}{\byte} loads) should show a smaller penalty than \code{native}. With a DRAM-resident
   array the misalignment cost should disappear into the memory stall time for all builds. For short
@@ -22,7 +22,7 @@ effects with a convincing explanation (with \cref{sec:stride}).}
 
 \begin{knobs}
   Fixed       & kernel SAXPY; float32; unit stride \\
-  Varied      & start offset $0\ldots\qty{60}{\byte}$ (multiples of \num{4}) at $N=\num{4096}$
+  Varied      & start offsets $0, 4, 8, \ldots, \qty{60}{\byte}$ (every multiple of \num{4}) at $N=\num{4096}$
                 (L1-resident, isolates the prologue from bandwidth) and $N=\num{16777216}$
                 (\qty{128}{\mebi\byte}, DRAM-resident); tail: every $N$ from \num{8} to \num{72} and
                 $N$ stepping across an \num{8}-lane boundary near \num{4096}, offset $0$; all three
@@ -30,9 +30,6 @@ effects with a convincing explanation (with \cref{sec:stride}).}
   Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh alignment} \\
 \end{knobs}
 
-% New layout (all variants, DRAM offsets, short-N tail) once the extended sweep has produced
-% data/alignment_tail.csv; until then the original native-only figure from alignment.csv.
-\IfFileExists{data/alignment_tail.csv}{%
 \begin{figure}[tbp]
   \centering
   \begin{subfigure}[t]{0.49\linewidth}
@@ -87,70 +84,50 @@ effects with a convincing explanation (with \cref{sec:stride}).}
   \end{subfigure}
   \caption{Tail handling: remainder elements processed by the vectorized epilogue (offset $0$).}\label{fig:tail}
 \end{figure}
-}{%
-\begin{figure}[tbp]
-  \centering
-  \IfDataExists{alignment}{%
-    \begin{subfigure}[t]{0.49\linewidth}
-      \begin{tikzpicture}
-        \begin{axis}[acs, height=0.8\linewidth, xlabel={Start offset (bytes)}, ylabel={Time per element (ns)}]
-          \addplot+[var native, forget plot, iqr bars] table[x=offset, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{native}, only if={n}{4096}] {data/alignment.csv};
-        \end{axis}
-      \end{tikzpicture}
-      \caption{Misaligned starts ($N=4096$).}
-    \end{subfigure}\hfill
-    \begin{subfigure}[t]{0.49\linewidth}
-      \begin{tikzpicture}
-        \begin{axis}[acs, height=0.8\linewidth, xlabel={$N$ (elements)}, ylabel={Time per element (ns)}]
-          \addplot+[var native, forget plot, iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{native}, only if={offset}{0}] {data/alignment.csv};
-        \end{axis}
-      \end{tikzpicture}
-      \caption{Tail length (offset $0$).}
-    \end{subfigure}%
-  }
-  \caption{Alignment and tail-handling costs for native SAXPY.}\label{fig:alignment}\label{fig:tail}
-\end{figure}
-}
 
 
 \subsection{Analysis}
 \emph{Misaligned starts, L1-resident} (\cref{fig:alignment}a). The penalty is real, it scales with
-vector width, and it repeats with the load width. Native SAXPY runs at \qty{0.099}{\nano\second} per
-element at offsets $0$ and \qty{32}{\byte} (both \qty{32}{\byte}-aligned, since the base is
-\qty{64}{\byte}-aligned). Offsets \numrange{4}{24} cost \qty{0.143}{\nano\second} (\SI{+45}{\percent}),
-and \numlist{28;36;60} cost \qty{0.157}{\nano\second} (\SI{+59}{\percent}). \code{autovec}
-(\qty{16}{\byte} loads) is fast at offsets $0$, \num{16} and \num{32} (\qtyrange{0.190}{0.196}{\nano\second}),
-i.e.\ with the \qty{16}{\byte} period of its loads, and up to \SI{26}{\percent} slower elsewhere.
-\code{scalar} varies by only \SI{1.8}{\percent} (\qtyrange{0.563}{0.573}{\nano\second}). This
-ordering, native \SI{60}{\percent} > autovec \SI{26}{\percent} > scalar \SI{2}{\percent}, is what
-cache-line splits predict. At a non-multiple-of-32 offset every second \qty{32}{\byte} load straddles
-a \qty{64}{\byte} line, but only every fourth \qty{16}{\byte} load does, and a \qty{4}{\byte} scalar
-load never does. GCC does not peel the loop to an aligned start, so every split load pays.
+vector width, and it repeats with the load width. Native SAXPY runs at
+\qtyrange{0.098}{0.100}{\nano\second} per element at offsets $0$ and \qty{32}{\byte} (both
+\qty{32}{\byte}-aligned, since the base is \qty{64}{\byte}-aligned). Every other offset costs
+\qtyrange{0.142}{0.144}{\nano\second} (\SI{+46}{\percent}) or, at \numlist{28;36;40;60}, up to
+\qty{0.160}{\nano\second} (\SI{+63}{\percent}). \code{autovec} (\qty{16}{\byte} loads) is fast
+exactly at the multiples of \num{16} (offsets $0$, \num{16}, \num{32}, \num{48}:
+\qtyrange{0.190}{0.198}{\nano\second}) and \SIrange{13}{26}{\percent} slower elsewhere.
+\code{scalar} varies by only \SI{1.6}{\percent} (\qtyrange{0.564}{0.573}{\nano\second}). This
+ordering, native \SI{63}{\percent} > autovec \SI{26}{\percent} > scalar \SI{2}{\percent}, is what
+cache-line splits predict. At a non-multiple-of-32 offset every second \qty{32}{\byte} load
+straddles a \qty{64}{\byte} line, but only every fourth \qty{16}{\byte} load does, and a
+\qty{4}{\byte} scalar load never does. GCC does not peel the loop to an aligned start
+(\cref{sec:vectorization}), so every split load pays.
 
-\emph{DRAM-resident} (\cref{fig:alignment}b). At $N=\num{16777216}$ the native spread across
-offsets shrinks to \SI{2.0}{\percent} (\qtyrange{0.411}{0.419}{\nano\second}) and autovec's to
-\SI{5.5}{\percent}: the extra split-load cycles hide under the DRAM misses that dominate each
-iteration, so for the vector builds alignment is a cache-resident concern only. Scalar shows a
-\SI{18}{\percent} spread, but it is bimodal (\num{0.713} or \qty{0.84}{\nano\second}) and does
-not follow the offset: offsets \num{8}, \num{24} and \num{32} are fast while \num{4}, \num{16} and
-\num{20} are slow, although a \qty{4}{\byte} load is never split. Each offset is a separate
-process with freshly allocated \qty{128}{\mebi\byte} arrays, so we read this as process-to-process
-variation (see the wide scalar IQR at the same $N$ in \cref{fig:baseline-throughput}), not as an
-alignment effect.
+\emph{DRAM-resident} (\cref{fig:alignment}b). At $N=\num{16777216}$ no offset pattern survives.
+The spread across offsets is \SI{19}{\percent} (native), \SI{34}{\percent} (autovec) and
+\SI{20}{\percent} (scalar), but the slow offsets do not line up with split loads. For native,
+offsets \num{8}, \num{24}, \num{36} and \num{40} are slow while \num{4} and \num{44}--\num{56} are
+fast, and scalar, whose loads are never split, is just as scattered. Each offset is a separate
+process with freshly allocated \qty{128}{\mebi\byte} arrays, so this is process-to-process
+variation of DRAM-bound throughput. An earlier pass of the same sweep (00:34 session, offsets \numrange{40}{56} still missing from
+the list) gave native and autovec spreads of only \SI{2.0}{\percent} and \SI{5.5}{\percent}, with no
+split-load pattern either.
+For the vector builds, then, the split-load cost visible in L1 disappears under DRAM misses, and
+alignment is a cache-resident concern only.
 
 \emph{Tails} (\cref{fig:tail}). Near $N=\num{4096}$ the time per element is flat across the
-\num{8}-lane boundary (native \qtyrange{0.098}{0.105}{\nano\second}, autovec
-\qtyrange{0.184}{0.198}{\nano\second}, scalar \qtyrange{0.57}{0.63}{\nano\second}). With
+\num{8}-lane boundary (native \qtyrange{0.098}{0.109}{\nano\second}, autovec
+\qtyrange{0.184}{0.199}{\nano\second}, scalar \qtyrange{0.56}{0.63}{\nano\second}). With
 \numrange{1}{7} leftover elements out of \num{4096}, the remainder is invisible. Short loops expose
-it. For $N=8\ldots72$, native's time per call is lowest at multiples of \num{8} (\qty{13.6}{\nano\second}
-at $N=16$ rising to \qty{17.4}{\nano\second} at $N=72$, only $\approx\qty{0.07}{\nano\second}$ per
-element) and highest at $N\equiv7 \pmod 8$, \qtyrange{2}{3}{\nano\second} more. That sawtooth is
-the remainder path from the disassembly (\cref{sec:vectorization}): a \qty{128}{bit} epilogue for
-\num{4} elements and then up to three scalar iterations. \code{autovec} grows at
-$\approx\qty{0.15}{\nano\second}$ per element and \code{scalar} linearly at
-$\approx\qty{0.63}{\nano\second}$ per element, both with occasional single-point outliers. Every
-call also pays a fixed $\approx\qtyrange{10}{13}{\nano\second}$ (call, loop setup and the run-time
-aliasing check of the versioned loop) before the first element. So the per-element speedup of
-short loops is far below the $5.8\times$ at $N=\num{4096}$: native beats scalar by only
-$1.11\times$ at $N=8$ and by $3.20\times$ at $N=72$. There are no AVX-512 mask registers here
-(no AVX-512 on this CPU); a masked tail would be the AVX-512 alternative to this narrowing epilogue.
+it. For $N=8\ldots72$, native's time per call is lowest at multiples of \num{8}
+(\qty{13.5}{\nano\second} at $N=16$ rising to \qty{16.7}{\nano\second} at $N=72$, only
+$\approx\qty{0.06}{\nano\second}$ per element) and highest at $N\equiv7 \pmod 8$, about
+\qtyrange{2}{3}{\nano\second} more. That sawtooth is the remainder path from the disassembly
+(\cref{sec:vectorization}): a \qty{128}{bit} epilogue for \num{4} elements and then up to three
+scalar iterations. \code{autovec} grows at $\approx\qty{0.16}{\nano\second}$ per element and
+\code{scalar} linearly at $\approx\qty{0.63}{\nano\second}$ per element, both with occasional
+single-point outliers. Every call also pays a fixed $\approx\qtyrange{10}{13}{\nano\second}$ (call,
+loop setup and the run-time aliasing check of the versioned loop) before the first element. So the
+per-element speedup of short loops is far below the $5.8\times$ at $N=\num{4096}$: native beats
+scalar by only $1.18\times$ at $N=8$ and by $3.34\times$ at $N=72$. There are no AVX-512 mask
+registers here (no AVX-512 on this CPU); a masked tail would be the AVX-512 alternative to this
+narrowing epilogue.

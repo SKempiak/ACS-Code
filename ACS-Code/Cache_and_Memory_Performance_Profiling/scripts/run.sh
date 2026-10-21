@@ -3,6 +3,7 @@
 #
 #   scripts/run.sh <experiment> [<experiment> ...]   any of (README "Required experiments"):
 #       zero_queue pattern rw_mix intensity working_set cache_miss tlb pitfall mlc
+#   (plus clock_check, a diagnostic for the frequency probe / lost wall time)
 #   scripts/run.sh all                                every experiment, in that order
 #
 # Each experiment sweeps its knobs by invoking build/{mem_latency,mem_bandwidth,
@@ -40,6 +41,7 @@ LAT="$ROOT/build/mem_latency"
 BW="$ROOT/build/mem_bandwidth"
 LOADED="$ROOT/build/mem_loaded"
 KM="$ROOT/build/kernel_miss"
+CLK="$ROOT/build/clock_check"
 DATA="${DATA:-$ROOT/data}"   # override only for smoke tests (QUICK=1)
 PROC="$DATA/processed"
 
@@ -62,7 +64,7 @@ GEN_CPUS="$(seq 0 $((MAXT - 1)) | grep -vx "$CPU_PIN" | paste -sd, -)"
 NGEN=$((MAXT - 1))
 
 need() {
-  for b in "$LAT" "$BW" "$LOADED" "$KM" "$SUMMARIZE"; do
+  for b in "$LAT" "$BW" "$LOADED" "$KM" "$CLK" "$SUMMARIZE"; do
     [ -x "$b" ] || { echo "missing $b; run 'make' here and 'make tools' in ACS-Code" >&2; exit 1; }
   done
   command -v python3 >/dev/null || { echo "python3 is required for scripts/derive.py" >&2; exit 1; }
@@ -309,6 +311,19 @@ exp_pitfall() {
   summ --in "$RAW" --out "$PROC/pitfall.csv" --group wss_bytes,threads --stat gib_s,ns_per_elem
 }
 
+# ----------------------------------------------------------------- clock_check
+exp_clock_check() {
+  # Diagnostic (not a README experiment): is the core clock fixed, and how much wall time does a
+  # pinned thread lose (e.g. to ACPI/firmware activity)? Explains the add-chain probe's low readings.
+  start_experiment clock_check
+  local c
+  for c in "$CPU_PIN" "$((MAXT - 4))"; do
+    echo "$CLK --cpu $c --windows 40 --ms 300" >> "$RAWDIR/commands.txt"
+    if [ -s "$RAW" ]; then "$CLK" --cpu "$c" --windows 40 --ms 300 | tail -n +2 >> "$RAW"
+    else "$CLK" --cpu "$c" --windows 40 --ms 300 >> "$RAW"; fi
+  done
+}
+
 # ----------------------------------------------------------------- mlc
 exp_mlc() {
   local MLC_BIN="${MLC:-$(command -v mlc || true)}"
@@ -332,7 +347,7 @@ exp_mlc() {
   "$MLC_BIN" --max_bandwidth  > "$RAWDIR/max_bandwidth.txt" 2>&1 || true
 }
 
-ALL_EXPERIMENTS=(zero_queue pattern rw_mix intensity working_set cache_miss tlb pitfall mlc)
+ALL_EXPERIMENTS=(zero_queue pattern rw_mix intensity working_set cache_miss tlb pitfall mlc clock_check)
 
 usage() {
   echo "usage: $0 {$(IFS='|'; echo "${ALL_EXPERIMENTS[*]}")|all} ..." >&2
@@ -349,6 +364,7 @@ run_one() {
     tlb)         exp_tlb ;;
     pitfall)     exp_pitfall ;;
     mlc)         exp_mlc ;;
+    clock_check) exp_clock_check ;;
     *) echo "unknown experiment: $1" >&2; usage; exit 2 ;;
   esac
   derive

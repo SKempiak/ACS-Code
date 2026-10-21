@@ -4,60 +4,85 @@
 
 \subsection{Unexpected results and how they were resolved}
 \begin{itemize}
-  \item \textbf{Strided ``line traffic'' exceeded the single-core peak.} At \qty{64}{\byte} stride the
-        line traffic (\valqty{pat_stride_seq_64_line}{\gibi\byte\per\second}) exceeds the unit-stride
-        rate (\valqty{pat_stride_seq_8}{\gibi\byte\per\second}) that the previous version called the
-        single-core peak. Hypothesis: the scalar unit-stride kernel is limited by the core's out-of-order
-        window, not by DRAM. Test: large full-line vector blocks reach
-        \valqty{pat_bw_seq_max}{\gibi\byte\per\second} on the same data, so the real single-core limit is
-        \qtyrange{15}{16}{\gibi\byte\per\second} (\cref{sec:pattern}).
-  \item \textbf{$L/N=1$ was not a test.} In the known-concurrency sweep, $\lambda$ times the per-chain
-        step time equals $N$ by construction. We now report $L_{\text{mem}}$ with the probe's memory
-        latency, which saturates at \valnum{mlp_t1_Lmem_max} lines per core (\cref{sec:intensity}).
+  \item \textbf{The in-process frequency probe misreads the clock.} With turbo disabled, the add-chain
+        probe logged by every run reads either \valqty{zq_probe_ghz_max}{\giga\hertz} or about
+        \valqty{zq_probe_ghz_min}{\giga\hertz}, which would understate DRAM latency by about 14\% in cycles.
+        Hypothesis: the clock does not change, but the thread loses wall time. Test: \code{clock_check}
+        (\code{run.sh clock_check}) compares core cycles, reference cycles and wall time in \val{cc_windows}
+        windows of \valqty{cc_window_ms}{\milli\second} on CPUs 2 and 6. The core clock is
+        \valqty{cc_core_ghz}{\giga\hertz} in every window. In \val{cc_gpe_pct}\% of the windows there is a
+        burst of ACPI general-purpose events (about \val{cc_gpe_per_window} per window, from a
+        long-running ACPI notify storm on this host). In those windows the pinned thread executes user code
+        for only \val{cc_userfrac_gpe} of the wall time (quiet windows: \val{cc_userfrac_quiet}), with no
+        system time or context switches accounted to it, and the probe reads \valqty{cc_probe_gpe}{\giga\hertz}
+        (quiet: \valqty{cc_probe_quiet}{\giga\hertz}). The lost time is therefore invisible to the OS,
+        which is consistent with firmware (SMM) handling of the events and affects every core. Resolution:
+        cycles are converted with the fixed \qty{2.8}{\giga\hertz} clock, and the probe is not used
+        (\cref{sec:method}).
+  \item \textbf{Unit-stride ``peak'' versus strided line traffic.} At \qty{64}{\byte} stride the line
+        traffic (\valqty{pat_stride_seq_64_line}{\gibi\byte\per\second}) exceeds the unit-stride scalar
+        read (\valqty{pat_stride_seq_8}{\gibi\byte\per\second}), the kernel one would naturally use as the
+        single-core peak. Hypothesis: the scalar kernel is limited by the core's out-of-order window, not by
+        DRAM. Test: large full-line vector blocks reach \valqty{pat_bw_seq_max}{\gibi\byte\per\second} on
+        the same data, so the single-core limit is \qtyrange{15}{16}{\gibi\byte\per\second}
+        (\cref{sec:pattern}).
+  \item \textbf{$L/N=1$ is not a test.} In the known-concurrency sweep, $\lambda$ times the per-chain step
+        time equals $N$ by construction. The informative quantity is $L_{\text{mem}}$ with the probe's
+        memory latency, which saturates at \valnum{mlp_t1_Lmem_max} lines per core (\cref{sec:intensity}).
   \item \textbf{Bandwidth is non-monotonic past saturation.} With 5--9 streaming cores, delivered
         bandwidth scatters between \valqty{int_t7_gib}{\gibi\byte\per\second} and
         \valqty{int_t8_gib}{\gibi\byte\per\second} with wide IQRs, while latency rises steadily. A knee
-        rule that sorted points by bandwidth was therefore unstable; it now follows offered load.
+        rule that orders points by delivered bandwidth is therefore unstable; ours follows offered load.
   \item \textbf{Single-core chase bandwidth alternates with $k$.} $k=8,12,20$ chains are slower than
         $k=6,10,16$. Probe latency is unchanged, so the cause is in the generator loop, not in memory.
         Unresolved; only the envelope is used.
-  \item \textbf{Two unloaded-latency measurements differ by 6\%.} The \code{mem_loaded} probe
-        (\valqty{int_w0_ns}{\nano\second}) is faster than \code{mem_latency} at the same
-        \qty{256}{\mebi\byte} (\valqty{zq_DRAM256_ns}{\nano\second}). Unresolved; both are reported.
-  \item \textbf{A 70/30 read/write mix was 3.4$\times$ slower than pure reads.} Cause: the old kernel
-        mixed \qty{8}{\byte} elements, so every line was both read and written. Fixed by mixing at line
-        granularity (\cref{sec:rw-mix}); the old numbers are not reused.
-  \item \textbf{Huge pages were never granted in the first TLB runs} (\code{AnonHugePages: 0 kB}), so
-        those runs (\code{tlb/20261019-232253} and the identical repeat \code{tlb/20261019-233449}) were
-        superseded by the verified run in \cref{sec:tlb} and removed, together with every other
-        2026-10-19 run.
-  \item \textbf{A ``\qty{4}{\kibi\byte}'' baseline can silently use huge pages.} With THP set to
-        \sysHugePages{}, a \qty{2}{\mebi\byte}-aligned buffer is backed by huge pages unless the program
-        opts out; every \qty{4}{\kibi\byte} buffer now calls \code{MADV_NOHUGEPAGE} and the granted amount
-        is recorded, so the page-size label of each curve is verified.
+  \item \textbf{Two unloaded DRAM latencies differ by 6\%.} The \code{mem_loaded} probe gives
+        \valqty{int_w0_ns}{\nano\second} and \code{mem_latency} gives \valqty{zq_DRAM256_ns}{\nano\second},
+        both at \qty{256}{\mebi\byte} with \qty{4}{\kibi\byte} pages. The identical \code{mem_latency}
+        configuration measured \valqty{ws_dram256_rand4k_ns}{\nano\second} in the \code{working_set} run
+        a few minutes later, so half of the gap is run-to-run spread. That spread is consistent with
+        repetitions overlapping the ACPI bursts above, which inflate a window by up to \ensuremath{\sim}15\%.
+        We did not isolate the rest; candidates are the ring layout (raw pointers vs.\ indices with a scaled
+        addressing mode) and the physical-page placement of each allocation.
+  \item \textbf{Element-level read/write mixes measure the wrong thing.} Mixing \qty{8}{\byte} elements
+        reads every source line and writes every destination line, so a nominal 70/30 mix moves about three
+        lines per useful line; mixes must be defined on lines (\cref{sec:rw-mix}).
+  \item \textbf{Requested huge pages are not necessarily granted---and vice versa.} An early TLB run
+        requested THP and received \code{AnonHugePages: 0 kB}, so its ``huge'' curve was really
+        \qty{4}{\kibi\byte} pages. Conversely, with THP set to \sysHugePages{} a
+        \qty{2}{\mebi\byte}-aligned ``\qty{4}{\kibi\byte}'' buffer is backed by huge pages unless the program
+        opts out. Both page policies are therefore set explicitly before first touch and verified per run
+        (\cref{sec:tlb}).
 \end{itemize}
 
 \subsection{Limitations}
 \begin{itemize}
-  \item \textbf{Intel MLC was unavailable.} It is not installed on the test host and could not be
-        installed; \code{run.sh mlc} records this in \code{data/raw/mlc/<timestamp>/mlc_status.txt}. The
-        cross-checks in \cref{sec:validation} are clearly labelled substitutes: they validate ring
-        construction, timing and code path, but share our pointer-chase methodology.
-  \item \textbf{Core-only counters.} At \code{perf_event_paranoid}=\sysPerfParanoid{} only user-space
-        core events of our own process are available: no uncore/IMC counters (actual DRAM traffic,
-        prefetch fills, write-backs) and no kernel-mode events. DRAM traffic for write mixes is therefore
-        an estimate (one RFO per written line), and prefetcher traffic is inferred. Generic LLC events map
-        to offcore-response events on this core and may undercount prefetch-driven fills. Counters were
-        multiplexed when more events were requested than free hardware counters; counts are scaled and
-        the running fraction is recorded.
+  \item \textbf{Lost wall time from ACPI activity.} The host has a long-running ACPI notify storm that
+        takes about 13\% of the wall time from every core in \val{cc_gpe_pct}\% of
+        \qty{0.3}{\second} windows (above). We cannot stop it (root needed). Each timed repetition lasts
+        \qtyrange{40}{200}{\milli\second}, so some repetitions are inflated by up to that amount. Medians
+        over 8 repetitions limit the effect, and the IQR bars show it; the cycle counter over the timed
+        windows gives a median of \valqty{ws_ctr_ghz}{\giga\hertz} of user cycles per wall nanosecond, i.e.\
+        typical timed windows were not affected. Rejecting repetitions whose reference-cycle/wall ratio is
+        below 0.95 would remove the effect entirely, but this filter was added after the data were taken.
+  \item \textbf{Intel MLC was unavailable.} It is not installed on the test host;
+        \code{run.sh mlc} records this in \code{data/raw/mlc/<timestamp>/mlc_status.txt}. The cross-checks
+        in \cref{sec:validation} are clearly labelled substitutes: they validate ring construction, timing
+        and code path, but share our pointer-chase methodology.
+  \item \textbf{Core-only counters.} At \code{perf_event_paranoid}=\sysPerfParanoid{} only user-space core
+        events of our own process are available: no uncore/IMC counters (actual DRAM traffic, prefetch
+        fills, write-backs) and no kernel-mode events. DRAM traffic for write mixes is therefore an estimate
+        (one RFO per written line), and prefetcher traffic is inferred. Generic LLC events map to
+        offcore-response events on this core and may undercount prefetch-driven fills. Counters were
+        multiplexed when more events were requested than free hardware counters; counts are scaled and the
+        running fraction is recorded.
   \item \textbf{Loaded latency is measured with a probe that is itself load.} The probe adds one line in
         flight (included in throughput) and measures a demand read; the streaming generators' prefetches
         may see a different latency, so $L=\lambda W$ for the streaming sweep assumes the probe's latency
         is representative. The known-concurrency chase sweep does not need that assumption.
-  \item \textbf{One machine and one memory configuration.} All numbers come from a single i9-10900F on
-        one NUMA node; DIMM population and speed could not be read without root. Frequency policy for the
-        runs: governor \sysGovernor{}, turbo \sysTurbo{}, SMT \sysSMT{}; cycle figures use the in-process
-        effective frequency.
+  \item \textbf{One machine and one memory configuration.} All numbers come from a single i9-10900F on one
+        NUMA node; DIMM population and speed could not be read without root. Frequency policy for the
+        runs: governor \sysGovernor{}, turbo \sysTurbo{}, SMT \sysSMT{}.
   \item \textbf{Report build backend.} The host has \code{bibtex} but not \code{biber}, so
         \code{biblatex} uses \code{backend=bibtex}.
 \end{itemize}

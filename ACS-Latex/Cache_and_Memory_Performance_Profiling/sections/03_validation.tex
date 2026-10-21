@@ -16,7 +16,9 @@ checks passed on the machine state it was measured in. The checks are:
         and ten threads exceed one thread.
   \item \textbf{Loaded $>$ unloaded.} The \code{mem_loaded} probe is slower under four streaming cores
         than on an idle memory system---the minimum requirement for a loaded-latency instrument.
-  \item \textbf{Frequency plausibility.} The in-process effective-GHz probe lands in \qtyrange{1}{6}{\giga\hertz}.
+  \item \textbf{Frequency plausibility.} The in-process add-chain probe lands in
+        \qtyrange{1}{6}{\giga\hertz}. This is only a coarse check: cycle conversions use the fixed
+        \qty{2.8}{\giga\hertz} clock, which the cycle counter confirms (\cref{sec:method}).
   \item \textbf{Instrumentation (reported, not gating).} User-space counters open and return values;
         a \qty{2}{\mebi\byte}-page request is actually granted (\code{AnonHugePages} $>0$) and the
         \qty{4}{\kibi\byte} policy yields none.

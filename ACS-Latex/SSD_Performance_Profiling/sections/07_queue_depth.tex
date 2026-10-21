@@ -56,8 +56,9 @@
     \end{subfigure}%
   }
   \caption{Throughput vs.\ latency as queue depth grows; each point is labelled with its QD. Bars show
-  the IQR across repetitions in both IOPS and latency. Read IOPS saturate near
-  \csvq{queue_depth_knee}{mode=read}{max_iops} at the knee; deeper queues then add only latency.}\label{fig:queue-depth}
+  the IQR across repetitions in both IOPS and latency. Read IOPS reach
+  \csvq{queue_depth_knee}{mode=read}{knee_iops} at the knee (QD~\csvq{queue_depth_knee}{mode=read}{knee_qd})
+  and at most \csvq{queue_depth_knee}{mode=read}{max_iops} at QD=256; deeper queues then add only latency.}\label{fig:queue-depth}
 \end{figure}
 
 \subsection{Knee}
@@ -123,6 +124,21 @@ true device-queue occupancy can only be lower.
       \bottomrule
     \end{tabular}}
 \end{table}
+
+\paragraph{Inference: internal parallelism.} Little's Law can also be applied to the \emph{device}, as
+an inference rather than a measurement. At saturation the drive completes
+$\lambda_{\max}\approx\csvq{queue_depth_knee}{mode=read}{max_iops}$ reads/s. If an isolated
+\qty{4}{\kibi\byte} read occupies the flash back end for roughly its unloaded service time $S$, the mean
+number of reads \emph{in service} is $L_\text{busy}=\lambda_{\max} S$. Taking $S$ between
+\qty{40}{\micro\second} (the QD=1 latency minus \ensuremath{\sim}\qty{10}{\micro\second} of host and
+transfer overhead) and \csvq[0]{queue_depth}{qd=1,mode=read}{lat_mean_us_median}\,\si{\micro\second}
+(the whole QD=1 latency) gives $L_\text{busy}\approx 6$--$8$. So of the 64--256 requests outstanding past
+the knee, only about 6--8 are being served by the NAND at any moment, and the rest wait in queues. That
+is the queueing-delay component of the latency growth in \cref{fig:queue-depth}. Micron does not
+publish the die or channel count for the 2210. A \qty{512}{\giga\byte} drive built from 1-Tbit QLC dies
+would have 4 dies, in which case 6--8 concurrent reads would mean about two reads in flight per die
+(multi-plane or independent-plane reads). This is a plausibility argument with an assumed $S$, not a
+measured die count.
 
 \subsection{Analysis}
 Read IOPS climb from \csvq{queue_depth}{qd=1,mode=read}{iops_median} at QD=1 to

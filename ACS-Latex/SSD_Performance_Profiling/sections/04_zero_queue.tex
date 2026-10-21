@@ -64,6 +64,20 @@ Two caveats apply. First, a QD=1 random read cannot be prefetched, so this is a 
 the p99.9 column already shows occasional outliers of several hundred microseconds to milliseconds from
 background flush and garbage collection, which preview the tail behaviour in \cref{sec:tail}.
 
+\textbf{The sequential-write row is unstable.} Its IOPS IQR spans
+\csvq{zero_queue}{mode=write,pattern=seq}{iops_q25}--\csvq{zero_queue}{mode=write,pattern=seq}{iops_q75},
+and its p99 IQR runs to \csvq[1]{zero_queue}{mode=write,pattern=seq}{lat_p99_us_q75}\,\si{\micro\second}.
+The raw repetitions are bimodal. The first two ran at \num{490} and \num{891} IOPS with p99 of
+\qtyrange{30}{35}{\milli\second}; the last three ran at \numrange{5100}{5460} IOPS with p99 of
+\qty{1.4}{\milli\second}. The p50 stays near \qty{90}{\micro\second} in all five, so typical writes were
+fast throughout, and the slow repetitions are dominated by a few stalls of tens of milliseconds. The
+point ran directly after the \qty{2}{\gibi\byte} sequential re-fill that precedes the sequential-read
+case. We read the first two repetitions as waiting for the controller to flush that burst, and the
+later ones as the unloaded QD=1 write path. The median (\csvq{zero_queue}{mode=write,pattern=seq}{iops_median}
+IOPS) therefore describes the recovered state, and the row should not be read as a stable baseline.
+\code{rerun_clean.sh} repeats it after a rest, and \code{blkbench} now logs each point's start time
+(\code{timeline.csv}), so such stalls can be placed in time.
+
 An early pilot run, since discarded, measured this sequential read directly after the random-write
 case and got only a fraction of the rate above. That discrepancy led to the re-fill step in the
 procedure, and the \code{layout} experiment (\cref{sec:layout}) reproduces it:

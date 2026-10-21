@@ -91,3 +91,27 @@ fuller buffer more often. We consider this ordering effect the most likely expla
 test it: that would need the engine order alternated or randomized per pair. Until then, write numbers
 from either engine carry an uncertainty of about \qty{20}{\percent} at QD=32, set by drive state rather
 than by the tool. The read results, which are not order-sensitive, show no such effect.
+
+\IfFileExists{data/fio_order.csv}{%
+\paragraph{Engine order.} The current \code{fio_check} alternates which engine runs first in each pair
+of repetitions (\code{fio_order.csv}). If drive state rather than the engine explains the QD=32
+random-write gap, the IOPS should track position (1st vs.\ 2nd) more than engine:
+\begin{center}\small
+\begin{tabular}{@{}lrrrr@{}}
+  \toprule
+  QD=32 rand write & blkbench 1st & blkbench 2nd & FIO 1st & FIO 2nd \\
+  \midrule
+  IOPS & \csvq{fio_order}{experiment=blkbench_1st,mode=write,qd=32}{iops_median}
+       & \csvq{fio_order}{experiment=blkbench_2nd,mode=write,qd=32}{iops_median}
+       & \csvq{fio_order}{experiment=fio_1st,mode=write,qd=32}{iops_median}
+       & \csvq{fio_order}{experiment=fio_2nd,mode=write,qd=32}{iops_median} \\
+  p99 (\si{\micro\second}) & \csvq{fio_order}{experiment=blkbench_1st,mode=write,qd=32}{lat_p99_us_median}
+       & \csvq{fio_order}{experiment=blkbench_2nd,mode=write,qd=32}{lat_p99_us_median}
+       & \csvq{fio_order}{experiment=fio_1st,mode=write,qd=32}{lat_p99_us_median}
+       & \csvq{fio_order}{experiment=fio_2nd,mode=write,qd=32}{lat_p99_us_median} \\
+  \bottomrule
+\end{tabular}
+\end{center}}{%
+\paragraph{Engine order.} The reported run always ran \code{blkbench} first. \code{fio_check} now
+alternates the order per repetition and records each row's position (\code{fio_order.csv}), so the next
+run can separate drive state from engine.}

@@ -74,6 +74,7 @@ against latency.}
   \centering
   \csvget\ssdHasQD{block_size}{qd=32}{mibps_median}%
   \csvget\ssdHasW{block_size}{mode=write,qd=32}{mibps_median}%
+  \csvget\ssdHasRR{block_size}{pattern=rand,mode=read,qd=32}{mibps_median}%
   \ifx\ssdHasQD\empty\acsmissing{data/block_size.csv (QD=32 rows)}\else
     \begin{tikzpicture}
       \begin{axis}[xmode=log, log basis x=2, bsplot, width=0.62\linewidth, height=0.42\linewidth, ylabel={Throughput (MiB/s)},
@@ -83,6 +84,10 @@ against latency.}
         \ifx\ssdHasW\empty\else
         \addplot+[dashed, iqr bars] table[x=bs, y=mibps_median, iqr of=mibps, only if={pattern}{seq}, only if={mode}{write}, only if={qd}{32}] {data/block_size.csv};
         \addlegendentry{seq write, QD=32}
+        \fi
+        \ifx\ssdHasRR\empty\else
+        \addplot+[dashdotted, mark=triangle*, iqr bars] table[x=bs, y=mibps_median, iqr of=mibps, only if={pattern}{rand}, only if={mode}{read}, only if={qd}{32}] {data/block_size.csv};
+        \addlegendentry{rand read, QD=32}
         \fi
         \addplot+[densely dotted, mark=o, iqr bars] table[x=bs, y=mibps_median, iqr of=mibps, only if={pattern}{seq}, only if={mode}{read}, only if={qd}{1}] {data/block_size.csv};
         \addlegendentry{seq read, QD=1}
@@ -144,6 +149,15 @@ NAND/controller back end, not PCIe. Sequential writes at QD=32 are flat at
 \qty{16}{\kibi\byte} up. That is the SLC-cache ingest rate: the same \ensuremath{\sim}\qty{1.06}{\gibi\byte\per\second}
 appears in the preconditioning passes and in the first seconds of the sustained fill
 (\cref{sec:device-state}).
+
+\csvget\ssdHasRR{block_size}{pattern=rand,mode=read,qd=32}{mibps_median}%
+\ifx\ssdHasRR\empty\else
+\textbf{Random reads at QD=32} reach
+\csvq{block_size}{bs=4096,pattern=rand,mode=read,qd=32}{iops_median} IOPS at \qty{4}{\kibi\byte} and
+\csvq{block_size}{bs=1048576,pattern=rand,mode=read,qd=32}{mibps_median}\,MiB/s at \qty{1}{\mebi\byte}
+(dash-dotted curve in \cref{fig:block-size-qd}), against
+\csvq{block_size}{bs=1048576,pattern=seq,mode=read,qd=32}{mibps_median}\,MiB/s for sequential reads.
+\fi
 
 \textbf{Writes at QD=1.} At \qty{4}{\kibi\byte}, random writes post
 \csvq{block_size}{bs=4096,pattern=rand,mode=write,qd=1}{iops_median} IOPS against

@@ -152,10 +152,15 @@ end_experiment() {
   echo "# end: $(date -Is)  temperature: $(temp_now) C" >> "$RAWDIR/env.txt"
 }
 hdr() { [ -s "$RAW" ] || echo "--header"; }
+# wgap: optional pause before a write point so one point's flush backlog does not spill
+# into the next (WRITE_GAP_S, default 0; rerun_clean.sh sets it). Logged in timeline.csv.
+WRITE_GAP_S="${WRITE_GAP_S:-0}"
+wgap() { [ "$WRITE_GAP_S" -gt 0 ] 2>/dev/null && { echo "$(date +%s),gap,$WRITE_GAP_S" >> "$RAWDIR/timeline.csv"; sleep "$WRITE_GAP_S"; }; return 0; }
 
 # blk <blkbench args...> : one measurement point, appended to $RAW.
 # With ENGINE=fio the same point is run through fio/job.fio (one fio call per rep).
 blk() {
+  echo "$(date +%s),${ENGINE},$*" >> "$RAWDIR/timeline.csv"   # wall-clock order of every point
   if [ "$ENGINE" = fio ]; then fio_point "$@"; return; fi
   "$BLK" --file "${TARGET:-$FILE}" --seed "$SEED" "${TEMP_ARGS[@]}" "$@" >> "$RAW"
 }
@@ -313,14 +318,15 @@ exp_zero_queue() {
 exp_block_size() {
   start_experiment block_size
   local bs p m q
-  # QD=1: random and sequential, read and write; QD=32: sequential read and write.
+  # QD=1: random and sequential, read and write; QD=32: random read, sequential read and write.
   for q in 1 32; do
     for p in rand seq; do
-      [ "$q" = 32 ] && [ "$p" = rand ] && continue
       [ "$p" = seq ] && relayout
       for m in 10 0; do
+        [ "$q" = 32 ] && [ "$p" = rand ] && [ "$m" = 0 ] && continue
         for bs in 4096 16384 32768 65536 131072 262144 524288 1048576; do
           if [ "$m" = 0 ]; then
+            wgap
             blk --experiment block_size --bs "$bs" --qd "$q" --pattern "$p" --rwmix 0 --runtime "$RUNTIME" --reps "$WREPS" --max-bytes "$WCAP" $(hdr)
           else
             blk --experiment block_size --bs "$bs" --qd "$q" --pattern "$p" --rwmix 10 --runtime "$RUNTIME" --reps "$REPS" $(hdr)
@@ -352,6 +358,7 @@ exp_queue_depth() {
     blk --experiment queue_depth --bs 4096 --qd "$q" --pattern rand --rwmix 10 --runtime "$RUNTIME" --reps "$REPS" $(hdr)
   done
   for q in 1 2 4 8 16 32 64 128 256; do
+    wgap
     blk --experiment queue_depth --bs 4096 --qd "$q" --pattern rand --rwmix 0 --runtime "$RUNTIME" --reps "$REPS" --max-bytes "$WCAP" $(hdr)
   done
   end_experiment; sum_queue_depth "$RAW"
@@ -372,7 +379,6 @@ exp_pitfall() {
   # Pitfall: buffered (page-cache) vs direct I/O over the SAME 64 MiB region,
   # 4 KiB sequential reads. Same knobs; only the cache bypass differs.
   local span=$((64*MiB))
-  relayout
   blk --experiment pitfall --bs 4096 --qd 1 --pattern seq --rwmix 10 --span "$span" --runtime "$RUNTIME" --reps "$REPS" $(hdr)
   blk --experiment pitfall --bs 4096 --qd 1 --pattern seq --rwmix 10 --span "$span" --runtime "$RUNTIME" --reps "$REPS" --buffered
   end_experiment; sum_pitfall "$RAW"
@@ -384,7 +390,6 @@ exp_pitfall() {
 exp_layout() {
   start_experiment layout
   local state
-  relayout
   for state in seq_filled rand_overwritten; do
     if [ "$state" = rand_overwritten ]; then
       "$BLK" --file "$FILE" --seed "$SEED" --bs 4096 --qd 32 --pattern rand --rwmix 0 \
@@ -406,22 +411,34 @@ exp_fio_check() {
   echo "# fio: $(fio --version)" >> "$RAWDIR/env.txt"
   local saved="$ENGINE" pt bs q p m cap r
   # bs qd pattern rwmix — QD=1 baselines plus a deep-queue read and write point
-  # reads first, on a freshly re-written file (in `all`, `layout` has just left it randomly
-  # overwritten; the 20261021 run predates this relayout and measured that scattered layout)
-  relayout
+  # reads first; the caller preconditions the file right before this experiment (in the
+  # 20261021 `all` run it did not, so its sequential points measured layout's scattered file).
+  # Engine order alternates per repetition (even r: blkbench first; odd r: fio first) so
+  # drive-state effects from the preceding write can be separated from engine effects;
+  # raw_order.csv tags each row with its engine and position.
+  local ord="$RAWDIR/raw_order.csv" one="$RAWDIR/one.tmp" e first second
   for pt in "131072 1 seq 10" "131072 32 seq 10" "4096 1 rand 10" "4096 32 rand 10" \
             "131072 1 seq 0" "4096 1 rand 0" "4096 32 rand 0"; do
     read -r bs q p m <<< "$pt"
     cap=(); [ "$m" = 0 ] && cap=(--max-bytes "$WCAP")
-    for ((r=0; r<REPS; r++)); do      # interleave the engines rep by rep
-      ENGINE=blkbench blk --experiment blkbench --bs "$bs" --qd "$q" --pattern "$p" --rwmix "$m" --runtime "$RUNTIME" --reps 1 "${cap[@]}" $(hdr)
-      ENGINE=fio      blk --experiment fio      --bs "$bs" --qd "$q" --pattern "$p" --rwmix "$m" --runtime "$RUNTIME" --reps 1 "${cap[@]}"
+    for ((r=0; r<REPS; r++)); do      # interleave the engines rep by rep, alternating order
+      if (( r % 2 == 0 )); then first=blkbench; second=fio; else first=fio; second=blkbench; fi
+      for e in "$first" "$second"; do
+        : > "$one"
+        ENGINE=$e RAW="$one" blk --experiment "$e" --bs "$bs" --qd "$q" --pattern "$p" --rwmix "$m" --runtime "$RUNTIME" --reps 1 "${cap[@]}" --header
+        [ -s "$RAW" ] || head -1 "$one" > "$RAW"
+        [ -s "$ord" ] || head -1 "$one" > "$ord"
+        tail -n +2 "$one" >> "$RAW"
+        tail -n +2 "$one" | awk -F, -v OFS=, -v pos="$([ "$e" = "$first" ] && echo 1st || echo 2nd)" '{$1=$1"_"pos; print}' >> "$ord"
+      done
     done
   done
   ENGINE="$saved"
   end_experiment
   summ "$RAW" "$P/fio_check.csv" experiment,mode,pattern,bs,qd iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us
   fio_compare "$P/fio_check.csv" > "$P/fio_compare.csv"
+  rm -f "$one"
+  summ "$ord" "$P/fio_order.csv" experiment,mode,pattern,bs,qd iops,lat_p50_us,lat_p99_us
   cat "$P/fio_compare.csv"
 }
 
@@ -470,14 +487,18 @@ exp_working_set() {
   fi
   start_experiment working_set
   echo "# spans (GiB): $WS_LIST_GIB of a ${SUSTAIN_GIB} GiB file" >> "$RAWDIR/env.txt"
-  local tmp="$RAWDIR/ws.tmp"
-  for g in $WS_LIST_GIB; do
+  local tmp="$RAWDIR/ws.tmp" order="$WS_LIST_GIB" r
+  # WS_REVERSE=1: a second pass in reverse span order, so span is not confounded with time
+  if [ "${WS_REVERSE:-0}" = 1 ]; then
+    order="$WS_LIST_GIB $(echo $WS_LIST_GIB | tr ' ' '\n' | tac | tr '\n' ' ')"; fi
+  echo "# span order: $order (reps per pass: ${WS_REPS:-$REPS})" >> "$RAWDIR/env.txt"
+  for g in $order; do
     [ "$g" -le "$SUSTAIN_GIB" ] || { echo "  skip span ${g} GiB > SUSTAIN_GIB" >&2; continue; }
     span=$((g*GiB))
     : > "$tmp"
-    TARGET="$BIG" RAW="$tmp" blk --experiment working_set --bs 4096 --qd 1  --pattern rand --rwmix 10 --span "$span" --runtime "$RUNTIME" --reps "$REPS" --header
-    TARGET="$BIG" RAW="$tmp" blk --experiment working_set --bs 4096 --qd 32 --pattern rand --rwmix 10 --span "$span" --runtime "$RUNTIME" --reps "$REPS"
-    TARGET="$BIG" RAW="$tmp" blk --experiment working_set --bs 4096 --qd 32 --pattern rand --rwmix 0  --span "$span" --runtime "$RUNTIME" --reps "$REPS" --max-bytes "$WCAP"
+    TARGET="$BIG" RAW="$tmp" blk --experiment working_set --bs 4096 --qd 1  --pattern rand --rwmix 10 --span "$span" --runtime "$RUNTIME" --reps "${WS_REPS:-$REPS}" --header
+    TARGET="$BIG" RAW="$tmp" blk --experiment working_set --bs 4096 --qd 32 --pattern rand --rwmix 10 --span "$span" --runtime "$RUNTIME" --reps "${WS_REPS:-$REPS}"
+    TARGET="$BIG" RAW="$tmp" blk --experiment working_set --bs 4096 --qd 32 --pattern rand --rwmix 0  --span "$span" --runtime "$RUNTIME" --reps "${WS_REPS:-$REPS}" --max-bytes "$WCAP"
     # prepend the span column
     awk -F, -v g="$g" -v first="$([ -s "$RAW" ] && echo 0 || echo 1)" \
       'NR==1{ if(first) print "span_gib,"$0; next} {print g","$0}' "$tmp" >> "$RAW"
@@ -506,6 +527,7 @@ reprocess() {
   if [ -n "$d" ] && [ -s "$d/raw.csv" ]; then
     summ "$d/raw.csv" "$P/fio_check.csv" experiment,mode,pattern,bs,qd iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us
     fio_compare "$P/fio_check.csv" > "$P/fio_compare.csv"
+    [ -s "$d/raw_order.csv" ] && summ "$d/raw_order.csv" "$P/fio_order.csv" experiment,mode,pattern,bs,qd iops,lat_p50_us,lat_p99_us
   fi
 }
 
@@ -535,13 +557,16 @@ main() {
     sustained)    exp_sustained ;;
     working_set)  exp_working_set ;;
     device_state) exp_device_state ;;
-    all) precondition
-         exp_zero_queue; exp_block_size; exp_rw_mix; exp_queue_depth
-         exp_tail; exp_pitfall; exp_layout; exp_fio_check
+    all) # every experiment starts from a freshly preconditioned (sequentially re-written) file
+         local e
+         for e in zero_queue block_size rw_mix queue_depth tail pitfall layout fio_check; do
+           precondition; "exp_$e"
+         done
          echo "note: the large-file device-state runs are separate: scripts/run.sh device_state" ;;
     *) echo "unknown experiment: $what" >&2
        echo "usage: $0 {zero_queue|block_size|rw_mix|queue_depth|tail|pitfall|layout|fio_check|sustained|working_set|device_state|all|reprocess|dryrun}" >&2; exit 2 ;;
   esac
   echo "done: $what"
 }
-main "$@"
+# RUN_SH_LIB=1: only define the functions (scripts/rerun_clean.sh sources this file)
+[ "${RUN_SH_LIB:-0}" = 1 ] || main "$@"

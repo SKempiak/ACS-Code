@@ -12,7 +12,7 @@ compares element-by-element (or the scalar result, for the dot product) before t
 \begin{knobs}
   Cases  & kernels $\times$ \{float32, float64\}; $N$ around multiples of the lane count
            ($1,2,3,7,8,9,15,16,17,31,33,64,127,1000,1024,4095,4096,4097,65536$); start offsets
-           $4\ldots\qty{60}{\byte}$; strides $2,4,8,16$; gather; explicit AVX2 gather (native only,
+           \numlist{4;8;12;16;20;28;32;60}~\unit{\byte}; strides $2,4,8,16$; gather; explicit AVX2 gather (native only,
            $N \in \{7,8,9,16,17,1000,4096,65536\}$); int32 multiply \\
   Tolerance & relative error $\le 10^{-5}$ (float32) and $\le 10^{-12}$ (float64). The bound is loose
              enough for the one legal source of disagreement---FMA contraction in the vectorized

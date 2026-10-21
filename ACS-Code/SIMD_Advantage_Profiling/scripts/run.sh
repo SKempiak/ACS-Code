@@ -36,7 +36,7 @@ BIN() { echo "$ROOT/build/$1/simd_bench"; }
 SUMMARIZE="$CODE_ROOT/build/tools/summarize"
 CEIL="$ROOT/build/ceilings/ceilings"
 
-CPU_PIN="${CPU_PIN:-2}"                        # physical P-core, not CPU 0
+CPU_PIN="${CPU_PIN:-2}"                        # one physical core, not CPU 0 (interrupt/kworker noise)
 REPS="${REPS:-12}"
 MINMS="${MINMS:-25}"
 SEED="${SEED:-20260312}"
@@ -183,7 +183,7 @@ exp_alignment() {
   # where it should hide behind memory bandwidth.
   local n0 off v n
   for n0 in 4096 16777216; do
-    for off in 0 4 8 12 16 20 24 28 32 36 60; do
+    for off in $(seq 0 4 60); do
       for v in "${VARIANTS[@]}"; do
         run_one "$v" "$RAW" --experiment alignment --kernel saxpy --dtype f32 --n "$n0" --offset "$off"
       done

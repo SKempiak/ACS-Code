@@ -18,7 +18,7 @@ when its gains compress, and when it fails. Required experiments are single-thre
 | `scripts/roofline.sh`, `scripts/tables.sh` | Derive roofline points/roofs and report tables from processed CSVs (no measuring) |
 | `scripts/validate.sh` | Correctness checks (`make test`) |
 | `scripts/verify_vectorization.sh` | Vectorization evidence (`make report`) |
-| `Makefile` | Build variants: scalar, autovec, native (flags are TODO) |
+| `Makefile` | Build variants: scalar, autovec, native, plus the `ceilings` microbenchmark (flags documented in the Makefile and the report) |
 
 ## Kernels (choose at least three)
 

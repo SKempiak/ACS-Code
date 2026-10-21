@@ -16,8 +16,8 @@
 \end{knobs}
 
 The ring is a single random cycle over one node per cache line, so each load depends on the previous one
-and exactly one request is outstanding---zero-queue latency. Cycles use the in-process effective frequency
-(\cref{sec:method}).
+and exactly one request is outstanding---zero-queue latency. Cycles are converted with the
+fixed \qty{2.8}{\giga\hertz} core clock, which the cycle counter confirms (\cref{sec:method}).
 
 \paragraph{Plateau rule.} A level's latency is \emph{not} read at its capacity edge, where the set is
 partly spilling (e.g.\ \qty{256}{\kibi\byte} is a transition point, not an L2 point). Instead,
@@ -29,7 +29,8 @@ abstract, introduction and conclusion through generated macros, so they cannot d
 \begin{table}[tbp]
   \centering\small
   \caption{Zero-queue random-access latency per level (median over the plateau sizes; each size is the
-  median of 8 repetitions). ``min--max'' is the spread across plateau sizes. The cross-check is a
+  median of 8 repetitions); cycles = ns $\times$ \qty{2.8}{\giga\hertz}, the fixed core clock with turbo
+  disabled (\cref{sec:method}). ``min--max'' is the spread across plateau sizes. The cross-check is a
   \emph{substitute} for Intel MLC (not installed): an independently generated ring (xorshift64*) timed
   with \code{rdtscp}. ``2\,MiB pages'' removes the page-walk component from DRAM latency. Generated from
   \code{data/zero_queue_table.csv}.}

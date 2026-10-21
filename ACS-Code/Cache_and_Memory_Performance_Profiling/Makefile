@@ -15,7 +15,7 @@ BUILD   ?= build
 CFLAGS  := -std=gnu11 -O3 -march=native -g -Wall -Wextra -pthread -I../common/include -Isrc
 LDLIBS  := -lm -pthread
 
-PROGRAMS := mem_latency mem_bandwidth mem_loaded kernel_miss
+PROGRAMS := mem_latency mem_bandwidth mem_loaded kernel_miss clock_check
 COMMON   := $(wildcard ../common/src/*.c)
 HEADERS  := $(wildcard ../common/include/*.h) $(wildcard src/*.h)
 

@@ -11,6 +11,7 @@ misses determine performance, using Little's Law and AMAT-style reasoning.
 | `src/mem_bandwidth.c` | Bandwidth and latency vs. access pattern, granularity, read/write mix and concurrency |
 | `src/mem_loaded.c` | Loaded latency: load-generator cores plus a concurrent latency probe (knee, Little's Law, R/W-mix latency) |
 | `src/kernel_miss.c` | Simple loop kernel for correlating cache/TLB misses with runtime |
+| `src/clock_check.c` | Diagnostic: fixed core clock vs. wall time lost by a pinned thread (`run.sh clock_check`) |
 | `src/memprof.h` | Page-policy allocation (4 KiB vs. 2 MiB, verified), ring generators, `perf_event_open` counters |
 | `scripts/run.sh` | Runs each experiment below (`run.sh <experiment>...` or `run.sh all`) |
 | `scripts/validate.sh` | Physical-ordering sanity checks (`make test`); saved with every experiment |

@@ -13,7 +13,7 @@ demonstration (with \cref{sec:ai-use}).}
 
 \begin{knobs}
   Pitfall     & Measuring cache reuse instead of DRAM: picking a buffer that fits in cache \\
-  Wrong setup & Working set \qty{16}{\kibi\byte} (L1-resident), re-streamed many times, one thread \\
+  Wrong setup & Working set \qty{16}{\kibi\byte} (\num{16320}\,B after rounding to whole loop units; L1-resident), re-streamed many times, one thread \\
   Right setup & Working set \qtyrange{64}{512}{\mebi\byte} (well past the \qty{20}{\mebi\byte} LLC) \\
   Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh pitfall} \\
 \end{knobs}

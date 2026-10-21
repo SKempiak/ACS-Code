@@ -32,9 +32,11 @@ copied by hand.
   Counters             & \code{perf_event_open(2)} called directly, user space only \cite{linux_perf} \\
   Intel MLC            & not installed; substitute cross-checks in \cref{sec:validation} \cite{intel_mlc} \\
 \end{knobs}
-The \code{perf} command-line tool is not installed and \code{perf_event_paranoid} is
-\sysPerfParanoid{}, which still allows a process to count its \emph{own} user-mode events. The benchmarks
-therefore open the counters themselves (\code{exclude_kernel=1}, \code{exclude_hv=1}): cycles,
+\code{perf} (\sysPerf) is installed, but \code{perf_event_paranoid} is \sysPerfParanoid{}, which
+allows only user-mode counting of a process's own events, and we want counts confined to the timed region
+of each repetition rather than to the whole process. The benchmarks therefore call
+\code{perf_event_open(2)} themselves (\code{exclude_kernel=1}, \code{exclude_hv=1}), enable the counters
+immediately before each timed loop and read them immediately after it. The events are cycles,
 instructions, L1D read misses, LLC read references and misses, and dTLB read misses (completed page walks).
 Events are opened independently so the kernel may multiplex them; counts are scaled by
 \code{time_enabled/time_running} and the smallest running fraction is recorded per row
@@ -45,10 +47,21 @@ installed for this study; \code{run.sh mlc} records that fact in its raw directo
 \subsection{Controls}
 \begin{itemize}
   \item \textbf{Pinning and isolation:} \acspinning. SMT: \sysSMT. The machine is otherwise idle and
-        experiments are run one at a time.
-  \item \textbf{Frequency:} governor \sysGovernor, turbo \sysTurbo. Cycle figures use the effective
-        core frequency each run measures in-process from a dependent add chain
-        (\valqty{zq_ghz}{\giga\hertz} median), not a nominal clock.
+        experiments are run one at a time. All experiment data in this report were collected on
+        2026-10-21, 00:43--00:55, in one \code{run.sh all} invocation; the \code{clock_check}
+        diagnostic ran the same day at 19:46.
+  \item \textbf{Frequency:} governor \sysGovernor, turbo \sysTurbo, so the core runs at its fixed
+        \qty{2.8}{\giga\hertz} base clock (equal to the TSC rate). Cycle figures are
+        ns~$\times$~\valqty{zq_ghz}{\giga\hertz}. This conversion was checked against the hardware:
+        user-mode cycles divided by wall time over the timed windows give a median of
+        \valqty{ws_ctr_ghz}{\giga\hertz}. The benchmarks also log an in-process add-chain frequency
+        probe (\code{ghz} column), but it is \emph{not} used: in \val{ws_probe_low_pct}\% of runs it read
+        about \valqty{zq_probe_ghz_min}{\giga\hertz} instead of \valqty{zq_probe_ghz_max}{\giga\hertz}, although the cycle
+        counter shows \valqty{ws_ctr_ghz_lowprobe}{\giga\hertz} during exactly those runs. The low readings
+        are therefore an artifact of the probe, not a clock change: a diagnostic (\code{clock_check})
+        traces them to wall time lost to bursts of ACPI events on this host (\cref{sec:anomalies}). Converting with the probe would have
+        understated DRAM latency by about 14\% (\valnum{zq_DRAM_cyc_probe} instead of \valnum{zq_DRAM_cyc}
+        cycles); see \cref{sec:anomalies}.
   \item \textbf{Pages:} every buffer is a \qty{2}{\mebi\byte}-aligned anonymous mapping whose page size is
         chosen by \code{madvise} \emph{before first touch}: \code{MADV_HUGEPAGE} for ``huge'' and
         \code{MADV_NOHUGEPAGE} for ``4k''. The second is essential because THP is \sysHugePages{}: without

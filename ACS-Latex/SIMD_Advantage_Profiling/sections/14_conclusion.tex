@@ -7,7 +7,8 @@ SAXPY, elementwise multiply and the stencil roughly $3.5$--$5.8\times$ over scal
 $N=\num{4096}$ (the generic SSE build gets $2.6$--$3.0\times$), below the $8\times$ lane count
 because load/store issue, not the FMA units, limits the vector loop. Once the working set spills to
 DRAM the vector builds run \emph{at} the independently measured bandwidth roof, and the advantage
-compresses to $1.5$--$1.9\times$ (stencil $2.7\times$). What remains is not extra SIMD throughput but
+compresses to $1.7$--$1.9\times$ for SAXPY, $1.4$--$1.5\times$ for multiply and $2.7$--$2.8\times$ for the
+stencil. What remains is not extra SIMD throughput but
 the scalar loops' own instruction cost, which at the fixed \qty{2.8}{\giga\hertz} clock still
 exceeds the memory time; it would shrink further at a higher clock. Data type scales the
 cache-resident gain through lane count (float64 halves it), and access pattern dominates everything

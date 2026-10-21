@@ -23,10 +23,12 @@
 \pgfplotsset{compat=1.18}
 \usepgfplotslibrary{groupplots}
 
-\usepackage[backend=bibtex,style=ieee]{biblatex}
+\usepackage[backend=bibtex,style=ieee,sorting=nyt]{biblatex} % nyt: avoids a perpetual "undefined references" rerun loop with the bibtex backend
 \addbibresource{references.bib}
 
 \usepackage[hidelinks]{hyperref}
+\usepackage{xurl}           % allow URLs/paths to break anywhere
+\setlength{\emergencystretch}{3em} % let TeX loosen lines instead of overrunning the margin
 \usepackage[capitalise,noabbrev]{cleveref}
 
 % ---------------------------------------------------------------- siunitx
