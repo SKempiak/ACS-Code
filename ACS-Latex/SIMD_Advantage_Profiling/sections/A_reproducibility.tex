@@ -1,7 +1,7 @@
 % !TeX root = ../main.tex
 \section{Reproducibility}\label{app:repro}
 
-\newcommand{\acscommit}{\detokenize{2721691f277e}}
+\newcommand{\acscommit}{\detokenize{351d8f09664b}}
 Code, scripts, raw data and this report live in one repository: \code{ACS-Code/} holds the code and
 data (this project in \code{ACS-Code/SIMD_Advantage_Profiling/}, shared helpers in
 \code{ACS-Code/common/} and \code{ACS-Code/tools/}), \code{ACS-Latex/} the reports (this one in
@@ -10,7 +10,7 @@ data (this project in \code{ACS-Code/SIMD_Advantage_Profiling/}, shared helpers 
 
 \begin{lstlisting}[language=bash]
 gh repo clone SKempiak/ACS-Code ACS && cd ACS
-git checkout 2721691f277e
+git checkout 351d8f09664b
 cd ACS-Code
 make tools                                # tools/summarize
 make -C SIMD_Advantage_Profiling          # scalar/autovec/native simd_bench + ceilings
