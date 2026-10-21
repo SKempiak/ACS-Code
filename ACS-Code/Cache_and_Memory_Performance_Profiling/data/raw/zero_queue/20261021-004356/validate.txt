@@ -1,0 +1,21 @@
+validate.sh  2026-10-21 00:43:56 EDT  CPU_PIN=2
+governor=performance no_turbo=1 smt=0 online=0-9
+latency ns/access: L1=1.7939 L2=5.1758 L3=19.8179 DRAM=104.2337 (DRAM seq=7.3975; xorshift+TSC=103.1788)
+  OK: L1 < L2
+  OK: L2 < L3
+  OK: L3 < DRAM
+  OK: sequential DRAM << random DRAM (prefetch works)
+  OK: independent latency method agrees within 15% on DRAM
+read GiB/s: L1(1t)=22.7045 DRAM(1t)=10.8462 DRAM(10t)=25.1257
+  OK: L1 bandwidth > DRAM bandwidth (single core)
+  OK: 10-thread DRAM bandwidth > 1-thread
+loaded latency ns: unloaded=103.0733 under 4 streaming cores=141.9267
+  OK: loaded latency > unloaded latency
+effective GHz probe: 2.5650
+  OK: frequency probe in plausible range
+dTLB misses/access, 256 MiB random, 4 KiB pages: 0.9765
+  OK: perf_event_open user-space counters available
+AnonHugePages KiB for a 64 MiB buffer: huge=65536.0000 4k=0.0000
+  OK: 2 MiB pages granted when requested
+  OK: 4 KiB policy yields no huge pages
+all P2 sanity checks passed

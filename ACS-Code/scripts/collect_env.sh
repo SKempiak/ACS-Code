@@ -63,7 +63,7 @@ turbo() {
 epp() { cat /sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference 2>/dev/null || na; }
 isolation() {
   local iso; iso=$(grep -o 'isolcpus=[^ ]*' /proc/cmdline 2>/dev/null)
-  echo "${iso:-no isolcpus; runs pinned with taskset/--cpu}"
+  echo "${iso:-no isolcpus}"
 }
 memory() { awk '/MemTotal/{printf "%.0f GiB total\n",$2/1024/1024}' /proc/meminfo 2>/dev/null; }
 dimm()   { if have dmidecode && dmidecode -t memory >/dev/null 2>&1; then

@@ -9,64 +9,145 @@
 \end{hypothesis}
 
 \begin{knobs}
-  Fixed       & \qty{4}{\kibi\byte} random read; one job; \code{O_DIRECT} \\
-  Varied      & iodepth \numrange{1}{128} \\
-  Effective QD & verified in-band via the Little's Law table below (no \code{iostat} available) \\
+  Fixed       & \qty{4}{\kibi\byte} random; one job; \code{O_DIRECT}; 5 repetitions of \qty{4}{\second}
+                (writes also stop at \qty{256}{\mebi\byte}) \\
+  Varied      & iodepth 1, 2, 4, \dots, 256; 100\% read and 100\% write \\
+  Knee rule   & the smallest QD whose doubling raises median IOPS by less than \qty{10}{\percent}
+                (computed by \code{run.sh} into \code{queue_depth_knee.csv}) \\
+  Effective QD & checked in-band with Little's Law (\cref{tab:littles-law}); no \code{iostat} available \\
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh queue_depth} \\
 \end{knobs}
 
+\pgfplotsset{qdplot/.style={acs, height=0.85\linewidth, xlabel={IOPS},
+  ylabel={Latency (\si{\micro\second})}, legend pos=north west, legend style={font=\scriptsize},
+  scaled x ticks=base 10:-3, xtick scale label code/.code={$\times10^{3}$},
+  nodes near coords, point meta=explicit symbolic,
+  every node near coord/.append style={font=\tiny, anchor=south east, inner sep=1pt}},
+  qdbars/.style={error bars/.cd, x dir=both, x explicit, y dir=both, y explicit,
+  error bar style={black!45}}}
+\newcommand{\qdcurve}[2]{% {mode}{latency metric}
+  \addplot+[qdbars] table[x=iops_median, y=#2_median, meta=qd, only if={mode}{#1},
+    x error plus expr=\thisrow{iops_q75}-\thisrow{iops_median},
+    x error minus expr=\thisrow{iops_median}-\thisrow{iops_q25},
+    y error plus expr=\thisrow{#2_q75}-\thisrow{#2_median},
+    y error minus expr=\thisrow{#2_median}-\thisrow{#2_q25}] {data/queue_depth.csv};}
 \begin{figure}[tbp]
   \centering
   \IfDataExists{queue_depth}{%
-    \begin{tikzpicture}
-      \begin{axis}[acs, width=0.78\linewidth, xlabel={IOPS}, ylabel={Latency (\si{\micro\second})},
-                   legend pos=north west, nodes near coords, point meta=explicit symbolic,
-                   every node near coord/.append style={font=\scriptsize, anchor=south east}]
-        \addplot+ table[x=iops_median, y=lat_mean_us_median, meta=qd] {data/queue_depth.csv};
-        \addlegendentry{mean latency}
-        \addplot+ table[x=iops_median, y=lat_p99_us_median, meta=qd] {data/queue_depth.csv};
-        \addlegendentry{p99 latency}
-      \end{axis}
-    \end{tikzpicture}%
+    \begin{subfigure}[t]{0.49\linewidth}
+      \begin{tikzpicture}
+        \begin{axis}[ymode=log, qdplot]
+          \qdcurve{read}{lat_mean_us}\addlegendentry{mean}
+          \qdcurve{read}{lat_p99_us}\addlegendentry{p99}
+        \end{axis}
+      \end{tikzpicture}
+      \caption{4 KiB random read.}
+    \end{subfigure}\hfill
+    \begin{subfigure}[t]{0.49\linewidth}
+      \csvget\ssdHasW{queue_depth}{mode=write}{iops_median}%
+      \ifx\ssdHasW\empty\acsmissing{data/queue_depth.csv (write rows)}\else
+      \begin{tikzpicture}
+        \begin{axis}[ymode=log, qdplot]
+          \qdcurve{write}{lat_mean_us}\addlegendentry{mean}
+          \qdcurve{write}{lat_p99_us}\addlegendentry{p99}
+        \end{axis}
+      \end{tikzpicture}\fi
+      \caption{4 KiB random write.}
+    \end{subfigure}%
   }
-  \caption{Throughput vs.\ latency; each point is labelled with its queue depth. IOPS saturates near
-  \qty{158}{k} at QD=64; past the knee, QD=128 doubles latency for no extra throughput.}\label{fig:queue-depth}
+  \caption{Throughput vs.\ latency as queue depth grows; each point is labelled with its QD. Bars show
+  the IQR across repetitions in both IOPS and latency. Read IOPS saturate near
+  \csvq{queue_depth_knee}{mode=read}{max_iops} at the knee; deeper queues then add only latency.}\label{fig:queue-depth}
 \end{figure}
 
-\subsection{Little's Law check}
-With the queue kept full the outstanding-I/O count should satisfy $L = \lambda W$ (IOPS $\times$ mean
-latency) and equal the configured iodepth \cite{little1961proof}.
+\subsection{Knee}
+We define the knee as \emph{the smallest QD whose doubling raises median IOPS by less than
+\qty{10}{\percent}}. Past that point, most of any extra concurrency becomes added latency rather than
+throughput.
+
+\textbf{Reads.} The rule gives QD~\csvq{queue_depth_knee}{mode=read}{knee_qd}
+(\csvq{queue_depth_knee}{mode=read}{knee_iops} IOPS,
+\csvq[0]{queue_depth_knee}{mode=read}{knee_lat_us}\,\si{\micro\second} mean). Doubling to
+QD~\csvq{queue_depth_knee}{mode=read}{next_qd} adds only
+\csvq[1]{queue_depth_knee}{mode=read}{gain_pct}\,\% IOPS. The preceding doubling, QD 32$\to$64, still
+gained \qty{15}{\percent}. The grid doubles at each step, so the knee lies between 32 and 64.
+
+\textbf{Writes.} Applied literally, the rule returns QD~\csvq{queue_depth_knee}{mode=write}{knee_qd}.
+That is an artifact. The QD=8 write point caught a buffer-flush stall: median
+\csvq{queue_depth}{qd=8,mode=write}{iops_median} IOPS with an IQR of
+\csvq{queue_depth}{qd=8,mode=write}{iops_q25}--\csvq{queue_depth}{qd=8,mode=write}{iops_q75} and a p99
+of \csvq[1]{queue_depth}{qd=8,mode=write}{lat_p99_us_median}\,\si{\micro\second}. The rule therefore saw
+a fall rather than a gain. Read with that point excluded, write IOPS rise from
+\csvq{queue_depth}{qd=1,mode=write}{iops_median} (QD=1) to
+\csvq{queue_depth}{qd=4,mode=write}{iops_median} (QD=4) and
+\csvq{queue_depth}{qd=16,mode=write}{iops_median} (QD=16), then stay at
+\csvq{queue_depth}{qd=32,mode=write}{iops_median}--\csvq{queue_depth}{qd=256,mode=write}{iops_median}
+out to QD=256. The write knee is effectively QD\,$\approx$\,16. The write plateau of
+\ensuremath{\sim}\num{250}k IOPS $\times$ \qty{4}{\kibi\byte} $\approx$ \qty{0.97}{\gibi\byte\per\second}
+matches the SLC ingest rate measured in \cref{sec:block-size}. Writes saturate the buffer's intake, not
+the NAND parallelism that limits reads.
+
+\subsection{Little's Law as a consistency check}
+Little's Law \cite{little1961proof} relates the mean number of requests in a system $L$, the throughput
+$\lambda$ and the mean time in system $W$: $L=\lambda W$. In a \emph{closed-loop} harness it holds
+\emph{by construction}. There are exactly QD request slots, and each completion is resubmitted
+immediately, so $\lambda W = \text{QD}\cdot W/(W+g)$, where $g$ is the host-side gap between reaping a
+completion and resubmitting it. Matching QD therefore does not show that the device behaves in a
+particular way. It shows that the timers are consistent, that no slot is lost, and that the host keeps
+up ($g\ll W$). A ratio $L/\text{QD}$ clearly below 1 would mean the issuing thread, not the device, is
+the bottleneck. On a tmpfs control, where I/O completes synchronously inside \code{io_submit},
+\code{make test} measures $L/\text{QD}\approx0.57$ at QD=8. Note also that $W$ is measured from
+submission, so $L$ counts requests in the kernel block layer and driver as well as in the device; the
+true device-queue occupancy can only be lower.
 
 \begin{table}[tbp]
   \centering\small
-  \caption{Little's Law: measured $\lambda W$ against the configured queue depth
-  (\qty{4}{\kibi\byte} random read).}\label{tab:littles-law}
-  \begin{tabularx}{\linewidth}{@{}rrrrX@{}}
-    \toprule
-    iodepth & $\lambda$ (IOPS) & $W$ (\si{\micro\second}) & $L=\lambda W$ & \\
-    \midrule
-    1   & \num{20137}  & \num{49.6}  & \num{1.00}   & \\
-    2   & \num{26325}  & \num{75.9}  & \num{2.00}   & \\
-    4   & \num{30416}  & \num{131.3} & \num{3.99}   & \\
-    8   & \num{46398}  & \num{172.1} & \num{7.99}   & \\
-    16  & \num{74420}  & \num{213.9} & \num{15.92}  & \\
-    32  & \num{125097} & \num{253.7} & \num{31.74}  & knee region \\
-    64  & \num{158064} & \num{403.2} & \num{63.73}  & saturation \\
-    128 & \num{158551} & \num{804.8} & \num{127.6}  & latency-only growth \\
-    \bottomrule
-  \end{tabularx}
+  \caption{Little's Law per queue depth: $\lambda$ (IOPS) and $W$ (mean latency, \si{\micro\second}) are
+  medians with the IQR in brackets; $L=\lambda W$ is computed per repetition and then summarized.
+  \code{4 KiB} random.}\label{tab:littles-law}
+  \IfDataExists{queue_depth}{%
+    \ssdload{queue_depth}\def\ssdRows{}%
+    \pgfplotsforeachungrouped \ssdR in {0,...,\ssdLast}{%
+      \ssdstr{mode}\ssdM\ssdstr{qd}\ssdQD
+      \ssdiqr{iops}\ssdA\ssdiqr[1]{lat_mean_us}\ssdB\ssdiqr[2]{littles_l}\ssdC
+      \pgfplotstablegetelem{\ssdR}{littles_l_median}\of\ssdT\let\ssdLraw\pgfplotsretval
+      \pgfkeys{/pgf/fpu=true}\pgfmathparse{\ssdLraw/\ssdQD}%
+      \pgfmathprintnumberto[fixed,precision=3]{\pgfmathresult}{\ssdD}\pgfkeys{/pgf/fpu=false}%
+      \eappto\ssdRows{\expandonce\ssdM & \ssdQD & \expandonce\ssdA & \expandonce\ssdB & \expandonce\ssdC &
+        \expandonce\ssdD \noexpand\\}}%
+    \begin{tabular}{@{}lrrrrr@{}}
+      \toprule
+      Mode & QD & $\lambda$ (IOPS) [IQR] & $W$ [IQR] & $L=\lambda W$ [IQR] & $L/\text{QD}$ \\
+      \midrule
+      \ssdRows
+      \bottomrule
+    \end{tabular}}
 \end{table}
 
 \subsection{Analysis}
-IOPS climbs almost linearly through QD=16 (\num{20}k\,$\to$\,\num{74}k), begins to bend at QD=32
-(\num{125}k) and saturates at QD=64 (\num{158}k); QD=128 adds \num{0.3}\% throughput while mean latency
-doubles from \qty{403}{} to \qty{805}{\micro\second}. The knee is therefore at QD\,$\approx$\,64, where the
-device's channel parallelism is fully engaged. The Little's Law column is strikingly clean: $\lambda W$
-equals the configured iodepth to within a percent at \emph{every} depth including QD=128
-($L=\num{127.6}$), so the \code{libaio} engine really does keep the queue full---the effective queue depth
-matches the requested one, which is the in-band substitute for an \code{iostat} aqu-sz check. This is also
-the textbook signature of saturation: past the knee $\lambda$ is flat, so the only way $L$ can keep
-growing with iodepth is for $W$ to grow proportionally---exactly the linear latency rise we see. The
-practical reading: QD\,$\approx$\,32--64 extracts essentially all the throughput at a quarter-millisecond
-latency; deeper queues only buy latency. Here the saturation is the device's, not the harness's, since
-Little's Law holds all the way out.
+Read IOPS climb from \csvq{queue_depth}{qd=1,mode=read}{iops_median} at QD=1 to
+\csvq{queue_depth}{qd=16,mode=read}{iops_median} at QD=16 and
+\csvq{queue_depth}{qd=32,mode=read}{iops_median} at QD=32, then flatten at
+\csvq{queue_depth}{qd=64,mode=read}{iops_median}--\csvq{queue_depth}{qd=256,mode=read}{iops_median}.
+Scaling is sub-linear from the start. Successive doublings from QD=1 add 56, 39, 60, 47, 34, 15, 4.5 and
+1.8\,\%, with no distinct regime of linear scaling. The pilot run's impression that QD 1$\to$4 scaled
+unusually poorly did not reproduce: here it scaled $2.2\times$. Beyond the knee, mean latency doubles
+with each doubling of QD
+(\csvq[0]{queue_depth}{qd=64,mode=read}{lat_mean_us_median}$\to$%
+\csvq[0]{queue_depth}{qd=128,mode=read}{lat_mean_us_median}$\to$%
+\csvq[0]{queue_depth}{qd=256,mode=read}{lat_mean_us_median}\,\si{\micro\second}), which is the textbook
+saturation signature. With $\lambda$ flat, $L=\lambda W$ can follow QD only if $W$ grows in proportion,
+so every added request simply waits.
+
+For reads, $L/\text{QD}$ stays between 0.987 and 0.998 at every depth up to 256
+(\cref{tab:littles-law}). The single \code{libaio} thread keeps the queue full, and the saturation
+belongs to the device. For writes the ratio is 0.95--0.997. The lowest value, 0.95 at QD=128, coincides
+with the widest p99.9 there
+(\csvq[0]{queue_depth}{qd=128,mode=write}{lat_p999_us_median}\,\si{\micro\second}). We read it as
+completions bunching around a flush stall rather than a host limit, but with five repetitions we cannot
+separate the two.
+
+The practical reading for reads: QD\,$\approx$\,32--64 extracts nearly all the throughput at a quarter
+to half a millisecond, and deeper queues only buy latency. Writes need only QD\,$\approx$\,16, as long as
+the SLC cache has room. Once it does not, write throughput is set by QLC programming, whatever the queue
+depth (\cref{sec:device-state}).

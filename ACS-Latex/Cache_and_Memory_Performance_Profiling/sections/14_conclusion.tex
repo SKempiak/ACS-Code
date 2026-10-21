@@ -1,18 +1,19 @@
 % !TeX root = ../main.tex
 \section{Conclusion}\label{sec:conclusion}
 
-This hierarchy behaves exactly as its capacities predict, and the measurements make the shape
-quantitative. Zero-queue latency climbs in clean steps---\ensuremath{\sim}\qty{1}{\nano\second} (4--5 cycles) in L1,
-\ensuremath{\sim}\qty{4}{\nano\second} in L2, tens of cycles across the \qty{20}{\mebi\byte} L3, and
-\ensuremath{\sim}\qty{84}{\nano\second} (\ensuremath{\sim}\num{400} cycles) once the set spills to DRAM---while the random/
-sequential gap shows the prefetcher turning a \num{47}$\times$ latency penalty into a \num{10}$\times$
-one for regular streams. Bandwidth tells the concurrency half of the story: one core reaches only
-\ensuremath{\sim}\qty{14}{\gibi\byte\per\second} because it can keep \ensuremath{\sim}\num{10} lines in flight, and it takes four
-to six cores---\ensuremath{\sim}\num{42} outstanding lines by Little's Law---to saturate the dual-channel controller
-near \qty{30}{\gibi\byte\per\second}, after which more cores pay nothing. The most important lessons are
-about measurement discipline as much as hardware: a bandwidth benchmark must out-size the LLC or it
-silently measures cache reuse (\cref{sec:pitfall}); a latency benchmark must randomize or the prefetcher
-hides what it claims to measure; and a huge-page study must verify its backing or it mistakes a
-never-granted mapping for ``no effect'' (\cref{sec:tlb}). Locality, concurrency and page behaviour each
-move performance by an order of magnitude, and only controlled, verified sweeps separate the real effects
-from the artifacts.
+The hierarchy behaves as its capacities predict, and the counters now show \emph{why} each step occurs.
+Zero-queue latency is \valqty{zq_L1_ns}{\nano\second} (\valnum{zq_L1_cyc}~cycles) in L1,
+\valqty{zq_L2_ns}{\nano\second} in L2, \valqty{zq_L3_ns}{\nano\second} in L3 and
+\valqty{zq_DRAM_ns}{\nano\second} in DRAM, of which \valqty{zq_DRAM_walk_ns}{\nano\second} is page walking
+that \qty{2}{\mebi\byte} pages remove. Concurrency is the other half of the story. Measured under load,
+latency stays near its unloaded value until \valqty{int_knee_gib}{\gibi\byte\per\second} and then climbs
+steeply towards the \valqty{int_peak_gib}{\gibi\byte\per\second} ceiling: past the knee, more cores buy
+queueing, not bandwidth. With measured latency, Little's Law separates the \valnum{int_L0max} lines the memory
+system serves at saturation from up to \valnum{int_Lmax} lines that merely queue; one core sustains at most
+\valnum{mlp_t1_Lmem_max} random demand misses, but far more lines when the prefetcher streams; and a
+counter-fitted AMAT model shows random SAXPY paying \valqty{amat_rand_aD}{\nano\second} per DRAM miss---the
+DRAM latency divided by \valnum{amat_rand_mlp}-way overlap. The lessons are about measurement discipline as
+much as hardware: a bandwidth benchmark must out-size the LLC or it measures cache reuse
+(\cref{sec:pitfall}); a latency benchmark must randomize or it measures the prefetcher; a knee must come from
+measured latency, not throughput alone; a read/write mix must be defined at line granularity; and a
+huge-page study must verify its pages---in both directions (\cref{sec:tlb}).

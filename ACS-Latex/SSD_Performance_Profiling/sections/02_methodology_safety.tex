@@ -9,49 +9,105 @@ environment documentation.}
 \newcommand{\acspinning}{a single I/O-issuing thread, not CPU-pinned (storage I/O is device-bound, not
 CPU-bound, below the host-saturation queue depths of \cref{sec:queue-depth})}
 \newcommand{\acsenvextra}{%
-  SSD       & Micron 2210 MTFDHBA512QFD, \qty{512}{\giga\byte} (QLC NVMe); firmware not read
-              (\code{smartctl}/\code{nvme id-ctrl} need root) \\
-  Interface & NVMe over PCIe (\code{nvme0n1}); exact link generation/width not probed
-              (\code{lspci -vv} LnkSta needs root) \\
-  Target    & \qty{2}{\gibi\byte} disposable file on an ext4 filesystem (the SSD's \code{/} partition,
-              reached via \code{ACS_SCRATCH}); LBA range = the 2\,GiB file, not the whole device \\
+  SSD       & Micron 2210 \code{MTFDHBA512QFD}, \qty{512}{\giga\byte} QLC NVMe, firmware \code{P6MA001}
+              (from \code{/sys/class/nvme/nvme0}; SMART logs need root) \\
+  Interface & PCIe link \qty{8.0}{GT/s} $\times$4 (Gen3), both current and maximum, read from
+              \code{current_link_speed}/\code{current_link_width} in sysfs. Raw ceiling
+              $8\,\text{GT/s}\times4\times\tfrac{128}{130}=\qty{3.94}{\giga\byte\per\second}$
+              (\qty{3756}{\mebi\byte\per\second}), roughly \qtyrange{3.2}{3.5}{\giga\byte\per\second}
+              after TLP/DLLP overhead \\
+  Block layer & scheduler \code{none}, \code{nr_requests} 1023, 16 I/O queues, volatile write cache
+              reported as \enquote{write back} \\
+  Target    & disposable files on the SSD's ext4 \code{/} partition (\code{nvme0n1p3}, mounted
+              \code{relatime}, no online discard), reached via \code{ACS_SCRATCH}: a \qty{2}{\gibi\byte}
+              test file for the sweeps, and a \qty{60}{\gibi\byte} file for the device-state runs \\
+  Temperature & NVMe composite sensor \code{/sys/block/nvme0n1/device/hwmon*/temp1_input}, readable
+              without root, logged per repetition and every second in the sustained runs \\
 }
 \input{../common/environment_table}
 
-The machine has two drives: this Micron NVMe SSD and a \qty{2}{\tera\byte} SATA HDD
-(\code{/dev/sda1}). The project is about the SSD, so the disposable test file is placed on the SSD's
-filesystem (\cref{sec:device-state} and \cref{sec:anomalies} note the HDD cross-check). The device under
-test is recorded from \code{/sys/block/nvme0n1} and the \code{rotational}=0 flag in each run's
-\code{env.txt}, so the numbers cannot be silently mislabelled.
+The machine has two drives: this Micron NVMe SSD and a \qty{2}{\tera\byte} SATA HDD (\code{/dev/sda},
+mounted at \code{/data}). The scratch directory is placed on the SSD's filesystem. Each run's
+\code{env.txt} resolves the scratch filesystem's partition to its parent disk
+(\code{nvme0n1p3}$\to$\code{nvme0n1}) and records that disk's \code{rotational} flag (0), model,
+firmware, PCIe link and temperature, so a run can never be silently mislabelled
+(\cref{sec:ai-use} describes how this check once failed).
 
 \subsection{Data-loss safeguards}
 \begin{itemize}
-  \item Target: a single disposable file (\code{testfile.bin}) in a dedicated scratch directory; nothing
-        else on the SSD's \code{/} filesystem is touched. The scratch location is set by
-        \code{ACS_SCRATCH} and defaults to the in-repo \code{data/scratch/}.
-  \item The run scripts refuse any other target. \code{scripts/safety.sh} is called before every run and
-        \textbf{hard-refuses} a block or character device, a mountpoint, any path outside the scratch
-        directory, or a non-regular file, and checks free space---verified in \code{scripts/validate.sh}
-        (it rejects \code{/dev/nvme0n1}, \code{/etc/passwd} and \code{/}). No raw device or partition is
-        ever opened.
+  \item \textbf{Targets.} Only disposable files (\code{testfile.bin}, \code{bigfile.bin}) in a dedicated
+        scratch directory are ever written; nothing else on the SSD is touched. Both files are deleted
+        when \code{run.sh} exits, including on interrupt.
+  \item \textbf{Gate.} \code{scripts/safety.sh} runs before every experiment. It hard-refuses a block or
+        character device (including through a symlink), a mountpoint, a directory, any path outside the
+        scratch directory, and a target without enough free space. \code{scripts/validate.sh}
+        (\code{make test}) verifies that it refuses \code{/dev/nvme0n1} and \code{/dev/sda}, a symlink
+        to \code{/dev/sda}, \code{/etc/passwd} and \code{/}. These checks only \code{stat} the paths and
+        never open them.
+  \item \textbf{Benchmark.} \code{blkbench} \code{lstat}s its target \emph{before} opening it, refuses
+        anything that is not a regular file, and opens with \code{O_NOFOLLOW}. No raw device or
+        partition is ever opened.
+  \item \textbf{Space.} The large device-state file (\qty{60}{\gibi\byte} here) is refused unless the filesystem
+        keeps at least \qty{10}{\gibi\byte} free after creating it.
 \end{itemize}
 
-\subsection{I/O engine configuration}
-FIO is the spec's recommended tool but is not installed on this host and cannot be installed (no root).
-We therefore drive the required experiments with \code{build/blkbench}, a small O\_DIRECT benchmark built
-on Linux \code{libaio}---the same asynchronous engine FIO's \code{libaio} ioengine uses
-\cite{axboe_fio}---so real queue depth is kept in flight and the full latency distribution is recorded.
+\subsection{I/O engines and configuration}
+The primary engine is \code{build/blkbench}, a small O\_DIRECT benchmark built on Linux \code{libaio},
+the same asynchronous engine as FIO's \code{libaio} ioengine \cite{axboe_fio}. It keeps exactly QD
+requests in flight in a closed loop: every completion is immediately replaced. It records the
+submit-to-completion latency of every I/O. FIO 3.42 runs the same points through
+\code{fio/job.fio} (\code{libaio}, \code{direct=1}, total-latency percentiles), and
+\cref{sec:validation} compares the two engines. \code{ENGINE=fio} routes every standard sweep through
+FIO instead.
 \begin{knobs}
-  Engine          & Linux \code{libaio}; \code{O_DIRECT} (page cache bypassed), block-aligned buffers and offsets \\
-  Timing          & \qty{4}{\second} measured per repetition (\qty{6}{\second} for tail runs); no separate
-                    ramp---preconditioning plus repetitions absorb warm-up \\
-  Repetitions     & 2 per point (3 for zero-queue and tail); median with inter-quartile-range error bars \\
-  Data pattern    & fixed \code{0xA5} fill, held constant across runs (the QLC controller does no inline
-                    compression; compressibility was not varied---see \cref{sec:anomalies}) \\
-  Latency metric  & per-I/O completion latency (p50/p95/p99/p99.9 from the sorted sample) \\
-  Preconditioning & full sequential O\_DIRECT write pass over the file before timed runs, so reads hit
-                    real allocated extents (evidence in \cref{sec:device-state}) \\
-  Driver          & \code{SSD_Performance_Profiling/scripts/run.sh}, benchmark \code{src/blkbench.c} \\
+  Engine          & \code{libaio}; \code{O_DIRECT} (page cache bypassed); 4\,KiB-aligned buffers and
+                    block-aligned offsets; 64-bit uniform random offsets (splitmix64) \\
+  Timing          & \qty{4}{\second} per repetition (\qty{6}{\second} for tail runs). Points that write
+                    also stop after \qty{256}{\mebi\byte} per repetition, which bounds the bytes written
+                    (\cref{tab:budget}). No separate ramp: preconditioning absorbs warm-up \\
+  Repetitions     & 5 per point (3 for the block-size write points, also to bound bytes written);
+                    figures and tables show the median with inter-quartile-range (IQR) bars \\
+  Data pattern    & incompressible: every write buffer is filled once, before timing, from an
+                    xorshift64* generator seeded per queue slot; the preconditioning pass uses the same
+                    generator. \code{make test} checks that \code{gzip} cannot compress the result \\
+  Latency metric  & per-I/O submit$\to$completion latency; p50/p95/p99/p99.9 from the full sorted
+                    sample, with no reservoir truncation \\
+  Preconditioning & before each experiment, one sequential O\_DIRECT write pass over the
+                    \code{fallocate}d test file; repeated before every \emph{sequential-read} group
+                    because random writes scatter the physical layout (\cref{sec:device-state}) \\
+  Temperature     & NVMe composite temperature recorded with every repetition (\code{temp_c}) \\
+  Driver          & \code{SSD_Performance_Profiling/scripts/run.sh}; benchmark \code{src/blkbench.c} \\
 \end{knobs}
-Because the issuing thread only submits and reaps completions, a single thread suffices to reach the
-device's queue; the host CPU is not the bottleneck until very high queue depths (\cref{sec:queue-depth}).
+Because the issuing thread only submits and reaps completions, one thread can keep the device's queue
+full. The Little's-Law check in \cref{sec:queue-depth} shows where this stops being true.
+
+\subsection{Execution and run order}
+The timed runs were executed by the author in a terminal, using the scripts described here, with the
+CPU governor at \code{performance}, turbo off and SMT off. \code{run.sh all} ran the experiments in the
+order of \cref{tab:budget} from 10:32 to 10:54. \code{SUSTAIN_GIB=60 run.sh device_state} followed
+immediately, from 10:54 to 11:23. The drive's state carries over from one experiment to the next, and
+nothing in between trims or idles it: the SLC-cache fill level and the background folding/GC backlog
+are both inherited. Several results below depend on this, and each says so: the write collapse in
+\cref{sec:block-size}, the tail runs in \cref{sec:tail}, and the whole of \cref{sec:device-state}.
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{Measured wall-clock time of each experiment in the reported run, in execution order, and the
+  maximum bytes it can write with the default knobs (byte caps plus preconditioning).}\label{tab:budget}
+  \begin{tabularx}{\linewidth}{@{}lrrX@{}}
+    \toprule
+    Experiment & Time & Max written & Notes \\
+    \midrule
+    \code{zero_queue}   & \qty{1.1}{\minute} & \qty{7}{\gibi\byte}  & includes the initial preconditioning \\
+    \code{block_size}   & \qty{9.1}{\minute} & \qty{22}{\gibi\byte} & 48 points; write points 3 reps, \qty{256}{\mebi\byte} cap \\
+    \code{rw_mix}       & \qty{0.5}{\minute} & \qty{4}{\gibi\byte}  & \\
+    \code{queue_depth}  & \qty{3.7}{\minute} & \qty{11}{\gibi\byte} & read and write, QD 1--256 \\
+    \code{tail}         & \qty{2.0}{\minute} & --                   & reads only \\
+    \code{pitfall}      & \qty{0.8}{\minute} & \qty{2}{\gibi\byte}  & reads only (plus re-fill) \\
+    \code{layout}       & \qty{2.2}{\minute} & \qty{6}{\gibi\byte}  & includes a \qty{4}{\gibi\byte} random overwrite \\
+    \code{fio_check}    & \qty{3.3}{\minute} & \qty{8}{\gibi\byte}  & both engines, interleaved \\
+    \code{sustained}    & \qty{24.9}{\minute}& \qty{72}{\gibi\byte} & \qty{60}{\gibi\byte} fill $+$ $\le$\qty{8}{\gibi\byte} random $+$ $\le$\qty{4}{\gibi\byte} recovery \\
+    \code{working_set}  & \qty{4.0}{\minute} & \qty{5}{\gibi\byte}  & on the \qty{60}{\gibi\byte} file left by \code{sustained} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}

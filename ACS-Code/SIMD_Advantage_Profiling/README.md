@@ -10,8 +10,12 @@ when its gains compress, and when it fails. Required experiments are single-thre
 | `include/kernels.h` | Declarations for the kernels under test and their reference versions |
 | `src/kernels.c` | Kernels under test, compiled once per build variant |
 | `src/reference.c` | Simple reference implementations for correctness validation |
-| `src/main.c` | Benchmark driver: configuration, data setup, validation, timing, raw output |
-| `scripts/run.sh` | Runs each experiment below |
+| `src/main.c` | Benchmark driver: configuration, data setup, validation, timing, raw output (`--counters` adds hardware-counter columns) |
+| `src/ceilings.c` | Roofline ceilings, independent of the kernels: FMA/mul+add peak per ISA and STREAM-style read/copy/triad bandwidth per cache level (`build/ceilings/ceilings`) |
+| `include/perfctr.h`, `src/perfctr.c` | User-space hardware counters via `perf_event_open` (no `perf`, no root; NA when unavailable) |
+| `scripts/run.sh` | Runs each experiment below, plus `ceilings` and `derive` |
+| `scripts/speedup_iqr.awk` | Adds speedup error-bar bounds (`speedup_q25/_q75`) to processed CSVs |
+| `scripts/roofline.sh`, `scripts/tables.sh` | Derive roofline points/roofs and report tables from processed CSVs (no measuring) |
 | `scripts/validate.sh` | Correctness checks (`make test`) |
 | `scripts/verify_vectorization.sh` | Vectorization evidence (`make report`) |
 | `Makefile` | Build variants: scalar, autovec, native (flags are TODO) |

@@ -11,10 +11,22 @@
   must gather lanes individually. Gather (random permutation) should be the worst case.
 \end{hypothesis}
 
+\begin{hypothesis}
+  (Added for the extended sweep, before it was run.) The explicit AVX2 gather
+  (\code{vgatherdps}, \cref{sec:vectorization}) loads eight lanes per instruction but still needs one
+  cache line per element and eight scalar stores, so we expect it to be at best modestly faster than
+  the scalar gather in cache and no faster in DRAM. On this CPU the \enquote{Gather Data Sampling}
+  microcode mitigation is active (\code{/sys/devices/system/cpu/vulnerabilities/gather_data_sampling}:
+  \enquote{Mitigation: Microcode}), which is reported to slow \code{vgatherdps} considerably, so it
+  may even lose to the scalar loop.
+\end{hypothesis}
+
 \begin{knobs}
-  Fixed       & SAXPY; float32; native and scalar builds \\
-  Varied      & access (unit, stride $1/2/4/8/16$, gather); $N$ cache-resident (\num{32768}) and
-                DRAM-resident (\num{4194304}) \\
+  Fixed       & SAXPY; float32 \\
+  Varied      & access (unit, stride $1/2/4/8/16$, gather, explicit AVX2 gather); variant (scalar,
+                autovec, native; AVX2 gather native only); $N=\num{32768}$ processed elements
+                (span $\qty{256}{\kibi\byte}\times s$: L2 for $s=1$, L3 for $s=16$) and
+                $N=\num{4194304}$ (DRAM for every $s$) \\
   Definition  & stride $s$ processes elements $0, s, 2s, \ldots$ over an array of $N s$ elements;
                 gather applies SAXPY through a random permutation index so every element is touched
                 once with no spatial locality. \\
@@ -24,48 +36,82 @@
 \begin{figure}[tbp]
   \centering
   \IfDataExists{stride}{%
-    \begin{tikzpicture}
-      \begin{axis}[acs, xmode=log, log basis x=2, xlabel={Stride (elements)}, ylabel={Time per processed element (ns)}, legend pos=north west]
-        \addplot+[iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{scalar}, only if={n}{4194304}] {data/stride.csv};
-        \addlegendentry{scalar (DRAM)}
-        \addplot+[iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{native}, only if={n}{4194304}] {data/stride.csv};
-        \addlegendentry{native (DRAM)}
-      \end{axis}
-    \end{tikzpicture}%
+    \begin{subfigure}[t]{0.49\linewidth}
+      \begin{tikzpicture}
+        \begin{axis}[acs, height=0.85\linewidth, xmode=log, log basis x=2, ymode=log, xlabel={Stride (elements)},
+                     ylabel={Time per processed element (ns)}, legend pos=north west, legend style={font=\scriptsize}]
+          \acsvariantlegend
+          \addplot+[var scalar, forget plot, iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{scalar}, only if={n}{32768}] {data/stride.csv};
+          \addplot+[var autovec, forget plot, iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{autovec}, only if={n}{32768}] {data/stride.csv};
+          \addplot+[var native, forget plot, iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{native}, only if={n}{32768}] {data/stride.csv};
+        \end{axis}
+      \end{tikzpicture}
+      \caption{$N=\num{32768}$ (cache-resident span).}
+    \end{subfigure}\hfill
+    \begin{subfigure}[t]{0.49\linewidth}
+      \begin{tikzpicture}
+        \begin{axis}[acs, height=0.85\linewidth, xmode=log, log basis x=2, ymode=log, xlabel={Stride (elements)},
+                     ylabel={Time per processed element (ns)}]
+          \addplot+[var scalar, forget plot, iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{scalar}, only if={n}{4194304}] {data/stride.csv};
+          \addplot+[var autovec, forget plot, iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{autovec}, only if={n}{4194304}] {data/stride.csv};
+          \addplot+[var native, forget plot, iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{native}, only if={n}{4194304}] {data/stride.csv};
+        \end{axis}
+      \end{tikzpicture}
+      \caption{$N=\num{4194304}$ (DRAM-resident).}
+    \end{subfigure}%
   }
-  \caption{Effect of stride on native and scalar SAXPY time per \emph{processed} element, DRAM-resident
-  ($N=\num{4194304}$). The two curves coincide for every non-unit stride.}\label{fig:stride}
+  \caption{Effect of stride on SAXPY time per \emph{processed} element (median, IQR error bars). The
+  three builds coincide for every non-unit stride.}\label{fig:stride}
 \end{figure}
 
 \begin{table}[tbp]
   \centering\small
-  \caption{Time per processed element (ns), DRAM-resident SAXPY, $N=\num{4194304}$.}\label{tab:stride}
-  \begin{tabular}{@{}lrrr@{}}
-    \toprule
-    Access & scalar & native & native speedup \\
-    \midrule
-    unit (stride 1)   & 0.453 & 0.252 & $1.80\times$ \\
-    stride 2          & 0.790 & 0.787 & $1.00\times$ \\
-    stride 4          & 1.540 & 1.509 & $1.02\times$ \\
-    stride 8          & 2.944 & 2.977 & $0.99\times$ \\
-    stride 16         & 6.074 & 6.122 & $0.99\times$ \\
-    gather (random)   & 10.83 & 10.69 & $1.01\times$ \\
-    \bottomrule
-  \end{tabular}
+  \caption{Time per processed element (ns) by access pattern. \emph{AVX2 gather} is the explicit
+  \code{vgatherdps} kernel (native build only); speedup is scalar over the faster native
+  kernel (the AVX2 gather has no strided form, hence --).}\label{tab:stride}
+  \IfDataExists{stride_summary}{%
+    \pgfplotstabletypeset[
+      col sep=comma, string type,
+      columns={n,pattern,scalar,autovec,native,native_avx2,speedup},
+      columns/n/.style={column name=$N$},
+      columns/pattern/.style={column name=Access},
+      columns/scalar/.style={column name=scalar, column type=r},
+      columns/autovec/.style={column name=autovec, column type=r},
+      columns/native/.style={column name=native, column type=r},
+      columns/native_avx2/.style={column name=AVX2 gather, column type=r},
+      columns/speedup/.style={column name=speedup ($\times$), column type=r},
+      every head row/.style={before row=\toprule, after row=\midrule},
+      every row no 6/.style={before row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/stride_summary.csv}%
+  }
 \end{table}
 
 \subsection{Analysis}
-\Cref{tab:stride} makes the pattern stark. Only unit stride lets \code{native} beat \code{scalar}
-(\,$1.80\times$\,); at stride~2 and beyond the two builds are within measurement noise of each other.
-Two things happen at once. First, the effective bandwidth collapses: time per processed element
-roughly doubles from stride~2 to~4 to~8 to~16 (\num{0.79} $\to$ \num{1.51} $\to$ \num{2.98}
-$\to$ \qty{6.12}{\nano\second}), because once the stride reaches \num{16} elements each access pulls a
-fresh \qty{64}{\byte} line and $15/16$ of every line is wasted. Second, the SIMD advantage
-disappears: a strided or gathered load cannot be a single contiguous \code{vmovups}, so the compiler
-either falls back to scalar element loads or (for gather) emits per-lane address arithmetic; the
-vector ALU is then starved regardless of width. The disassembly confirms this---\code{native}'s
-gather kernel stays on \qty{128}{bit} \code{xmm} and never reaches \code{ymm}
-(\cref{tab:vec-summary}), and GCC does not emit an AVX2 \code{vgather} here at all. Gather is the
-worst case at \qty{10.7}{\nano\second} per element, $\approx\!42\times$ slower than unit stride,
-because the random permutation defeats the hardware prefetcher as well. The practical lesson is that
-access pattern, not vector width, is the first-order knob for these kernels.
+\Cref{tab:stride} makes the pattern stark. Only unit stride lets \code{native} beat \code{scalar}:
+$3.90\times$ at $N=\num{32768}$ and $1.99\times$ in DRAM. At stride~2 and beyond the three builds
+agree within \numrange{1.00}{1.02}$\times$ (native vs.\ scalar) at both sizes; \code{autovec} is
+within \SI{10}{\percent} of them everywhere, as expected since its strided loop is equally scalar.
+Two things happen at once. First, the effective bandwidth collapses. In DRAM the time per processed
+element grows from stride~2 to~4 to~8 to~16 as \num{1.14} $\to$ \num{1.83} $\to$ \num{3.42} $\to$
+\qty{7.24}{\nano\second} (native), approaching a doubling per step. Once the stride reaches \num{16}
+elements, each access pulls a fresh \qty{64}{\byte} line and $15/16$ of every line is wasted. With
+$N=\num{32768}$ the span stays in L2/L3 and the progression is milder (\num{0.78} $\to$ \num{1.06}
+$\to$ \num{1.85} $\to$ \qty{3.54}{\nano\second}), but the near-doubling from stride~8 to~16 is the
+same: the cost per element is set by the cache lines touched, not by arithmetic. Second, the SIMD
+advantage disappears. The vectorized body exists only for $s=1$ (GCC's run-time loop versioning,
+\cref{sec:vectorization}); every $s>1$ runs the scalar copy of the loop, so no build has vector lanes
+to offer. Gather is the worst pattern: \qty{10.1}{\nano\second} per element in DRAM (native),
+$29\times$ slower than unit stride, because the random permutation also defeats the hardware
+prefetcher. Even at $N=\num{32768}$ it costs \qty{1.92}{\nano\second}, $12\times$ unit stride.
+
+\emph{Hardware gather.} The explicit AVX2 kernel takes \num{3.20} and \qty{10.56}{\nano\second} per
+element at $N=\num{32768}$ and \num{4194304}. That is $1.54\times$ and $1.03\times$ the time of the
+scalar build's gather, i.e.\ \emph{slower}, decisively so when the data is cache-resident. The
+hypothesis written before the run anticipated this. Each 8-lane step issues two \code{vgatherdps},
+which the active Gather Data Sampling microcode mitigation is known to make expensive, followed by
+eight scalar stores. In DRAM the random line fetches dominate either way and the difference
+shrinks to \SI{3}{\percent}. We could not run without the mitigation (that needs a reboot with
+root), so the attribution remains a hypothesis (\cref{sec:anomalies}). Either way, a SIMD gather
+does not recover the unit-stride advantage. The practical lesson is that access pattern, not vector
+width, is the first-order knob for these kernels.

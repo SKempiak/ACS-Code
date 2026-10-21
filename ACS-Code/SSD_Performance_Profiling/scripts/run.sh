@@ -1,23 +1,43 @@
 #!/usr/bin/env bash
 # run.sh — experiment driver for Project 3 (SSD / storage performance profiling).
 #
-#   scripts/run.sh <experiment>   one of:
-#       zero_queue block_size rw_mix queue_depth tail device_state pitfall
-#   scripts/run.sh all            every experiment (preconditions once first)
+#   scripts/run.sh <experiment>     one of:
+#       zero_queue block_size rw_mix queue_depth tail pitfall layout   (2 GiB test file)
+#       working_set sustained device_state                          (large file, see below)
+#       fio_check                                                   (needs fio; skips cleanly)
+#   scripts/run.sh all              the 2 GiB-file experiments + fio_check (NOT the large
+#                                   device-state runs, which must be started explicitly)
+#   scripts/run.sh reprocess        re-summarize the newest raw run of every experiment
+#   scripts/run.sh dryrun           print the plan, sizes and safety checks; write nothing
 #
-# All I/O is direct (O_DIRECT) against a single large DISPOSABLE file under
-# data/scratch/, gated by scripts/safety.sh (which refuses any device/partition or
-# mountpoint). FIO is used if installed; otherwise the libaio stand-in
-# build/blkbench runs — both emit the same CSV schema, reduced by tools/summarize
-# into data/processed/<experiment>.csv for the ACS-Latex figures.
+# All I/O is direct (O_DIRECT) against DISPOSABLE files in the scratch directory,
+# gated by scripts/safety.sh (which refuses any device, partition, mountpoint or
+# path outside the scratch directory). build/blkbench (libaio) is the primary
+# engine; ENGINE=fio routes the standard sweeps through fio/job.fio instead, and
+# `fio_check` runs both engines on the same points. Both emit the same CSV
+# schema, reduced by tools/summarize into data/processed/<experiment>.csv for the
+# ACS-Latex figures. Scratch files are deleted on exit (KEEP_SCRATCH=1 keeps them).
 #
-# DEVICE NOTE: the device under test is whatever filesystem holds the scratch
-# directory. By default that is the in-repo data/scratch/ (here a rotational SATA
-# HDD, /dev/sda1). Set ACS_SCRATCH to a directory on another device to target it
-# instead — e.g. ACS_SCRATCH=$HOME/acs_ssd_scratch for the Micron NVMe SSD mounted
-# at /. The same safety gate (scripts/safety.sh) applies to whichever path is used:
-# the target must be a plain disposable file inside that scratch directory, never a
-# device, partition or mountpoint. The report labels the measured device explicitly.
+# DEVICE UNDER TEST: whatever filesystem holds the scratch directory. The default
+# in-repo data/scratch/ may sit on a different disk than the SSD (on the test host
+# it is the SATA HDD); set ACS_SCRATCH to a directory on the SSD, e.g.
+#   ACS_SCRATCH=$HOME/acs_ssd_scratch scripts/run.sh zero_queue
+# env.txt records the resolved parent disk, its rotational flag, model, firmware,
+# PCIe link and temperature so a run can never be silently mislabelled.
+#
+# Knobs (environment):
+#   FSIZE_MIB=2048     test-file size for the standard sweeps (LBA range used)
+#   RUNTIME=4          seconds per repetition          REPS=5   repetitions per point
+#   WREPS=3            repetitions for write points in block_size (byte budget)
+#   WRITE_CAP_MIB=256  per-repetition byte cap for points that write (byte budget)
+#   SEED=20260312      offsets + data-pattern seed     ENGINE=blkbench|fio
+#   SUSTAIN_GIB=64     size of the large file = volume of the sustained sequential
+#                      fill (refused unless free space >= size + 10 GiB)
+#   SUSTAIN_MAX_S=3600 time cap on the sustained fill
+#   RAND_S=180 RAND_CAP_GIB=8   steady-state 4 KiB random-write phase (time / bytes)
+#   IDLE_S=60          idle (temperature-only) gap before the recovery burst
+#   RECOVER_S=15 RECOVER_CAP_GIB=4   recovery burst after the idle gap
+#   WS_LIST_GIB="1 4 16 $SUSTAIN_GIB"  working-set spans (each <= SUSTAIN_GIB)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -25,149 +45,502 @@ ROOT="$(pwd)"
 CODE_ROOT="$(cd .. && pwd)"
 SUMMARIZE="$CODE_ROOT/build/tools/summarize"
 BLK="$ROOT/build/blkbench"
+SAFE="$ROOT/scripts/safety.sh"
 SCRATCH="${ACS_SCRATCH:-$ROOT/data/scratch}"
 FILE="$SCRATCH/testfile.bin"
+BIG="$SCRATCH/bigfile.bin"
 
-FSIZE_MIB="${FSIZE_MIB:-2048}"     # disposable file size (MiB); LBA range used
+GiB=$((1024*1024*1024)); MiB=$((1024*1024))
+FSIZE_MIB="${FSIZE_MIB:-2048}"
 RUNTIME="${RUNTIME:-4}"
-REPS="${REPS:-2}"
+REPS="${REPS:-5}"
+WREPS="${WREPS:-3}"
+WRITE_CAP_MIB="${WRITE_CAP_MIB:-256}"
 SEED="${SEED:-20260312}"
+ENGINE="${ENGINE:-blkbench}"
+SUSTAIN_GIB="${SUSTAIN_GIB:-64}"
+SUSTAIN_MAX_S="${SUSTAIN_MAX_S:-3600}"
+RAND_S="${RAND_S:-180}"
+RAND_CAP_GIB="${RAND_CAP_GIB:-8}"
+IDLE_S="${IDLE_S:-60}"
+RECOVER_S="${RECOVER_S:-15}"
+RECOVER_CAP_GIB="${RECOVER_CAP_GIB:-4}"
+WS_LIST_GIB="${WS_LIST_GIB:-1 4 16 $SUSTAIN_GIB}"
+MARGIN=$((10*GiB))                 # free space that must remain after the large file
+KEEP_SCRATCH="${KEEP_SCRATCH:-0}"
 TS="$(date +%Y%m%d-%H%M%S)"
-USE_FIO="${USE_FIO:-auto}"
+WCAP=$((WRITE_CAP_MIB*MiB))
 
+# ------------------------------------------------------------------ helpers
 need() { [ -x "$BLK" ] || { echo "missing $BLK; run 'make'" >&2; exit 1; }
          [ -x "$SUMMARIZE" ] || { echo "missing $SUMMARIZE; run 'make tools' in ACS-Code" >&2; exit 1; }; }
-have_fio() { [ "$USE_FIO" != 0 ] && command -v fio >/dev/null 2>&1; }
+have_fio() { command -v fio >/dev/null 2>&1; }
+
+cleanup() {
+  [ "$KEEP_SCRATCH" = 1 ] && return 0
+  rm -f -- "$FILE" "$BIG"
+}
+
+# NVMe composite temperature, readable without root: the controller's hwmon node.
+find_temp() {
+  local disk="$1" f
+  for f in /sys/block/"$disk"/device/hwmon*/temp1_input; do [ -r "$f" ] && { echo "$f"; return; }; done
+  for f in /sys/class/hwmon/hwmon*; do
+    [ "$(cat "$f/name" 2>/dev/null)" = nvme ] && [ -r "$f/temp1_input" ] && { echo "$f/temp1_input"; return; }
+  done
+  echo ""
+}
+temp_now() { [ -n "$TEMP" ] && awk '{printf "%.2f", $1/1000}' "$TEMP" 2>/dev/null || echo -1; }
+
+# Partition -> parent disk (nvme0n1p3 -> nvme0n1, sda1 -> sda); whole disks map to themselves.
+parent_disk() {
+  local name; name="$(basename "$1")"
+  local pk; pk="$(lsblk -no PKNAME "/dev/$name" 2>/dev/null | head -1 | tr -d ' ')"
+  if [ -n "$pk" ]; then echo "$pk"; return; fi
+  if [ -e "/sys/class/block/$name/partition" ]; then
+    basename "$(readlink -f "/sys/class/block/$name/..")"; return
+  fi
+  echo "$name"
+}
+
+mkdir -p "$SCRATCH"
+SRCDEV="$(df --output=source "$SCRATCH" 2>/dev/null | tail -1)"
+DISK="$(parent_disk "$SRCDEV")"
+TEMP="$(find_temp "$DISK")"
+TEMP_ARGS=(); [ -n "$TEMP" ] && TEMP_ARGS=(--temp "$TEMP")
+
+avail_bytes() { df -B1 --output=avail "$SCRATCH" | tail -1 | tr -d ' '; }
+
+device_report() {
+  local sys="/sys/block/$DISK"
+  echo "# --- storage device under test ---"
+  df -hT "$SCRATCH" 2>/dev/null
+  echo "# scratch dir: $SCRATCH"
+  echo "# source device: $SRCDEV  -> parent disk: $DISK"
+  echo "# mount options: $(findmnt -no OPTIONS --target "$SCRATCH" 2>/dev/null)"
+  lsblk -o NAME,ROTA,SIZE,MODEL,MOUNTPOINT 2>/dev/null
+  echo "# rotational: $(cat "$sys/queue/rotational" 2>/dev/null || echo '?') (1=HDD,0=SSD)"
+  echo "# scheduler: $(cat "$sys/queue/scheduler" 2>/dev/null)  nr_requests: $(cat "$sys/queue/nr_requests" 2>/dev/null)  write_cache: $(cat "$sys/queue/write_cache" 2>/dev/null)"
+  if [ -d "$sys/device" ] && [ -r "$sys/device/model" ]; then
+    echo "# model: $(tr -s ' ' < "$sys/device/model")  firmware: $(tr -d ' ' < "$sys/device/firmware_rev" 2>/dev/null)"
+    echo "# nvme queues: $(cat "$sys/device/queue_count" 2>/dev/null)  sqsize: $(cat "$sys/device/sqsize" 2>/dev/null)"
+    local pci="$sys/device/device"
+    echo "# pcie link: current $(cat "$pci/current_link_speed" 2>/dev/null) x$(cat "$pci/current_link_width" 2>/dev/null); max $(cat "$pci/max_link_speed" 2>/dev/null) x$(cat "$pci/max_link_width" 2>/dev/null)"
+  fi
+  echo "# temperature sensor: ${TEMP:-none}  now: $(temp_now) C"
+  if [ -n "$TEMP" ]; then
+    local h; h="$(dirname "$TEMP")"
+    echo "# thresholds: warning (temp1_max) $(awk '{print $1/1000}' "$h/temp1_max" 2>/dev/null) C, critical (temp1_crit) $(awk '{print $1/1000}' "$h/temp1_crit" 2>/dev/null) C"
+  fi
+  echo "# fstrim.timer: $(systemctl is-enabled fstrim.timer 2>/dev/null || echo unknown)"
+}
 
 start_experiment() {
   local exp="$1"
   RAWDIR="$ROOT/data/raw/$exp/$TS"; mkdir -p "$RAWDIR"
   RAW="$RAWDIR/raw.csv"; : > "$RAW"
-  echo "[$exp] -> $RAW"
-  { "$CODE_ROOT/scripts/collect_env.sh"
-    echo "# --- storage device under test ---"
-    df -hT "$SCRATCH" 2>/dev/null
-    local dev; dev=$(df --output=source "$SCRATCH" | tail -1)
-    echo "# source device: $dev"
-    lsblk -o NAME,ROTA,SIZE,MODEL,MOUNTPOINT 2>/dev/null
-    echo "# rotational: $(cat /sys/block/$(basename "$dev" | sed 's/[0-9]*$//')/queue/rotational 2>/dev/null || echo '?') (1=HDD,0=SSD)"
-    echo "# disposable file: $FILE (${FSIZE_MIB} MiB)"
-    smartctl -i "$dev" 2>&1 | sed 's/^/# smartctl: /' | head -20
-  } > "$RAWDIR/env.txt" 2>/dev/null || true
+  echo "[$exp] -> $RAW  (engine=$ENGINE, reps=$REPS, runtime=${RUNTIME}s, temp $(temp_now) C)"
+  { "$CODE_ROOT/scripts/collect_env.sh" 2>/dev/null || true
+    device_report
+    echo "# test file: $FILE (${FSIZE_MIB} MiB); large file: $BIG (${SUSTAIN_GIB} GiB, device-state runs only)"
+    echo "# knobs: RUNTIME=$RUNTIME REPS=$REPS WREPS=$WREPS WRITE_CAP_MIB=$WRITE_CAP_MIB SEED=$SEED ENGINE=$ENGINE"
+    echo "# data pattern: incompressible xorshift64* fill, generated once per buffer (blkbench --fill rand)"
+    echo "# start: $(date -Is)"
+  } > "$RAWDIR/env.txt" 2>&1
+}
+end_experiment() {
+  echo "# end: $(date -Is)  temperature: $(temp_now) C" >> "$RAWDIR/env.txt"
 }
 hdr() { [ -s "$RAW" ] || echo "--header"; }
 
-# blk <args...> : one measurement via fio (if present) or blkbench, appended to $RAW
+# blk <blkbench args...> : one measurement point, appended to $RAW.
+# With ENGINE=fio the same point is run through fio/job.fio (one fio call per rep).
 blk() {
-  if have_fio; then
-    echo "fio path not exercised on this host (fio present: parsing via fio_to_csv.sh)" >&2
-  fi
-  "$BLK" --file "$FILE" --seed "$SEED" "$@" >> "$RAW"
+  if [ "$ENGINE" = fio ]; then fio_point "$@"; return; fi
+  "$BLK" --file "${TARGET:-$FILE}" --seed "$SEED" "${TEMP_ARGS[@]}" "$@" >> "$RAW"
 }
+
+# ------------------------------------------------------------------ fio path
+# Translate blkbench-style arguments into fio/job.fio environment variables.
+fio_point() {
+  have_fio || { echo "ENGINE=fio but fio is not installed" >&2; exit 1; }
+  local exp=ssd bs=4096 qd=1 pat=rand rwmix=10 rt="$RUNTIME" reps=1 span=0 cap=0 direct=1 label=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --experiment) exp="$2"; shift 2;;  --bs) bs="$2"; shift 2;;  --qd) qd="$2"; shift 2;;
+      --pattern) pat="$2"; shift 2;;     --rwmix) rwmix="$2"; shift 2;;
+      --runtime) rt="$2"; shift 2;;      --reps) reps="$2"; shift 2;;
+      --span) span="$2"; shift 2;;       --max-bytes) cap="$2"; shift 2;;
+      --buffered) direct=0; label="-buffered"; shift;;
+      --header) shift;;
+      *) echo "fio_point: unsupported option $1" >&2; exit 1;;
+    esac
+  done
+  local tgt="${TARGET:-$FILE}" size
+  size=$(stat -c %s "$tgt"); [ "$span" -gt 0 ] && [ "$span" -lt "$size" ] && size="$span"
+  local mode rw
+  if   [ "$rwmix" -ge 10 ]; then mode=read;  rw=read
+  elif [ "$rwmix" -le 0 ];  then mode=write; rw=write
+  else                           mode=rw;    rw=rw; fi
+  [ "$pat" = rand ] && rw="rand$rw"
+  local iosize="$cap"; [ "$iosize" -gt 0 ] || iosize=$((1024*GiB))   # runtime-bound unless capped
+  mkdir -p "$RAWDIR/fio"
+  local r json
+  for ((r=0; r<reps; r++)); do
+    json="$RAWDIR/fio/${exp}_${mode}${label}_${pat}_${bs}_qd${qd}_mix${rwmix}_r${r}.json"
+    FILENAME="$tgt" SIZE="$size" BS="$bs" RW="$rw" RWMIXREAD=$((rwmix*10)) QD="$qd" \
+    RUNTIME="$(awk -v t="$rt" 'BEGIN{printf "%dms", t*1000}')" IOSIZE="$iosize" DIRECT="$direct" SEED=$((SEED + r)) \
+      fio --output-format=json --output="$json" "$ROOT/fio/job.fio"
+    "$ROOT/scripts/fio_to_csv.sh" $(hdr) "$exp" "$mode$label" "$pat" "$bs" "$qd" "$rwmix" "$r" "$(temp_now)" \
+      < "$json" >> "$RAW"
+  done
+}
+
+# ------------------------------------------------------------------ files
+gate() { "$SAFE" "$1" "${2:-0}" || { echo "refusing to run" >&2; exit 1; }; }
+
+# Sequential reads are only fast if the data was written sequentially (see `layout`):
+# re-write the test file sequentially before every sequential-read group.
+relayout() { precondition >/dev/null; }
 
 precondition() {
-  "$ROOT/scripts/safety.sh" "$FILE" $((FSIZE_MIB*1024*1024 + 1073741824)) || exit 1
-  if [ ! -f "$FILE" ] || [ "$(stat -c %s "$FILE" 2>/dev/null || echo 0)" -ne $((FSIZE_MIB*1024*1024)) ]; then
-    echo "creating ${FSIZE_MIB} MiB disposable file $FILE"
-    rm -f "$FILE"
-    dd if=/dev/zero of="$FILE" bs=1M count="$FSIZE_MIB" status=none
-  fi
-  echo "preconditioning (full sequential O_DIRECT write)…"
-  "$BLK" --file "$FILE" --precondition --bs 1048576
+  local bytes=$((FSIZE_MIB*MiB)) cur=0
+  [ -f "$FILE" ] && cur=$(stat -c %s "$FILE")
+  if [ "$cur" -ne "$bytes" ]; then rm -f -- "$FILE"; cur=0; fi
+  gate "$FILE" $((bytes - cur + MARGIN))
+  echo "preconditioning ${FSIZE_MIB} MiB test file (one sequential O_DIRECT pass, random fill)…"
+  "$BLK" --file "$FILE" --precondition --size "$bytes" --bs $((1*MiB)) --qd 8 --seed "$SEED"
 }
 
+# Large file for working-set / sustained runs: refuse unless size + 10 GiB fits.
+big_gate() {
+  local bytes=$((SUSTAIN_GIB*GiB)) have=0 avail
+  [ -f "$BIG" ] && have=$(stat -c %s "$BIG")
+  avail=$(avail_bytes)
+  if [ $((avail + have)) -lt $((bytes + MARGIN)) ]; then
+    echo "SAFETY REFUSED: ${SUSTAIN_GIB} GiB large file needs $(( (bytes+MARGIN)/GiB )) GiB free" \
+         "(file + 10 GiB margin); scratch fs has $(( (avail+have)/GiB )) GiB. Lower SUSTAIN_GIB." >&2
+    exit 1
+  fi
+  gate "$BIG" 0
+}
+
+# ------------------------------------------------------------------ summaries
+# summarize RAW OUT GROUP STATS : adds temp_c when the raw file has it (old runs do not).
+summ() {
+  local raw="$1" out="$2" group="$3" stats="$4"
+  head -1 "$raw" | grep -q 'temp_c' && stats="$stats,temp_c"
+  "$SUMMARIZE" --in "$raw" --out "$out" --group "$group" --stat "$stats"
+}
+P="$ROOT/data/processed"
+sum_zero_queue()  { summ "$1" "$P/zero_queue.csv"  mode,pattern,bs,qd iops,mibps,lat_mean_us,lat_p50_us,lat_p95_us,lat_p99_us,lat_p999_us; }
+sum_block_size()  { summ "$1" "$P/block_size.csv"  bs,pattern,mode,qd iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us; }
+sum_rw_mix()      { summ "$1" "$P/rw_mix.csv"      rwmix,mode,bs,qd iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us; }
+sum_tail()        { summ "$1" "$P/tail.csv"        qd,bs,pattern,mode lat_p50_us,lat_p95_us,lat_p99_us,lat_p999_us,iops,lat_mean_us; }
+sum_pitfall()     { summ "$1" "$P/pitfall.csv"     mode,pattern,bs,qd iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us; }
+sum_layout()      { summ "$1" "$P/layout.csv"      experiment,mode,pattern,bs,qd iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us; }
+sum_working_set() { summ "$1" "$P/working_set.csv" span_gib,mode,qd,bs,pattern iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us,lat_p999_us; }
+sum_queue_depth() {
+  # Little's Law column L = IOPS x mean latency, per repetition, so it gets IQR too.
+  local tmp; tmp="$(mktemp)"
+  awk -F, 'NR==1{print $0",littles_l"; next} {print $0","($10*$12/1e6)}' "$1" > "$tmp"
+  summ "$tmp" "$P/queue_depth.csv" qd,mode,bs,pattern iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us,lat_p999_us,littles_l
+  rm -f "$tmp"
+  knee "$P/queue_depth.csv" > "$P/queue_depth_knee.csv"
+}
+# Knee criterion: the smallest QD whose doubling raises median IOPS by < 10%.
+knee() {
+  awk -F, 'NR==1{for(i=1;i<=NF;i++)c[$i]=i; next}
+    {m=$c["mode"]; q=$c["qd"]+0; n[m]++; Q[m,n[m]]=q; I[m,n[m]]=$c["iops_median"]; W[m,n[m]]=$c["lat_mean_us_median"]; modes[m]=1}
+    END{printf "mode,knee_qd,knee_iops,knee_lat_us,next_qd,gain_pct,max_iops\n";
+      for(m in modes){k=-1; mx=0; for(j=1;j<=n[m];j++) if(I[m,j]>mx) mx=I[m,j];
+        for(j=1;j<n[m];j++) if(Q[m,j+1]==2*Q[m,j] && I[m,j+1] < 1.10*I[m,j]) {k=j; break}
+        if(k<0) printf "%s,NA,NA,NA,NA,NA,%.0f\n", m, mx;
+        else printf "%s,%d,%.0f,%.1f,%d,%.1f,%.0f\n", m, Q[m,k], I[m,k], W[m,k], Q[m,k+1], 100*(I[m,k+1]/I[m,k]-1), mx}}' "$1"
+}
+# Join blkbench and fio medians point by point.
+fio_compare() {
+  awk -F, 'NR==1{for(i=1;i<=NF;i++)c[$i]=i; next}
+    {k=$c["mode"]","$c["pattern"]","$c["bs"]","$c["qd"]; keys[k]=1
+     I[$c["experiment"],k]=$c["iops_median"]; P5[$c["experiment"],k]=$c["lat_p50_us_median"]; P9[$c["experiment"],k]=$c["lat_p99_us_median"]}
+    END{print "mode,pattern,bs,qd,blk_iops,fio_iops,iops_ratio,blk_p50_us,fio_p50_us,blk_p99_us,fio_p99_us";
+      for(k in keys) if((("blkbench",k) in I) && (("fio",k) in I))
+        printf "%s,%.0f,%.0f,%.3f,%.1f,%.1f,%.1f,%.1f\n", k, I["blkbench",k], I["fio",k], I["fio",k]/I["blkbench",k],
+               P5["blkbench",k], P5["fio",k], P9["blkbench",k], P9["fio",k]}' "$1" \
+    | { read -r h; echo "$h"; sort -t, -k1,1 -k2,2 -k4,4n -k3,3n; }
+}
+# Sustained-write time series: add a global time axis and a one-row summary.
+sum_sustained() {
+  awk -F, 'BEGIN{OFS=","} NR==1{print $0,"t_global_s"; next}
+    {if($2!=ph){off+=last; ph=$2} last=$8; print $0, off+$8}' "$1" > "$P/sustained.csv"
+  # burst  = median of the leading seconds that stay >= 50% of the first second's rate
+  # cliff  = first 5-s window whose median is < 50% of burst (GiB written just before it)
+  # steady = median of the fill's last 30%; random phase = whole-phase average IOPS
+  #          (bytes/time) plus per-second quartiles, since it alternates between states
+  awk -F, 'NR==1{for(i=1;i<=NF;i++)c[$i]=i; next}
+    {ph=$c["phase"]; t=$c["temp_c"]+0; if(t>0){if(tmin==""||t<tmin)tmin=t; if(t>tmax)tmax=t}}
+    ph=="seq_fill"{n++; F[n]=$c["mibps"]; G[n]=$c["gib_done"]; T[n]=$c["t_s"]; fill_gib=$c["gib_done"]; fill_s=$c["t_s"]}
+    ph=="rand_steady"{r++; R[r]=$c["iops"]; RP[r]=$c["lat_p99_us"]; rgib=$c["gib_done"]; rsec=$c["t_s"]}
+    ph=="recovery"{v++; V[v]=$c["mibps"]}
+    function sorted(A,lo,hi,B,  i,m,k,j){m=0; for(i=lo;i<=hi;i++){B[++m]=A[i]+0}
+      for(i=2;i<=m;i++){k=B[i]; j=i-1; while(j>0 && B[j]>k){B[j+1]=B[j]; j--} B[j+1]=k} return m}
+    function q(A,lo,hi,p,  B,m,x,f){m=sorted(A,lo,hi,B); if(!m) return -1; x=1+p*(m-1); f=int(x);
+      return (f>=m)?B[m]:B[f]+(x-f)*(B[f+1]-B[f])}
+    END{
+      nb=0; for(i=1;i<=n && F[i]>=0.5*F[1];i++) nb=i
+      burst=q(F,1,nb,0.5); steady=q(F,int(n*0.7)+1,n,0.5)
+      cliff_gib=-1; cliff_s=-1
+      for(i=1;i+4<=n;i++){ if(F[i] < 0.5*burst && q(F,i,i+4,0.5) < 0.5*burst){cliff_gib=(i>1?G[i-1]:0); cliff_s=(i>1?T[i-1]:0); break} }
+      ravg=(rsec>0?rgib*1073741824/4096/rsec:-1)
+      print "burst_mibps,burst_s,steady_mibps,steady_over_burst,cliff_gib,cliff_s,fill_gib,fill_s,fill_avg_mibps,rand_steady_iops,rand_iops_q25,rand_iops_q75,rand_steady_p99_us,recovery_mibps,recovery_late_mibps,temp_min_c,temp_max_c"
+      printf "%.0f,%d,%.0f,%.3f,%.1f,%.0f,%.1f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.1f,%.1f\n", burst, nb, steady,
+        (burst>0?steady/burst:0), cliff_gib, cliff_s, fill_gib, fill_s, (fill_s>0?fill_gib*1024/fill_s:0),
+        ravg, q(R,1,r,0.25), q(R,1,r,0.75), q(RP,1,r,0.5), q(V,1,(v<5?v:5),0.5), q(V,(v>5?v-4:1),v,0.5), tmin, tmax}' \
+    "$P/sustained.csv" > "$P/sustained_summary.csv"
+}
+
+# ------------------------------------------------------------------ experiments
 exp_zero_queue() {
   start_experiment zero_queue
-  blk --experiment zero_queue --bs 4096   --qd 1 --pattern rand --rwmix 10 --runtime "$RUNTIME" --reps 3 $(hdr)
-  blk --experiment zero_queue --bs 4096   --qd 1 --pattern rand --rwmix 0  --runtime "$RUNTIME" --reps 3 $(hdr)
-  blk --experiment zero_queue --bs 131072 --qd 1 --pattern seq  --rwmix 10 --runtime "$RUNTIME" --reps 3 $(hdr)
-  blk --experiment zero_queue --bs 131072 --qd 1 --pattern seq  --rwmix 0  --runtime "$RUNTIME" --reps 3 $(hdr)
-  "$SUMMARIZE" --in "$RAW" --out "$ROOT/data/processed/zero_queue.csv" \
-    --group mode,pattern,bs,qd --stat iops,mibps,lat_mean_us,lat_p50_us,lat_p95_us,lat_p99_us,lat_p999_us
+  blk --experiment zero_queue --bs 4096   --qd 1 --pattern rand --rwmix 10 --runtime "$RUNTIME" --reps "$REPS" $(hdr)
+  blk --experiment zero_queue --bs 4096   --qd 1 --pattern rand --rwmix 0  --runtime "$RUNTIME" --reps "$REPS" --max-bytes "$WCAP"
+  relayout   # the random writes above scatter the file's physical layout; restore it
+  blk --experiment zero_queue --bs 131072 --qd 1 --pattern seq  --rwmix 10 --runtime "$RUNTIME" --reps "$REPS"
+  blk --experiment zero_queue --bs 131072 --qd 1 --pattern seq  --rwmix 0  --runtime "$RUNTIME" --reps "$REPS" --max-bytes "$WCAP"
+  end_experiment; sum_zero_queue "$RAW"
 }
 
 exp_block_size() {
   start_experiment block_size
-  local bs p
-  for p in rand seq; do
-    for bs in 4096 16384 32768 65536 131072 262144; do
-      blk --experiment block_size --bs "$bs" --qd 1 --pattern "$p" --rwmix 10 --runtime "$RUNTIME" --reps "$REPS" $(hdr)
+  local bs p m q
+  # QD=1: random and sequential, read and write; QD=32: sequential read and write.
+  for q in 1 32; do
+    for p in rand seq; do
+      [ "$q" = 32 ] && [ "$p" = rand ] && continue
+      [ "$p" = seq ] && relayout
+      for m in 10 0; do
+        for bs in 4096 16384 32768 65536 131072 262144 524288 1048576; do
+          if [ "$m" = 0 ]; then
+            blk --experiment block_size --bs "$bs" --qd "$q" --pattern "$p" --rwmix 0 --runtime "$RUNTIME" --reps "$WREPS" --max-bytes "$WCAP" $(hdr)
+          else
+            blk --experiment block_size --bs "$bs" --qd "$q" --pattern "$p" --rwmix 10 --runtime "$RUNTIME" --reps "$REPS" $(hdr)
+          fi
+        done
+      done
     done
   done
-  "$SUMMARIZE" --in "$RAW" --out "$ROOT/data/processed/block_size.csv" \
-    --group bs,pattern,mode,qd --stat iops,mibps,lat_mean_us,lat_p99_us
+  end_experiment; sum_block_size "$RAW"
 }
 
 exp_rw_mix() {
   start_experiment rw_mix
   local m
   for m in 10 7 5 0; do
-    blk --experiment rw_mix --bs 4096 --qd 16 --pattern rand --rwmix "$m" --runtime "$RUNTIME" --reps "$REPS" $(hdr)
+    if [ "$m" = 10 ]; then
+      blk --experiment rw_mix --bs 4096 --qd 16 --pattern rand --rwmix "$m" --runtime "$RUNTIME" --reps "$REPS" $(hdr)
+    else
+      blk --experiment rw_mix --bs 4096 --qd 16 --pattern rand --rwmix "$m" --runtime "$RUNTIME" --reps "$REPS" --max-bytes "$WCAP" $(hdr)
+    fi
   done
-  "$SUMMARIZE" --in "$RAW" --out "$ROOT/data/processed/rw_mix.csv" \
-    --group rwmix,mode,bs,qd --stat iops,mibps,lat_mean_us,lat_p99_us
+  end_experiment; sum_rw_mix "$RAW"
 }
 
 exp_queue_depth() {
   start_experiment queue_depth
   local q
-  for q in 1 2 4 8 16 32 64 128; do
+  for q in 1 2 4 8 16 32 64 128 256; do
     blk --experiment queue_depth --bs 4096 --qd "$q" --pattern rand --rwmix 10 --runtime "$RUNTIME" --reps "$REPS" $(hdr)
   done
-  "$SUMMARIZE" --in "$RAW" --out "$ROOT/data/processed/queue_depth.csv" \
-    --group qd,bs,pattern --stat iops,mibps,lat_mean_us,lat_p50_us,lat_p95_us,lat_p99_us,lat_p999_us
+  for q in 1 2 4 8 16 32 64 128 256; do
+    blk --experiment queue_depth --bs 4096 --qd "$q" --pattern rand --rwmix 0 --runtime "$RUNTIME" --reps "$REPS" --max-bytes "$WCAP" $(hdr)
+  done
+  end_experiment; sum_queue_depth "$RAW"
 }
 
 exp_tail() {
   start_experiment tail
   local q
-  for q in 8 32; do   # mid-QD and near-knee QD, longer runs for stable tails
-    blk --experiment tail --bs 4096 --qd "$q" --pattern rand --rwmix 10 --runtime $((RUNTIME+2)) --reps 3 $(hdr)
+  # mid QD (8), the two QDs bracketing the knee (32, 64) and one past it (128); longer runs.
+  for q in 8 32 64 128; do
+    blk --experiment tail --bs 4096 --qd "$q" --pattern rand --rwmix 10 --runtime "$(awk -v t="$RUNTIME" 'BEGIN{print t+2}')" --reps "$REPS" $(hdr)
   done
-  "$SUMMARIZE" --in "$RAW" --out "$ROOT/data/processed/tail.csv" \
-    --group qd,bs,pattern --stat lat_p50_us,lat_p95_us,lat_p99_us,lat_p999_us,iops
-}
-
-exp_device_state() {
-  start_experiment device_state
-  # Back-to-back short sequential-write intervals: interval 0 may ride the drive's
-  # DRAM write cache (burst), later intervals settle to steady state. One
-  # invocation, many reps -> keep the per-rep time series (do not collapse it).
-  "$BLK" --file "$FILE" --seed "$SEED" --experiment device_state \
-         --bs 131072 --qd 4 --pattern seq --rwmix 0 --runtime 2 --reps 8 --header > "$ROOT/data/processed/device_state.csv"
-  cp "$ROOT/data/processed/device_state.csv" "$RAW"
+  end_experiment; sum_tail "$RAW"
 }
 
 exp_pitfall() {
   start_experiment pitfall
-  # Pitfall: buffered (page-cache) vs direct I/O over the SAME small 64 MiB region,
-  # 4 KiB sequential reads. The direct run hits the device every time; the buffered
-  # run re-reads the region from RAM after the first pass and reports fictitious
-  # device numbers (us latency, GiB/s). Same knobs, only the cache bypass differs.
-  local span=$((64*1024*1024))
+  # Pitfall: buffered (page-cache) vs direct I/O over the SAME 64 MiB region,
+  # 4 KiB sequential reads. Same knobs; only the cache bypass differs.
+  local span=$((64*MiB))
+  relayout
   blk --experiment pitfall --bs 4096 --qd 1 --pattern seq --rwmix 10 --span "$span" --runtime "$RUNTIME" --reps "$REPS" $(hdr)
   blk --experiment pitfall --bs 4096 --qd 1 --pattern seq --rwmix 10 --span "$span" --runtime "$RUNTIME" --reps "$REPS" --buffered
-  "$SUMMARIZE" --in "$RAW" --out "$ROOT/data/processed/pitfall.csv" \
-    --group mode,pattern,bs,qd --stat iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us
+  end_experiment; sum_pitfall "$RAW"
+}
+
+# layout: the same 128 KiB QD1 sequential read after (a) a sequential fill and (b) a
+# 4 KiB random overwrite of 2x the file (~86% of blocks rewritten in random order).
+# Insufficient/inappropriate preconditioning changes "sequential" read speed.
+exp_layout() {
+  start_experiment layout
+  local state
+  relayout
+  for state in seq_filled rand_overwritten; do
+    if [ "$state" = rand_overwritten ]; then
+      "$BLK" --file "$FILE" --seed "$SEED" --bs 4096 --qd 32 --pattern rand --rwmix 0 \
+             --runtime 600 --reps 1 --max-bytes $((2*FSIZE_MIB*MiB)) >> "$RAWDIR/overwrite.csv"
+    fi
+    blk --experiment "layout_$state" --bs 131072 --qd 1  --pattern seq --rwmix 10 --runtime "$RUNTIME" --reps "$REPS" $(hdr)
+    blk --experiment "layout_$state" --bs 131072 --qd 32 --pattern seq --rwmix 10 --runtime "$RUNTIME" --reps "$REPS"
+    blk --experiment "layout_$state" --bs 4096   --qd 1  --pattern rand --rwmix 10 --runtime "$RUNTIME" --reps "$REPS"
+  done
+  end_experiment; sum_layout "$RAW"
+}
+
+exp_fio_check() {
+  if ! have_fio; then
+    echo "[fio_check] SKIPPED: fio is not installed (install it, e.g. 'pacman -S fio', then rerun)."
+    return 0
+  fi
+  start_experiment fio_check
+  echo "# fio: $(fio --version)" >> "$RAWDIR/env.txt"
+  local saved="$ENGINE" pt bs q p m cap r
+  # bs qd pattern rwmix — QD=1 baselines plus a deep-queue read and write point
+  # reads first, on a freshly re-written file (in `all`, `layout` has just left it randomly
+  # overwritten; the 20261021 run predates this relayout and measured that scattered layout)
+  relayout
+  for pt in "131072 1 seq 10" "131072 32 seq 10" "4096 1 rand 10" "4096 32 rand 10" \
+            "131072 1 seq 0" "4096 1 rand 0" "4096 32 rand 0"; do
+    read -r bs q p m <<< "$pt"
+    cap=(); [ "$m" = 0 ] && cap=(--max-bytes "$WCAP")
+    for ((r=0; r<REPS; r++)); do      # interleave the engines rep by rep
+      ENGINE=blkbench blk --experiment blkbench --bs "$bs" --qd "$q" --pattern "$p" --rwmix "$m" --runtime "$RUNTIME" --reps 1 "${cap[@]}" $(hdr)
+      ENGINE=fio      blk --experiment fio      --bs "$bs" --qd "$q" --pattern "$p" --rwmix "$m" --runtime "$RUNTIME" --reps 1 "${cap[@]}"
+    done
+  done
+  ENGINE="$saved"
+  end_experiment
+  summ "$RAW" "$P/fio_check.csv" experiment,mode,pattern,bs,qd iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us
+  fio_compare "$P/fio_check.csv" > "$P/fio_compare.csv"
+  cat "$P/fio_compare.csv"
+}
+
+# ---- large-file device-state experiments --------------------------------------
+# sustained: create the large file and write it ONCE sequentially (128 KiB, QD32),
+# logging throughput / latency / temperature every second -> SLC-cache cliff;
+# then a time- and byte-capped 4 KiB random-write phase (steady state), an idle
+# gap logged for temperature only, and a short recovery burst.
+exp_sustained() {
+  local keep="${1:-0}"
+  big_gate
+  rm -f -- "$BIG"
+  start_experiment sustained
+  echo "# SUSTAIN_GIB=$SUSTAIN_GIB SUSTAIN_MAX_S=$SUSTAIN_MAX_S RAND_S=$RAND_S RAND_CAP_GIB=$RAND_CAP_GIB IDLE_S=$IDLE_S RECOVER_S=$RECOVER_S RECOVER_CAP_GIB=$RECOVER_CAP_GIB" >> "$RAWDIR/env.txt"
+  local i
+  # baseline temperature, idle
+  echo "experiment,phase,mode,pattern,bs,qd,rwmix,t_s,gib_done,ios,iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us,lat_p999_us,lat_max_us,temp_c" > "$RAW"
+  for ((i=1; i<=10; i++)); do sleep 1; echo "sustained,idle_pre,none,none,0,0,0,$i,0,0,0,0,0,0,0,0,0,$(temp_now)" >> "$RAW"; done
+  echo "  seq_fill: ${SUSTAIN_GIB} GiB sequential write (time cap ${SUSTAIN_MAX_S}s)…"
+  "$BLK" --file "$BIG" --precondition --size $((SUSTAIN_GIB*GiB)) --bs 131072 --qd 32 --seed "$SEED" \
+         --interval 1 --runtime "$SUSTAIN_MAX_S" --experiment sustained --phase seq_fill "${TEMP_ARGS[@]}" >> "$RAW"
+  echo "  rand_steady: 4 KiB random write QD32, ${RAND_S}s or ${RAND_CAP_GIB} GiB…"
+  "$BLK" --file "$BIG" --bs 4096 --qd 32 --pattern rand --rwmix 0 --seed "$SEED" --interval 1 \
+         --runtime "$RAND_S" --max-bytes $((RAND_CAP_GIB*GiB)) --experiment sustained --phase rand_steady "${TEMP_ARGS[@]}" >> "$RAW"
+  echo "  idle: ${IDLE_S}s…"
+  for ((i=1; i<=IDLE_S; i++)); do sleep 1; echo "sustained,idle,none,none,0,0,0,$i,0,0,0,0,0,0,0,0,0,$(temp_now)" >> "$RAW"; done
+  echo "  recovery: 128 KiB sequential write QD32, ${RECOVER_S}s or ${RECOVER_CAP_GIB} GiB…"
+  "$BLK" --file "$BIG" --bs 131072 --qd 32 --pattern seq --rwmix 0 --seed "$SEED" --interval 1 \
+         --runtime "$RECOVER_S" --max-bytes $((RECOVER_CAP_GIB*GiB)) --experiment sustained --phase recovery "${TEMP_ARGS[@]}" >> "$RAW"
+  end_experiment
+  sum_sustained "$RAW"
+  cat "$P/sustained_summary.csv"
+  [ "$keep" = 1 ] || { [ "$KEEP_SCRATCH" = 1 ] || rm -f -- "$BIG"; }
+}
+
+# working_set: 4 KiB random read (QD1, QD32) and write (QD32, byte-capped) over
+# growing LBA spans of the large file (FTL-mapping / HMB locality).
+exp_working_set() {
+  local need_fill=1 span g
+  big_gate
+  [ -f "$BIG" ] && [ "$(stat -c %s "$BIG")" -eq $((SUSTAIN_GIB*GiB)) ] && [ "${BIG_FILLED:-0}" = 1 ] && need_fill=0
+  if [ "$need_fill" = 1 ]; then
+    rm -f -- "$BIG"
+    echo "[working_set] preconditioning ${SUSTAIN_GIB} GiB large file (one sequential pass)…"
+    "$BLK" --file "$BIG" --precondition --size $((SUSTAIN_GIB*GiB)) --bs $((1*MiB)) --qd 8 --seed "$SEED"
+  fi
+  start_experiment working_set
+  echo "# spans (GiB): $WS_LIST_GIB of a ${SUSTAIN_GIB} GiB file" >> "$RAWDIR/env.txt"
+  local tmp="$RAWDIR/ws.tmp"
+  for g in $WS_LIST_GIB; do
+    [ "$g" -le "$SUSTAIN_GIB" ] || { echo "  skip span ${g} GiB > SUSTAIN_GIB" >&2; continue; }
+    span=$((g*GiB))
+    : > "$tmp"
+    TARGET="$BIG" RAW="$tmp" blk --experiment working_set --bs 4096 --qd 1  --pattern rand --rwmix 10 --span "$span" --runtime "$RUNTIME" --reps "$REPS" --header
+    TARGET="$BIG" RAW="$tmp" blk --experiment working_set --bs 4096 --qd 32 --pattern rand --rwmix 10 --span "$span" --runtime "$RUNTIME" --reps "$REPS"
+    TARGET="$BIG" RAW="$tmp" blk --experiment working_set --bs 4096 --qd 32 --pattern rand --rwmix 0  --span "$span" --runtime "$RUNTIME" --reps "$REPS" --max-bytes "$WCAP"
+    # prepend the span column
+    awk -F, -v g="$g" -v first="$([ -s "$RAW" ] && echo 0 || echo 1)" \
+      'NR==1{ if(first) print "span_gib,"$0; next} {print g","$0}' "$tmp" >> "$RAW"
+  done
+  rm -f "$tmp"
+  end_experiment
+  sum_working_set "$RAW"
+  [ "$KEEP_SCRATCH" = 1 ] || rm -f -- "$BIG"
+}
+
+exp_device_state() {
+  # sustained fill doubles as the large file's preconditioning pass for working_set
+  exp_sustained 1
+  BIG_FILLED=1 exp_working_set
+}
+
+# ------------------------------------------------------------------ reprocess / plan
+latest_raw() { { ls -d "$ROOT/data/raw/$1"/*/ 2>/dev/null || true; } | sort | tail -1; }
+reprocess() {
+  local e d
+  for e in zero_queue block_size rw_mix queue_depth tail pitfall layout working_set sustained; do
+    d="$(latest_raw "$e")"; [ -n "$d" ] && [ -s "$d/raw.csv" ] || continue
+    echo "reprocess $e <- $d"; "sum_$e" "$d/raw.csv"
+  done
+  d="$(latest_raw fio_check)"
+  if [ -n "$d" ] && [ -s "$d/raw.csv" ]; then
+    summ "$d/raw.csv" "$P/fio_check.csv" experiment,mode,pattern,bs,qd iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us
+    fio_compare "$P/fio_check.csv" > "$P/fio_compare.csv"
+  fi
+}
+
+dryrun() {
+  device_report
+  echo "# scratch avail: $(( $(avail_bytes) / GiB )) GiB; large file ${SUSTAIN_GIB} GiB + 10 GiB margin required"
+  echo "# engine=$ENGINE fio=$(have_fio && fio --version || echo absent)"
+  "$SAFE" "$FILE" $((FSIZE_MIB*MiB + MARGIN))
+  "$SAFE" "$BIG" 0
 }
 
 main() {
-  need
-  mkdir -p "$ROOT/data/processed" "$SCRATCH"
   local what="${1:-all}"
+  case "$what" in reprocess) need; mkdir -p "$P"; reprocess; return;; dryrun) dryrun; return;; esac
+  need
+  mkdir -p "$P" "$SCRATCH"
+  trap cleanup EXIT
   case "$what" in
     zero_queue)   precondition; exp_zero_queue ;;
     block_size)   precondition; exp_block_size ;;
     rw_mix)       precondition; exp_rw_mix ;;
     queue_depth)  precondition; exp_queue_depth ;;
     tail)         precondition; exp_tail ;;
-    device_state) precondition; exp_device_state ;;
     pitfall)      precondition; exp_pitfall ;;
+    layout)       precondition; exp_layout ;;
+    fio_check)    if have_fio; then precondition; fi; exp_fio_check ;;
+    sustained)    exp_sustained ;;
+    working_set)  exp_working_set ;;
+    device_state) exp_device_state ;;
     all) precondition
          exp_zero_queue; exp_block_size; exp_rw_mix; exp_queue_depth
-         exp_tail; exp_device_state; exp_pitfall ;;
+         exp_tail; exp_pitfall; exp_layout; exp_fio_check
+         echo "note: the large-file device-state runs are separate: scripts/run.sh device_state" ;;
     *) echo "unknown experiment: $what" >&2
-       echo "usage: $0 {zero_queue|block_size|rw_mix|queue_depth|tail|device_state|pitfall|all}" >&2; exit 2 ;;
+       echo "usage: $0 {zero_queue|block_size|rw_mix|queue_depth|tail|pitfall|layout|fio_check|sustained|working_set|device_state|all|reprocess|dryrun}" >&2; exit 2 ;;
   esac
   echo "done: $what"
 }

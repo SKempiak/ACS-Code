@@ -2,50 +2,62 @@
 \section{Anomalies and Limitations}\label{sec:anomalies}
 \rubric{Report quality}{15}{Readable plots, concise interpretation and thoughtful limitations.}
 
-\subsection{Unexpected results}
+\subsection{Unexpected results and how they were resolved}
 \begin{itemize}
-  \item \textbf{Huge pages produced no measurable change.} We expected \qty{2}{\mebi\byte} pages to
-        shave random-access time once the footprint exceeded the TLB reach. The base-page and
-        huge-page curves are instead identical (\cref{fig:tlb}). Hypothesis: THP was never actually
-        granted. Tested: \code{/proc/self/smaps_rollup} reported \code{AnonHugePages: 0 kB} on every
-        run despite \code{madvise(MADV_HUGEPAGE)} and \qty{2}{\mebi\byte} alignment, confirming the
-        allocation stayed on base pages. This is a reported limitation, not a ``huge pages don't help''
-        conclusion (\cref{sec:tlb}).
-  \item \textbf{A 70/30 read/write mix is far slower than 100\% reads, not 30\% slower.} At ten threads,
-        pure reads deliver \qty{27.2}{\gibi\byte\per\second} but the 70/30 mix drops to
-        \qty{8.1}{\gibi\byte\per\second} (\cref{sec:rw-mix}). Hypothesis: each store first issues a
-        read-for-ownership and the controller pays a write-to-read bus turnaround, so a ``30\% writes''
-        workload moves far more than 30\% extra traffic. Consistent with the write-allocate behaviour of
-        the cache hierarchy; a non-temporal (streaming-store) path would avoid the RFO but was out of
-        scope for the required mixes.
-  \item \textbf{The L2$\to$L3 transition has a shoulder, not a step.} Latency near \qty{2}{\mebi\byte}
-        sits well below the LLC-edge value (\cref{fig:working-set}). Hypothesis: the adjacent-line and
-        stream prefetchers partly hide L3 latency until the set is several times the L2 size; the effect
-        disappears for the fully random pointer chase at larger sizes.
+  \item \textbf{Strided ``line traffic'' exceeded the single-core peak.} At \qty{64}{\byte} stride the
+        line traffic (\valqty{pat_stride_seq_64_line}{\gibi\byte\per\second}) exceeds the unit-stride
+        rate (\valqty{pat_stride_seq_8}{\gibi\byte\per\second}) that the previous version called the
+        single-core peak. Hypothesis: the scalar unit-stride kernel is limited by the core's out-of-order
+        window, not by DRAM. Test: large full-line vector blocks reach
+        \valqty{pat_bw_seq_max}{\gibi\byte\per\second} on the same data, so the real single-core limit is
+        \qtyrange{15}{16}{\gibi\byte\per\second} (\cref{sec:pattern}).
+  \item \textbf{$L/N=1$ was not a test.} In the known-concurrency sweep, $\lambda$ times the per-chain
+        step time equals $N$ by construction. We now report $L_{\text{mem}}$ with the probe's memory
+        latency, which saturates at \valnum{mlp_t1_Lmem_max} lines per core (\cref{sec:intensity}).
+  \item \textbf{Bandwidth is non-monotonic past saturation.} With 5--9 streaming cores, delivered
+        bandwidth scatters between \valqty{int_t7_gib}{\gibi\byte\per\second} and
+        \valqty{int_t8_gib}{\gibi\byte\per\second} with wide IQRs, while latency rises steadily. A knee
+        rule that sorted points by bandwidth was therefore unstable; it now follows offered load.
+  \item \textbf{Single-core chase bandwidth alternates with $k$.} $k=8,12,20$ chains are slower than
+        $k=6,10,16$. Probe latency is unchanged, so the cause is in the generator loop, not in memory.
+        Unresolved; only the envelope is used.
+  \item \textbf{Two unloaded-latency measurements differ by 6\%.} The \code{mem_loaded} probe
+        (\valqty{int_w0_ns}{\nano\second}) is faster than \code{mem_latency} at the same
+        \qty{256}{\mebi\byte} (\valqty{zq_DRAM256_ns}{\nano\second}). Unresolved; both are reported.
+  \item \textbf{A 70/30 read/write mix was 3.4$\times$ slower than pure reads.} Cause: the old kernel
+        mixed \qty{8}{\byte} elements, so every line was both read and written. Fixed by mixing at line
+        granularity (\cref{sec:rw-mix}); the old numbers are not reused.
+  \item \textbf{Huge pages were never granted in the first TLB runs} (\code{AnonHugePages: 0 kB}), so
+        those runs (\code{tlb/20261019-232253} and the identical repeat \code{tlb/20261019-233449}) were
+        superseded by the verified run in \cref{sec:tlb} and removed, together with every other
+        2026-10-19 run.
+  \item \textbf{A ``\qty{4}{\kibi\byte}'' baseline can silently use huge pages.} With THP set to
+        \sysHugePages{}, a \qty{2}{\mebi\byte}-aligned buffer is backed by huge pages unless the program
+        opts out; every \qty{4}{\kibi\byte} buffer now calls \code{MADV_NOHUGEPAGE} and the granted amount
+        is recorded, so the page-size label of each curve is verified.
 \end{itemize}
 
 \subsection{Limitations}
 \begin{itemize}
-  \item \textbf{No hardware counters.} \code{perf} is not installed and \code{perf_event_paranoid} is
-        \sysPerfParanoid{}, so cache-miss and TLB-miss \emph{ratios} could not be recorded. The
-        cache-miss and TLB experiments (\cref{sec:cache-miss,sec:tlb}) are therefore runtime
-        correlations against footprint and page size, and the AMAT reading is illustrative rather than
-        fitted to measured $m_{Li}$.
-  \item \textbf{Intel MLC not available.} \sysMLC{}, so latency and bandwidth come from our own
-        pointer-chase and streaming benchmarks; the hierarchy shape and the 4--5 cycle L1 anchor are the
-        internal cross-checks in place of an MLC baseline.
-  \item \textbf{Frequency not fixed.} Governor \sysGovernor{} with turbo \sysTurbo{}; neither is
-        changeable here. Cycle figures use an in-process effective frequency
-        (\qtyrange{4.4}{4.8}{\giga\hertz}) and carry a few-percent uncertainty.
-  \item \textbf{One machine; THP uncontrolled; SMT on.} All numbers come from a single i9-10900F,
-        single NUMA node, THP \sysHugePages{} (and not actually granted, above), SMT on with the pinned
-        core's sibling left idle but not offlined.
-  \item \textbf{Loaded-latency axis inferred.} The intensity knee (\cref{sec:intensity}) is measured as
-        aggregate throughput vs.\ offered concurrency; we do not measure an independent loaded latency,
-        so the ``latency rises past the knee'' half of the tradeoff is inferred. Project~3 measures both
-        axes directly.
-  \item \textbf{Report build backend.} Builds cleanly with \code{make memory} and \code{make final};
-        the host has \code{bibtex} but not \code{biber}, so \code{biblatex} uses \code{backend=bibtex}.
-        The only artifact is a benign \enquote{Please (re)run BibTeX} notice---no unresolved \code{[?]}
-        markers---which disappears if \code{biber} is installed.
+  \item \textbf{Intel MLC was unavailable.} It is not installed on the test host and could not be
+        installed; \code{run.sh mlc} records this in \code{data/raw/mlc/<timestamp>/mlc_status.txt}. The
+        cross-checks in \cref{sec:validation} are clearly labelled substitutes: they validate ring
+        construction, timing and code path, but share our pointer-chase methodology.
+  \item \textbf{Core-only counters.} At \code{perf_event_paranoid}=\sysPerfParanoid{} only user-space
+        core events of our own process are available: no uncore/IMC counters (actual DRAM traffic,
+        prefetch fills, write-backs) and no kernel-mode events. DRAM traffic for write mixes is therefore
+        an estimate (one RFO per written line), and prefetcher traffic is inferred. Generic LLC events map
+        to offcore-response events on this core and may undercount prefetch-driven fills. Counters were
+        multiplexed when more events were requested than free hardware counters; counts are scaled and
+        the running fraction is recorded.
+  \item \textbf{Loaded latency is measured with a probe that is itself load.} The probe adds one line in
+        flight (included in throughput) and measures a demand read; the streaming generators' prefetches
+        may see a different latency, so $L=\lambda W$ for the streaming sweep assumes the probe's latency
+        is representative. The known-concurrency chase sweep does not need that assumption.
+  \item \textbf{One machine and one memory configuration.} All numbers come from a single i9-10900F on
+        one NUMA node; DIMM population and speed could not be read without root. Frequency policy for the
+        runs: governor \sysGovernor{}, turbo \sysTurbo{}, SMT \sysSMT{}; cycle figures use the in-process
+        effective frequency.
+  \item \textbf{Report build backend.} The host has \code{bibtex} but not \code{biber}, so
+        \code{biblatex} uses \code{backend=bibtex}.
 \end{itemize}

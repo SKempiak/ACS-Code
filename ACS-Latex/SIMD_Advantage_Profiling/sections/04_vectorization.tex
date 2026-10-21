@@ -37,18 +37,22 @@ not vectorized loop bodies---the compiler reports \emph{zero} vectorized loops f
 \end{table}
 
 \subsection{Compiler report}
-GCC's \code{-fopt-info-vec} confirms the widths. For SAXPY (\code{kernels.c:25}):
+GCC's \code{-fopt-info-vec} confirms the widths. For SAXPY (\code{kernels.c:29}):
 \begin{lstlisting}[style=excerpt]
 # native  (-O3 -march=native):
-src/kernels.c:25:26: optimized: loop vectorized using 32 byte vectors and unroll factor 8
-src/kernels.c:25:26: optimized: epilogue loop vectorized using 16 byte vectors and unroll factor 4
+src/kernels.c:29:26: optimized: loop vectorized using 32 byte vectors and unroll factor 8
+src/kernels.c:29:26: optimized: epilogue loop vectorized using 16 byte vectors and unroll factor 4
 # autovec (-O3, generic x86-64):
-src/kernels.c:25:26: optimized: loop vectorized using 16 byte vectors and unroll factor 4
+src/kernels.c:29:26: optimized: loop vectorized using 16 byte vectors and unroll factor 4
 # scalar  (-O3 -fno-tree-vectorize): 0 loops vectorized
 \end{lstlisting}
 \qty{32}{\byte} vectors $=$ \qty{256}{bit} $=$ \num{8} float32 lanes (native); \qty{16}{\byte} $=$
-\qty{128}{bit} $=$ \num{4} lanes (autovec). The native main loop is additionally unrolled $8\times$,
-and its \qty{128}{bit} epilogue handles the remainder.
+\qty{128}{bit} $=$ \num{4} lanes (autovec). GCC's ``unroll factor'' is the vectorization factor
+(elements per iteration), not extra unrolling: the disassembly below has one \code{ymm} FMA per
+iteration. The \qty{128}{bit} epilogue handles a remainder of \num{4} or more, and up to three
+leftover elements run as scalar iterations. The loop is \emph{versioned} for possible aliasing
+between \code{x} and \code{y} (a run-time overlap check), and GCC does not peel iterations to reach
+an aligned start.
 
 \subsection{Disassembly}
 The native SAXPY inner loop is a single fused multiply--add on \code{ymm} registers:
@@ -57,11 +61,14 @@ vmovups   (%rdi,%rax,1),%ymm0           # load 8 x[i]
 vfmadd213ps (%rsi,%rax,1),%ymm1,%ymm0   # ymm0 = a*x + y   (one FMA, 8 lanes)
 vmovups   %ymm0,(%rsi,%rax,1)           # store 8 y[i]
 \end{lstlisting}
-whereas the scalar build does one element at a time with scalar SSE:
+whereas the scalar build does one element at a time with scalar SSE. It cannot fuse the
+multiply and add because the generic \code{x86-64} target it compiles for does not include the FMA
+instruction set (GCC's default \code{-ffp-contract=fast} would contract them if FMA were available,
+as it does in \code{native}):
 \begin{lstlisting}[style=excerpt]
 movss (%rdi,%rax,4),%xmm0  # x[i]
 mulss %xmm1,%xmm0          # a*x[i]
-addss (%rsi,%rax,4),%xmm0  # + y[i]   (no FMA: -ffp-contract default off here)
+addss (%rsi,%rax,4),%xmm0  # + y[i]   (separate mul + add: generic x86-64 has no FMA)
 movss %xmm0,(%rsi,%rax,4)  # y[i]
 \end{lstlisting}
 
@@ -73,6 +80,24 @@ vaddss %xmm1,%xmm0,%xmm0          # ... but summed one lane at a time,
 vaddss %xmm3,%xmm0,%xmm0          #     in strict source order
 ...
 \end{lstlisting}
+
+\subsection{Stride and gather code}
+\Cref{tab:vec-summary} credits \code{saxpy_f32_stride} with \code{ymm} instructions in
+\code{native}, but that is loop \emph{versioning}, not strided SIMD: GCC tests \code{s == 1} at run
+time and only that copy of the loop is vectorized (the same \code{vmovups}/\code{vfmadd213ps} body as
+SAXPY). For $s>1$ the code is a scalar \code{vfmadd213ss} loop in \code{native} and
+\code{mulss}/\code{addss} in the other builds. The plain gather loop (\code{saxpy_f32_gather}) is not
+vectorized by any build (\enquote{no vectype for stmt}), so we added an explicit AVX2 version,
+\code{saxpy_f32_gather_avx2}, compiled only into \code{native}:
+\begin{lstlisting}[style=excerpt]
+vmovdqu    (%rax),%ymm1                 # 8 indices idx[i..i+7]
+vgatherdps %ymm5,(%rdi,%ymm1,4),%ymm0   # gather 8 x[idx]
+vgatherdps %ymm7,(%rsi,%ymm1,4),%ymm3   # gather 8 y[idx]
+vfmadd132ps %ymm4,%ymm3,%ymm0           # one 8-lane FMA
+vmovss     %xmm0,(%rsi,%rdx,4)          # ... then 8 scalar stores:
+vextractps $0x1,%xmm0,(%rsi,%rdx,4)     #     AVX2 has no scatter
+\end{lstlisting}
+It is what a hand-vectorized gather looks like on this ISA: the loads are SIMD, the stores cannot be.
 
 \subsection{Interpretation}
 The evidence matches the hypothesis. \code{native} uses \code{ymm} (\qty{256}{bit}) with FMA for

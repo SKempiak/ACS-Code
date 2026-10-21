@@ -10,6 +10,10 @@
  */
 #include "kernels.h"
 
+#if defined(__AVX2__) && defined(__FMA__)
+#include <immintrin.h>
+#endif
+
 #ifndef ACS_VARIANT
 #define ACS_VARIANT "unknown"
 #endif
@@ -92,3 +96,35 @@ void saxpy_f32_gather(float a, const float *x, float *y, const int32_t *idx, siz
         y[j] = a * x[j] + y[j];
     }
 }
+
+/* Explicit AVX2 gather (see kernels.h). GCC does not emit vgatherdps for the
+ * loop above on its own (verify_vectorization.sh), so this is the only place a
+ * hardware SIMD gather is measured. */
+#if defined(__AVX2__) && defined(__FMA__)
+int acs_have_gather_avx2(void) { return 1; }
+
+void saxpy_f32_gather_avx2(float a, const float *x, float *y, const int32_t *idx, size_t n) {
+    const __m256 va = _mm256_set1_ps(a);
+    size_t i = 0;
+    for (; i + 8 <= n; i += 8) {
+        __m256i vi = _mm256_loadu_si256((const __m256i *)(idx + i));
+        __m256 vx = _mm256_i32gather_ps(x, vi, 4);
+        __m256 vy = _mm256_i32gather_ps(y, vi, 4);
+        __m256 r = _mm256_fmadd_ps(va, vx, vy);
+        float out[8] __attribute__((aligned(32)));
+        _mm256_store_ps(out, r);
+        for (int k = 0; k < 8; k++) /* no AVX2 scatter: per-lane stores */
+            y[idx[i + k]] = out[k];
+    }
+    for (; i < n; i++) {
+        size_t j = (size_t)idx[i];
+        y[j] = a * x[j] + y[j];
+    }
+}
+#else
+int acs_have_gather_avx2(void) { return 0; }
+
+void saxpy_f32_gather_avx2(float a, const float *x, float *y, const int32_t *idx, size_t n) {
+    saxpy_f32_gather(a, x, y, idx, n);
+}
+#endif

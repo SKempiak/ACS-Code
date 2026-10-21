@@ -1,24 +1,48 @@
 % !TeX root = ../main.tex
 \section{Validation and Sanity Checks}\label{sec:validation}
 
-The microbenchmarks have no reference output to diff, so \code{scripts/validate.sh} gates them against
-physical invariants that must hold on any sane hierarchy; all pass on the test host:
+The microbenchmarks have no reference output to diff, so \code{scripts/validate.sh} (also
+\code{make test}) gates them against physical invariants that must hold on any sane hierarchy.
+\code{run.sh} executes it immediately before every experiment and stores the full output as
+\code{validate.txt} in that experiment's raw directory, so each dataset carries its own evidence that the
+checks passed on the machine state it was measured in. The checks are:
 \begin{itemize}
-  \item \textbf{Monotone levels.} Latency grows strictly across levels: L1 \qty{1.0}{\nano\second} $<$
-        L2 \qty{3.9}{\nano\second} $<$ L3 \qty{13}{\nano\second} $<$ DRAM \qty{86}{\nano\second}
-        (\cref{sec:zero-queue}).
-  \item \textbf{Prefetcher check.} Sequential DRAM latency (\qty{5.3}{\nano\second}) is more than
-        $2\times$ below random DRAM latency, confirming the stride prefetcher is engaged for sequential
-        access and defeated by the randomized pointer chase.
-  \item \textbf{Bandwidth ceiling.} Single-core L1-resident read bandwidth
-        (\qty{57}{\gibi\byte\per\second}) exceeds the DRAM-resident rate
-        (\qty{14}{\gibi\byte\per\second}), and ten threads exceed one thread---both required for a
-        trustworthy bandwidth benchmark.
-  \item \textbf{Frequency plausibility.} The in-process effective-GHz probe lands in
-        \qtyrange{4.4}{4.8}{\giga\hertz}, consistent with this CPU's turbo range, so the ns$\to$cycle
-        conversion is sound. An L1 latency of \num{4.8}~cycles matches the published 4--5 cycle L1 load
-        latency for this microarchitecture.
+  \item \textbf{Monotone levels.} Random pointer-chase latency grows strictly across levels:
+        L1 $<$ L2 $<$ L3 $<$ DRAM (measured values in \cref{tab:zero-queue}).
+  \item \textbf{Prefetcher check.} Sequential DRAM ``latency'' is more than $2\times$ below random DRAM
+        latency, confirming the stream prefetcher is engaged for sequential access and defeated by the
+        randomized chase.
+  \item \textbf{Bandwidth ceiling.} Single-core L1-resident read bandwidth exceeds the DRAM-resident rate,
+        and ten threads exceed one thread.
+  \item \textbf{Loaded $>$ unloaded.} The \code{mem_loaded} probe is slower under four streaming cores
+        than on an idle memory system---the minimum requirement for a loaded-latency instrument.
+  \item \textbf{Frequency plausibility.} The in-process effective-GHz probe lands in \qtyrange{1}{6}{\giga\hertz}.
+  \item \textbf{Instrumentation (reported, not gating).} User-space counters open and return values;
+        a \qty{2}{\mebi\byte}-page request is actually granted (\code{AnonHugePages} $>0$) and the
+        \qty{4}{\kibi\byte} policy yields none.
 \end{itemize}
+
+\paragraph{Substitute for the Intel MLC cross-check.} The project asks for Intel MLC runs as an external
+cross-check. MLC is not installed on the test host (\sysMLC); \code{run.sh mlc} detects this, prints
+``Intel MLC not installed'' and records it in \code{data/raw/mlc/<timestamp>/mlc_status.txt}. In its
+place we use two \emph{substitute} cross-checks, which are internal and therefore weaker than an
+independent tool---they share our methodology (dependent pointer chase) but not our code path:
+\begin{enumerate}
+  \item \textbf{Second latency method.} Every zero-queue size is measured twice: the primary ring is
+        built with a 32-bit LCG and timed with \code{CLOCK_MONOTONIC_RAW}; the cross-check ring is
+        built with xorshift64* (a different permutation, seed and range reduction) and timed with
+        \code{rdtscp}. On the DRAM plateau they differ by \val{zq_DRAM_xdiff}\%
+        (\cref{tab:zero-queue} lists every level); \code{validate.sh} fails if they differ by more than
+        15\%.
+  \item \textbf{Different program.} The $T=0$ point of \code{mem_loaded} measures unloaded DRAM latency
+        with a separately written, pointer-based ring in a different binary:
+        \valqty{int_w0_ns}{\nano\second}, against \valqty{zq_DRAM256_ns}{\nano\second} from
+        \code{mem_latency} at the same \qty{256}{\mebi\byte} size. The 6\% gap is larger than the
+        repetition noise; the two rings differ in layout (the probe stores raw pointers, \code{mem_latency}
+        stores indices) and in the order pages are first touched, which we did not investigate further.
+\end{enumerate}
+An L1 latency of \valnum{zq_L1_cyc}~cycles also matches the published 4--5 cycle load-to-use latency of
+this core, anchoring the ns$\to$cycle conversion.
+
 Timer and loop overhead are bounded by calibrating every timed interval to tens of milliseconds
-(\cref{sec:method}); the pointer-chase loop body is a single dependent load, so no overhead subtraction
-is needed.
+(\cref{sec:method}); the chase loop body is a single dependent load, so no overhead subtraction is needed.

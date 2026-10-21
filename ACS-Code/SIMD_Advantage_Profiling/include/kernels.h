@@ -39,6 +39,14 @@ void mul_i32(const int32_t *x, const int32_t *y, int32_t *z, size_t n);
 void saxpy_f32_stride(float a, const float *x, float *y, size_t n, size_t s);
 /* y[idx[i]] = a*x[idx[i]] + y[idx[i]] for i in [0,n). */
 void saxpy_f32_gather(float a, const float *x, float *y, const int32_t *idx, size_t n);
+/* Same operation, explicitly vectorized with AVX2 intrinsics: 8 indices per step,
+ * x and y gathered with _mm256_i32gather_ps (vgatherdps), one 8-lane FMA, then
+ * eight scalar stores (AVX2 has no scatter). Requires idx to hold distinct
+ * indices within every group of 8 (true for the permutation the driver uses).
+ * Only the AVX2+FMA build (native) contains the intrinsics; in other builds
+ * acs_have_gather_avx2() returns 0 and the function is the plain scalar loop. */
+void saxpy_f32_gather_avx2(float a, const float *x, float *y, const int32_t *idx, size_t n);
+int  acs_have_gather_avx2(void);
 
 /* ----------------------------------------------------- reference versions (reference.c) */
 void   saxpy_f32_ref(float a, const float *x, float *y, size_t n);

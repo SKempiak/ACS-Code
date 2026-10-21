@@ -5,6 +5,28 @@
 \input{../common/macros}
 \input{../common/system_info}
 
+% Typewriter text: keep "--" as two hyphens (command-line flags such as --info,
+% --cpu, --selftest) instead of the T1 en-dash ligature.
+\DisableLigatures[-]{encoding = T1, family = tt*}
+
+% Error bars for speedup columns: speedup_q25/_q75 are appended by
+% ACS-Code/SIMD_Advantage_Profiling/scripts/speedup_iqr.awk.
+\pgfplotsset{
+  % Fixed per-variant styles for plots where a variant may still be missing from the data;
+  % the legend is drawn with \acsvariantlegend so it never shifts onto the wrong curve.
+  var scalar/.style={color=blue, mark=*, mark options={fill=blue}},
+  var autovec/.style={color=red, mark=square*, mark options={fill=red}},
+  var native/.style={color=brown!80!black, mark=triangle*, mark options={fill=brown!80!black}},
+  /pgfplots/table/speedup iqr/.style={
+    y error plus expr={\thisrow{speedup_q75}-\thisrow{speedup_vs_scalar}},
+    y error minus expr={\thisrow{speedup_vs_scalar}-\thisrow{speedup_q25}},
+  },
+}
+\newcommand{\acsvariantlegend}{%
+  \addlegendimage{var scalar}\addlegendentry{scalar}%
+  \addlegendimage{var autovec}\addlegendentry{autovec}%
+  \addlegendimage{var native}\addlegendentry{native}}
+
 \title{Project 1: SIMD Advantage Profiling}
 \author{\acsauthor\\[2pt]\small\acscourse\\\small\href{mailto:\acsemail}{\acsemail}}
 \date{\acsdue}
@@ -15,17 +37,23 @@
 \begin{abstract}
   We quantify scalar-versus-SIMD speedup for four single-threaded numeric kernels (SAXPY, dot
   product, elementwise multiply and a 3-point stencil) on an Intel Core i9-10900F (Comet Lake,
-  AVX2+FMA, \qty{256}{bit} vectors). With cache-resident data a \code{-march=native} build reaches
-  about $5.8\times$ over scalar for SAXPY (\num{8} float32 lanes), while the generic
-  auto-vectorized (SSE, \qty{128}{bit}) build reaches about $3\times$; these gains compress to
-  $\approx1.3\text{--}1.4\times$ once the working set spills to DRAM and memory bandwidth
-  dominates. Float64 roughly halves the SIMD advantage (\num{4} lanes), and non-unit stride or
-  gather access erases it entirely. Our negative case is memory-bound SAXPY: the loop vectorizes
-  (verified by disassembly) yet barely speeds up; a second, subtler anomaly is the dot product,
-  whose reduction the compiler refuses to reassociate without \code{-ffast-math}, leaving a scalar
-  dependency chain and $\approx1\times$ speedup despite packed multiplies. A roofline built from our
-  own measured streaming bandwidth ($\approx\qty{43}{\giga\byte\per\second}$) explains every kernel
-  as memory-bound in DRAM.
+  AVX2+FMA, \qty{256}{bit} vectors) running at a fixed \qty{2.8}{\giga\hertz}. With cache-resident
+  data a \code{-march=native} build reaches about $5.8\times$ over scalar for SAXPY (\num{8} float32
+  lanes), while the generic auto-vectorized (SSE, \qty{128}{bit}) build reaches about $3\times$; the
+  gain compresses to $\approx1.7\text{--}1.9\times$ once the working set spills to DRAM. There the
+  native kernels sit \emph{on} the measured DRAM bandwidth roof, and the speedup that remains only
+  reflects that scalar SAXPY, which hardware counters show needs $\approx1.8$ cycles of core work per
+  element, cannot keep up with memory at this clock. Float64 roughly halves the SIMD advantage
+  (\num{4} lanes), and non-unit stride or gather access erases it entirely; an explicit AVX2
+  hardware gather (\code{vgatherdps}) is even $1.5\times$ \emph{slower} than the scalar gather in
+  cache. Our negative case is memory-bound SAXPY: the loop provably vectorizes, yet wider vectors buy
+  nothing in DRAM because it already runs at the bandwidth roof; a second anomaly is the dot product,
+  whose non-reassociated reduction leaves a \num{4}-cycle scalar dependency chain and
+  $\approx1\times$ speedup despite packed multiplies. A cache-aware roofline whose ceilings are
+  measured by separate microbenchmarks---an FMA-throughput loop
+  (\qty{89.1}{\giga\flop\per\second} float32, \num{32.0}~FLOP/cycle) and a STREAM-style triad per
+  cache level (from \qty{207}{\gibi\byte\per\second} in L1 down to \qty{24.3}{\gibi\byte\per\second} from DRAM)---places every
+  L3- and DRAM-resident native streaming kernel within \SI{11}{\percent} of its bandwidth roof.
 \end{abstract}
 
 \ifacsdraft\tableofcontents\clearpage\fi

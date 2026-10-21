@@ -2,42 +2,87 @@
 \section{Read/Write Mix}\label{sec:rw-mix}
 
 \begin{hypothesis}
-  Pure reads should reach the highest bandwidth. Any write fraction should cost extra, because an
-  ordinary store first issues a read-for-ownership (RFO) of the target line, so writes move roughly twice
-  the DRAM traffic per byte stored and add read/write turnaround on the bus. We therefore expect mixed
-  streams to fall \emph{below} both pure read and pure write.
+  Pure reads should reach the highest \emph{demand} bandwidth. Every written line first needs a
+  read-for-ownership (RFO) and later a write-back, so a written line costs about two lines of DRAM traffic
+  and adds read/write bus turnarounds. Demand bandwidth should therefore fall as the write fraction grows,
+  while estimated DRAM traffic stays closer to constant; and loaded latency should be highest for the
+  write-heavy mixes, whose write-backs compete with the probe's reads.
 \end{hypothesis}
 
 \begin{knobs}
-  Fixed       & 10 threads (one per physical core); random-free unit stride; \qty{1.25}{\gibi\byte} total \\
-  Varied      & reads per 10 accesses: 10 (100/0), 7 (70/30), 5 (50/50), 0 (0/100) \\
-  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh rwmix} \\
+  Fixed       & \qty{128}{\mebi\byte} per generator core; sequential; ordinary (write-allocate) full-line stores; \qty{4}{\kibi\byte} pages \\
+  Varied      & reads per 10 \emph{lines}: 10 (100/0), 7 (70/30), 5 (50/50), 0 (0/100); $T = 1$ and $9$ generator cores \\
+  Latency     & concurrent random pointer-chase probe on CPU~2 (\code{mem_loaded}); $T=0$ gives the unloaded value \\
+  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh rw_mix} \\
 \end{knobs}
+
+\paragraph{Mix definition.} Of every 10 consecutive \qty{64}{\byte} lines, the first $R$ are read and
+the remaining $10-R$ are fully overwritten. Mixing at \emph{line} granularity makes the ratio hold for the
+traffic the memory system sees. The previous version of this experiment mixed individual \qty{8}{\byte}
+elements: with 7 reads and 3 writes per 10 elements, every line of the source was read \emph{and} every
+line of the destination written, so a nominal ``70/30'' moved roughly three lines per useful line and its
+result (\qty{8.1}{\gibi\byte\per\second} vs.\ \qty{27.2}{\gibi\byte\per\second} for reads) measured the
+bug, not the mix. ``Demand'' bandwidth counts the bytes the program reads or writes; ``est.\ traffic''
+adds one RFO line per written line (written lines count twice).
 
 \begin{figure}[tbp]
   \centering
-  \IfDataExists{rwmix}{%
+  \begin{subfigure}[t]{0.49\linewidth}
+    \IfDataExists{rw_mix}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, ybar, bar width=20pt, width=0.62\linewidth, ymin=0,
-                   xtick={0,5,7,10}, xticklabels={0/100,50/50,70/30,100/0},
-                   xlabel={Read/write mix}, ylabel={Bandwidth (GiB/s)}, enlarge x limits=0.18]
-        \addplot+[iqr bars] table[x=reads10, y=gib_s_median, iqr of=gib_s, only if={kernel}{rwmix}] {data/rwmix.csv};
+      \begin{axis}[acs, height=0.85\linewidth, ymin=0, xtick={0,5,7,10},
+                   xticklabels={0/100,50/50,70/30,100/0}, xlabel={Read/write mix (lines)},
+                   ylabel={Bandwidth (GiB/s)}, legend pos=south west, legend style={font=\scriptsize}]
+        \addplot+[iqr bars] table[x=reads10, y=total_gib_s_median, iqr of=total_gib_s, only if={threads}{9}] {data/rw_mix.csv};
+        \addlegendentry{demand, $T=9$}
+        \addplot+[mark=o, dashed] table[x=reads10, y=traffic_gib_s_median, only if={threads}{9}] {data/rw_mix.csv};
+        \addlegendentry{est.\ traffic, $T=9$}
+        \addplot+[iqr bars] table[x=reads10, y=total_gib_s_median, iqr of=total_gib_s, only if={threads}{1}] {data/rw_mix.csv};
+        \addlegendentry{demand, $T=1$}
       \end{axis}
-    \end{tikzpicture}%
-  }
-  \caption{Aggregate bandwidth across read/write mixes (10 threads). Pure reads dominate; any write
-  fraction falls sharply because stores incur read-for-ownership traffic and bus turnaround.}\label{fig:rw-mix}
+    \end{tikzpicture}}
+    \caption{Throughput.}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.49\linewidth}
+    \IfDataExists{rw_mix}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, height=0.85\linewidth, ymin=0, xtick={0,5,7,10},
+                   xticklabels={0/100,50/50,70/30,100/0}, xlabel={Read/write mix (lines)},
+                   ylabel={Probe latency (ns)}, legend pos=north east, legend style={font=\scriptsize}]
+        \addplot+[iqr bars] table[x=reads10, y=probe_ns_median, iqr of=probe_ns, only if={threads}{9}] {data/rw_mix.csv};
+        \addlegendentry{$T=9$}
+        \addplot+[iqr bars] table[x=reads10, y=probe_ns_median, iqr of=probe_ns, only if={threads}{1}] {data/rw_mix.csv};
+        \addlegendentry{$T=1$}
+      \end{axis}
+    \end{tikzpicture}}
+    \caption{Loaded latency of a random read.}
+  \end{subfigure}
+  \caption{Read/write mixes: throughput and concurrently measured latency. The unloaded probe latency
+  is \valqty{rw_unloaded_ns}{\nano\second}.}\label{fig:rw-mix}
 \end{figure}
 
 \subsection{Analysis}
-The 10-thread aggregate is \qty{27.2}{\gibi\byte\per\second} for 100\% reads but only
-\qty{8.1}{\gibi\byte\per\second} at 70/30 and \qty{7.6}{\gibi\byte\per\second} at 50/50, recovering to
-\qty{9.7}{\gibi\byte\per\second} at 100\% writes. The dip at 50/50 is the predicted effect: a mixed
-stream pays both for RFO traffic on every store and for frequent read$\leftrightarrow$write turnaround on
-the DDR bus, so it underperforms either pure direction. Pure writes beat the mixes because, with no
-interleaved reads, the controller can batch same-direction transactions. As same-kernel references, the
-\code{copy} (\qty{16.3}{\gibi\byte\per\second}) and \code{triad} (\qty{19.8}{\gibi\byte\per\second})
-streaming kernels bracket these mixes and show the effect of counting RFO traffic. One honest caveat:
-our \code{rwmix} kernel reads into a single accumulator and stores it, so the absolute mix numbers carry
-a read$\to$write dependency and are best read as a \emph{relative} comparison across mixes rather than as
-peak bandwidth (\cref{sec:anomalies}).
+With nine generator cores, demand bandwidth is \valqty{rw_10_t9_gib}{\gibi\byte\per\second} for 100\%
+reads, \valqty{rw_7_t9_gib}{\gibi\byte\per\second} at 70/30, \valqty{rw_5_t9_gib}{\gibi\byte\per\second}
+at 50/50 and \valqty{rw_0_t9_gib}{\gibi\byte\per\second} for 100\% writes. Counting the RFO, estimated
+DRAM traffic is \valqty{rw_10_t9_traffic}{\gibi\byte\per\second}, \valqty{rw_7_t9_traffic}{\gibi\byte\per\second},
+\valqty{rw_5_t9_traffic}{\gibi\byte\per\second} and \valqty{rw_0_t9_traffic}{\gibi\byte\per\second}
+respectively. Traffic is therefore roughly constant at the controller's ceiling for pure reads, 70/30
+and pure writes---each written line costs its demand line plus one RFO, and the controller delivers about
+the same number of lines either way---but drops by about a fifth at 50/50, where the bus has to turn
+around between reads and writes most often. Demand bandwidth falls monotonically with the write fraction,
+as predicted. The concurrently measured probe latency is \valqty{rw_10_t9_ns}{\nano\second},
+\valqty{rw_7_t9_ns}{\nano\second}, \valqty{rw_5_t9_ns}{\nano\second} and \valqty{rw_0_t9_ns}{\nano\second}
+for the same four mixes (unloaded: \valqty{rw_unloaded_ns}{\nano\second}); write-backs occupy the same
+channels and queues as the probe's reads, so a write-heavy stream raises read latency even at lower
+demand bandwidth. A single generator core ($T=1$) is not controller-bound and behaves differently: its
+demand bandwidth is \valqty{rw_10_t1_gib}{\gibi\byte\per\second} for reads, \emph{highest} at 70/30
+(\valqty{rw_7_t1_gib}{\gibi\byte\per\second}) and \valqty{rw_0_t1_gib}{\gibi\byte\per\second} for writes, while
+its estimated traffic grows from \valqty{rw_10_t1_traffic}{\gibi\byte\per\second} to
+\valqty{rw_0_t1_traffic}{\gibi\byte\per\second}. A plausible explanation, not tested here, is that stores retire into the store
+buffer without waiting for their RFO, so a core can keep more lines moving when part of its stream is writes than when every line is a
+load it must wait for. The probe barely notices one core (\valqty{rw_10_t1_ns}{\nano\second} to
+\valqty{rw_0_t1_ns}{\nano\second}). As named-kernel references on all
+ten cores, \code{copy} delivers \valqty{rw_ref_copy}{\gibi\byte\per\second} and \code{triad}
+\valqty{rw_ref_triad}{\gibi\byte\per\second} (demand bytes; 1:1 and 2:1 read:write). Non-temporal
+stores, which skip the RFO, were out of scope for the required mixes.

@@ -1,41 +1,55 @@
 % !TeX root = ../main.tex
 \section{Reproducibility}\label{app:repro}
 
-Code, scripts and raw data: \coderepo, on the \code{class-wide-project} submission branch
-(the exact commit is recorded in \code{git log}).
+\newcommand{\acscommit}{\detokenize{COMMIT_HASH_PLACEHOLDER}}
+Code, scripts, raw data and this report live in one repository: \code{ACS-Code/} holds the code and
+data (this project in \code{ACS-Code/SIMD_Advantage_Profiling/}, shared helpers in
+\code{ACS-Code/common/} and \code{ACS-Code/tools/}), \code{ACS-Latex/} the reports (this one in
+\code{ACS-Latex/SIMD_Advantage_Profiling/}). Every result in this report was produced from commit
+\texttt{\acscommit}. From the repository root:
 
 \begin{lstlisting}[language=bash]
-git clone https://github.com/SKempiak/ACS-Code.git && cd ACS-Code
-git checkout <commit>
-make -C SIMD_Advantage_Profiling          # scalar / autovec / native builds
+gh repo clone SKempiak/ACS-Code ACS && cd ACS
+git checkout COMMIT_HASH_PLACEHOLDER
+cd ACS-Code
 make tools                                # tools/summarize
-make -C SIMD_Advantage_Profiling test     # 570 correctness cases
+make -C SIMD_Advantage_Profiling          # scalar/autovec/native simd_bench + ceilings
+make -C SIMD_Advantage_Profiling test     # 578 correctness cases
 make -C SIMD_Advantage_Profiling report   # vectorization evidence
 scripts/collect_env.sh --tex > ../ACS-Latex/common/system_info.tex
-SIMD_Advantage_Profiling/scripts/run.sh all
-scripts/sync_data.sh SIMD_Advantage_Profiling
+SIMD_Advantage_Profiling/scripts/run.sh all     # ceilings, baseline, locality, alignment,
+                                                # stride, dtype, negative
+scripts/sync_data.sh SIMD_Advantage_Profiling   # -> ACS-Latex/SIMD_Advantage_Profiling/data/
+cd ../ACS-Latex && make simd                    # -> SIMD_Advantage_Profiling.pdf
 \end{lstlisting}
+Hardware counters need no root (user-space events, \code{perf_event_paranoid} $\le 2$); with
+\code{COUNTERS=0}, or where they cannot be opened, \code{run.sh} skips the counter outputs.
+\code{run.sh derive} recomputes the derived tables (roofline points and roofs, per-level bandwidth,
+stride summary) from the processed CSVs without measuring.
 
 \begin{table}[h]
   \centering\small
   \caption{Raw data behind each figure (directories under
-  \code{SIMD_Advantage_Profiling/data/raw/}).}\label{tab:raw-data}
+  \code{ACS-Code/SIMD_Advantage_Profiling/data/raw/}).}\label{tab:raw-data}
   \begin{tabularx}{\linewidth}{@{}lX@{}}
     \toprule
     Figure / table & Raw run directory \\
     \midrule
-    \Cref{fig:baseline-speedup,fig:baseline-throughput} & \code{baseline/20261012-182813} \\
-    \Cref{fig:locality} & \code{locality/20261012-182813} \\
-    \Cref{fig:alignment} & \code{alignment/20261012-182813} \\
-    \Cref{fig:stride}, \cref{tab:stride} & \code{stride/20261012-182813} \\
-    \Cref{fig:dtype} & \code{dtype/20261012-182813} \\
-    \Cref{fig:roofline} & \code{baseline/20261012-182813}, \code{negative/20261012-182813} \\
-    \Cref{tab:vec-summary} & \code{vectorization/20261012-182734} \\
+    \Cref{fig:baseline-speedup,fig:baseline-throughput} & \code{baseline/20261021-003450} \\
+    \Cref{fig:locality,fig:locality-bw,fig:locality-counters}, \cref{tab:locality-bw} & \code{locality/20261021-003450} \\
+    \Cref{fig:alignment,fig:tail} & \code{alignment/20261021-003450} (\code{raw.csv}, \code{raw_tail.csv}) \\
+    \Cref{fig:stride}, \cref{tab:stride} & \code{stride/20261021-003450} \\
+    \Cref{fig:dtype} & \code{dtype/20261021-003450} \\
+    \Cref{fig:roofline}, \cref{tab:ceilings} & \code{ceilings/20261021-003450}, \code{baseline/20261021-003450} \\
+    Negative-case table (\cref{sec:negative}) & \code{negative/20261021-003450} \\
+    \Cref{tab:vec-summary} & \code{vectorization/20261021-001032} \\
     \bottomrule
   \end{tabularx}
 \end{table}
 
 Each raw directory holds \code{raw.csv} (one row per repetition, with full configuration metadata)
 and \code{env.txt} (a snapshot of \code{collect_env.sh}); the processed CSVs plotted above are
-produced from them by \code{tools/summarize} and copied into this report's \code{data/} by
-\code{scripts/sync_data.sh}. Every number quoted in the report traces to one of these files.
+produced from them by \code{tools/summarize} plus this project's post-processing scripts
+(\code{speedup_iqr.awk}, \code{roofline.sh}, \code{tables.sh}) and copied into this report's
+\code{data/} by \code{scripts/sync_data.sh}. Every number quoted in the report traces to one of these
+files.

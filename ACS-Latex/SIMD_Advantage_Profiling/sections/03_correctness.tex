@@ -12,7 +12,8 @@ compares element-by-element (or the scalar result, for the dot product) before t
 \begin{knobs}
   Cases  & kernels $\times$ \{float32, float64\}; $N$ around multiples of the lane count
            ($1,2,3,7,8,9,15,16,17,31,33,64,127,1000,1024,4095,4096,4097,65536$); start offsets
-           $4\ldots\qty{60}{\byte}$; strides $2,4,8,16$; gather; int32 multiply \\
+           $4\ldots\qty{60}{\byte}$; strides $2,4,8,16$; gather; explicit AVX2 gather (native only,
+           $N \in \{7,8,9,16,17,1000,4096,65536\}$); int32 multiply \\
   Tolerance & relative error $\le 10^{-5}$ (float32) and $\le 10^{-12}$ (float64). The bound is loose
              enough for the one legal source of disagreement---FMA contraction in the vectorized
              builds versus the non-fused reference---and tight enough to catch real bugs. \\
@@ -22,11 +23,11 @@ compares element-by-element (or the scalar result, for the dot product) before t
 \emph{Known-answer self-test} (\code{simd_bench --selftest}), independent of the reference: the dot
 product of two all-ones vectors equals $N$; $y=2x+y$ with $x=1,y=3$ gives $5$ everywhere; $z=x\,y$
 with $x=2,y=3$ gives $6$; and the stencil with $a=b=c=1$ on a constant-1 input gives $3$ in the
-interior. These guard against a reference and kernel sharing the same mistake.
+interior; and the explicit AVX2 gather through a reversed permutation gives $5$ everywhere. These guard against a reference and kernel sharing the same mistake.
 
 The sweep covers sizes with and without a vector-width remainder (to exercise the scalar/masked tail)
 and deliberately misaligned start addresses (to exercise the loop prologue), so correctness is
 established precisely in the regimes the later experiments stress.
 
-Result: all \num{570} validation cases pass for every variant (scalar, autovec, native); the maximum
+Result: all \num{578} validation cases pass for every variant (scalar, autovec, native); the maximum
 observed float32 relative error was below $10^{-6}$, consistent with FMA contraction alone.

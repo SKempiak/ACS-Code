@@ -4,44 +4,60 @@
 
 \subsection{Unexpected results}
 \begin{itemize}
-  \item \textbf{Random writes beat random reads at low queue depth.} At QD=1, \qty{4}{\kibi\byte} writes
-        hit \qty{68}{k} IOPS (\qty{14.7}{\micro\second}) versus reads at \qty{20}{k}
-        (\qty{49.6}{\micro\second}), and at QD=16 pure writes (\qty{186}{k} IOPS) beat pure reads
-        (\qty{105}{k}). Hypothesis: the controller acknowledges writes from its SLC/DRAM buffer before the
-        flash program completes, whereas a read must wait for the NAND sense. Consistent with the write
-        buffer also explaining why \emph{mixed} workloads are slower than either pure case
-        (\cref{sec:rw-mix}).
-  \item \textbf{Sequential QD=1 read throughput is modest (\qty{227}{\mebi\byte\per\second}).} Lower than
-        the drive's headline rating. Hypothesis: with one outstanding \qty{128}{\kibi\byte} request and
-        \code{O_DIRECT} (no OS read-ahead), the device is under-fed; the block-size and queue-depth sweeps
-        show throughput rising to \qty{1.5}{\gibi\byte\per\second} with larger blocks and
-        \qty{620}{\mebi\byte\per\second} of random \qty{4}{\kibi\byte} at QD=128, so this is a
-        single-request artifact, not a device ceiling.
-  \item \textbf{Sustained-write throughput dips then recovers} rather than falling off an SLC cliff
-        (\cref{fig:device-state}). Hypothesis: the \qty{2}{\gibi\byte} footprint is too small and the run
-        too short to exhaust the SLC cache; the dip is the initial flush transient. Tested only
-        indirectly---a full-capacity run would be needed to see the true steady-state QLC rate.
+  \item \textbf{Random writes beat random reads, until the cache fills.} At QD=1, \qty{4}{\kibi\byte}
+        writes take \csvq[1]{zero_queue}{mode=write,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}
+        and reads \csvq[1]{zero_queue}{mode=read,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}.
+        At QD=16, pure writes (\csvq{rw_mix}{rwmix=0}{iops_median} IOPS) beat pure reads
+        (\csvq{rw_mix}{rwmix=10}{iops_median}). The controller acknowledges writes from its SLC/SRAM buffer.
+        The sustained run confirms the mechanism: once the buffer is full, random writes average
+        \csvval{sustained_summary}{rand_steady_iops} IOPS, far below reads.
+  \item \textbf{Write collapses inside ordinary sweeps.} Three block-size random-write points
+        ($\geq$\qty{256}{\kibi\byte}) and the QD=8 queue-depth write point fell to the direct-to-QLC rate,
+        with p99 of tens of milliseconds, while their neighbours did not. Hypothesis: transient SLC
+        exhaustion after several GiB of writes. These points are reported, not dropped, and the knee
+        rule's output for writes is overridden in the text.
+  \item \textbf{Sequential-read speed depends on write history} ($6.4\times$ at QD=1 and $9.2\times$ at
+        QD=32; \cref{sec:layout}). Deep queues did not hide the gap, contrary to our prediction.
+  \item \textbf{Tails depend on recent writes.} At the same QD, tail runs right after the queue-depth
+        write sweep had half the IOPS and up to $5\times$ larger p99.9/p50 ratios than the clean sweep
+        (\cref{sec:tail}).
+  \item \textbf{FIO and \code{blkbench} differ on QD=32 random writes} (0.78), with matching medians and
+        a heavier FIO tail. Hypothesis: FIO always ran second in each pair, after \code{blkbench} had just
+        written \qty{256}{\mebi\byte} (\cref{sec:fio-check}). Not tested.
+  \item \textbf{No recovery after \qty{60}{\second} idle} following the sustained write. The fold backlog
+        needs much longer.
 \end{itemize}
 
 \subsection{Limitations}
 \begin{itemize}
-  \item \textbf{FIO not available.} \sysFio{}; measurements use \code{blkbench}, an O\_DIRECT
-        \code{libaio} stand-in. FIO-only conveniences---full latency histograms beyond p99.9,
-        \code{numjobs} scaling, built-in SMART logging and its exact ioengine knobs---are approximated or
-        omitted, not faked.
-  \item \textbf{No \code{iostat}/\code{perf} cross-check.} Effective queue depth is verified in-band via
-        Little's Law (\cref{tab:littles-law}) rather than against \code{iostat} aqu-sz.
-  \item \textbf{SMART/thermal need root.} Temperature, data-units-written and media-error counters are
-        unavailable (\code{smartctl}/\code{nvme} require privileges we lack), so thermal/throttling and
-        wear claims are limited to what the throughput trace shows.
-  \item \textbf{Filesystem, not raw device; small LBA range.} I/O goes to a \qty{2}{\gibi\byte} disposable
-        file on an ext4 filesystem (the data-safety requirement), not a raw partition, so ext4 extent
-        mapping adds a thin layer and only \num{0.4}\% of the \qty{512}{\giga\byte} LBA space is exercised.
-        Full-span and true steady-state behaviour are out of scope.
-  \item \textbf{Fixed data pattern; short runs.} Writes use a constant \code{0xA5} fill (compressibility
-        not varied) and runs are \qtyrange{4}{6}{\second}; the SLC-cache size and long-term steady state
-        were not measured. One drive, one firmware.
-  \item \textbf{Report build backend.} Builds cleanly with \code{make ssd} and \code{make final}; the host
-        has \code{bibtex} but not \code{biber}, so \code{biblatex} uses \code{backend=bibtex}. The only
-        artifact is a benign \enquote{Please (re)run BibTeX} notice---no unresolved \code{[?]} markers.
+  \item \textbf{Run order shaped the device-state results.} \code{device_state} ran immediately after
+        \code{all}, with no idle and no TRIM. Only \ensuremath{\sim}\qty{3}{\gibi\byte} of SLC was free,
+        so the fresh-drive SLC capacity was not measured, and the working-set numbers describe a drive
+        busy with background folding. A clean measurement needs an idle and trimmed drive. That needs
+        root for \code{fstrim}, or waiting for the weekly timer.
+  \item \textbf{Primary engine is not FIO.} The sweeps use \code{blkbench}. FIO cross-checks it on seven
+        points (\cref{sec:fio-check}): reads agree within \qty{2}{\percent}, QD=32 random writes do not.
+        \code{ENGINE=fio} reruns every sweep through FIO.
+  \item \textbf{Closed-loop load only.} Every experiment holds a fixed QD. An open-loop (fixed arrival
+        rate) generator would show queueing delay against offered load, and its tails would differ.
+  \item \textbf{No \code{iostat}/\code{perf} cross-check.} Effective queue depth is checked in-band through
+        $L/\text{QD}$ (\cref{tab:littles-law}). That includes time in the kernel block layer, so it
+        bounds device-queue occupancy from above.
+  \item \textbf{SMART needs root.} Temperature comes from the NVMe hwmon sensor, which needs no root.
+        Data-units-written, media errors and the throttle counters are unavailable, so throttling is
+        inferred only from temperature and throughput together.
+  \item \textbf{Filesystem, not raw device; partial LBA range.} I/O goes to disposable files on ext4: a
+        \qty{2}{\gibi\byte} file for the sweeps and a \qty{60}{\gibi\byte} file for device state, about
+        \qty{13}{\percent} of the drive. Full-drive SNIA steady state is out of scope.
+  \item \textbf{Byte caps and few repetitions on write points.} Write points stop after
+        \qty{256}{\mebi\byte} per repetition and use 3--5 repetitions, so a single flush stall can move a
+        median (QD=8 writes). The QD=32 FIO comparison suggests a \ensuremath{\sim}\qty{20}{\percent}
+        drive-state uncertainty on write numbers.
+  \item \textbf{One \code{fio_check} group was not re-filled.} Its sequential points measured the
+        fragmented layout left by \code{layout}. This does not affect the engine comparison, and the
+        script has since been fixed.
+  \item \textbf{Fixed data pattern.} All writes use an incompressible pattern. Compressibility was not
+        varied (\code{blkbench --fill zero} exists for that). One drive, one firmware (\code{P6MA001}).
+  \item \textbf{Report build backend.} The host has \code{bibtex} but not \code{biber}, so
+        \code{biblatex} uses \code{backend=bibtex}.
 \end{itemize}

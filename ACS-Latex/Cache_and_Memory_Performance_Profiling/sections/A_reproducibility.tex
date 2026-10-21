@@ -1,39 +1,50 @@
 % !TeX root = ../main.tex
 \section{Reproducibility}\label{app:repro}
 
-Code, scripts and raw data: \coderepo, on the \code{class-wide-project} submission branch (the exact
-commit is recorded in \code{git log}).
+Code, scripts, raw and processed data, and this report live in one repository with two top-level
+directories, \code{ACS-Code/} and \code{ACS-Latex/}, at commit \code{COMMIT_HASH_PLACEHOLDER}.
 
 \begin{lstlisting}[language=bash]
-git clone https://github.com/SKempiak/ACS-Code.git && cd ACS-Code
-git checkout <commit>
+gh repo clone SKempiak/ACS-Code ACS && cd ACS
+git checkout COMMIT_HASH_PLACEHOLDER
+cd ACS-Code
 make tools                                            # tools/summarize
-make -C Cache_and_Memory_Performance_Profiling        # mem_latency / mem_bandwidth / kernel_miss
-make -C Cache_and_Memory_Performance_Profiling test   # safety + physical-ordering sanity checks
+make -C Cache_and_Memory_Performance_Profiling        # mem_latency mem_bandwidth mem_loaded kernel_miss
+make -C Cache_and_Memory_Performance_Profiling test   # physical-ordering sanity checks (validate.sh)
 scripts/collect_env.sh --tex > ../ACS-Latex/common/system_info.tex
-CPU_PIN=2 Cache_and_Memory_Performance_Profiling/scripts/run.sh all
+Cache_and_Memory_Performance_Profiling/scripts/run.sh zero_queue pattern rw_mix intensity \
+    working_set cache_miss tlb pitfall mlc            # or: run.sh all (CPU_PIN=2 by default)
 scripts/sync_data.sh Cache_and_Memory_Performance_Profiling
+cd ../ACS-Latex && make memory
 \end{lstlisting}
 
 \begin{table}[h]
   \centering\small
-  \caption{Raw data behind each figure.}\label{tab:raw-data}
-  \begin{tabularx}{\linewidth}{@{}lX@{}}
+  \caption{Raw data behind each figure and table (directories under
+  \code{ACS-Code/Cache_and_Memory_Performance_Profiling/data/raw/}).}\label{tab:raw-data}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.2\linewidth}l>{\raggedright\arraybackslash}Xl@{}}
     \toprule
-    Figure / table & Raw run directory (\code{Cache_and_Memory_Performance_Profiling/data/raw/...}) \\
+    Figure / table & \code{run.sh} experiment & Processed CSV & Raw run directory \\
     \midrule
-    \Cref{tab:zero-queue}, \cref{fig:working-set} & \code{latency/20261019-232253} \\
-    \Cref{fig:pattern} & \code{latency/20261019-232253}, \code{granularity/20261019-232253} \\
-    \Cref{fig:rw-mix} & \code{rwmix/20261019-232253} \\
-    \Cref{fig:intensity}, \cref{tab:littles-law} & \code{intensity/20261019-232253} \\
-    \Cref{fig:cache-miss} & \code{cache_miss/20261019-232253} \\
-    \Cref{fig:tlb} & \code{tlb/20261019-233449} \\
-    \Cref{fig:pitfall} & \code{pitfall/20261019-232253} \\
+    \Cref{tab:zero-queue} & \code{zero_queue} & \code{zero_queue}, \code{zero_queue_table} & \code{zero_queue/20261021-004356} \\
+    \Cref{fig:pattern,fig:stride} & \code{pattern} & \code{pattern_lat}, \code{pattern_bw} & \code{pattern/20261021-004356} \\
+    \Cref{fig:rw-mix} & \code{rw_mix} & \code{rw_mix}, \code{rw_mix_ref} & \code{rw_mix/20261021-004356} \\
+    \Cref{fig:intensity,fig:mlp}, \cref{tab:littles-law} & \code{intensity} & \code{intensity_loaded}, \code{intensity_mlp}, \code{littles_law}, \code{knee} & \code{intensity/20261021-004356} \\
+    \Cref{fig:working-set} & \code{working_set} & \code{working_set} & \code{working_set/20261021-004356} \\
+    \Cref{fig:cache-miss} & \code{cache_miss} & \code{cache_miss_ctr}, \code{amat_fit} & \code{cache_miss/20261021-004356} \\
+    \Cref{fig:tlb} & \code{tlb} & \code{tlb_chase}, \code{tlb_saxpy} & \code{tlb/20261021-004356} \\
+    \Cref{fig:pitfall} & \code{pitfall} & \code{pitfall} & \code{pitfall/20261021-004356} \\
+    \Cref{sec:validation} (MLC) & \code{mlc} & --- & \code{mlc/20261021-004356} \\
     \bottomrule
   \end{tabularx}
 \end{table}
 
-Each raw directory holds \code{raw.csv} (one row per repetition, with full configuration metadata) and
-\code{env.txt} (a snapshot of \code{collect_env.sh}); the processed CSVs plotted above are produced from
-them by \code{tools/summarize} and copied into this report's \code{data/} by \code{scripts/sync_data.sh}.
-Every number quoted in the report traces to one of these files.
+Each raw directory holds the raw rows (one per repetition, with full configuration metadata),
+\code{env.txt}, \code{build.txt}, \code{commands.txt} and \code{validate.txt} (\cref{sec:method}). The
+processed CSVs are produced from them by \code{tools/summarize}; \code{scripts/derive.py} computes the
+derived tables and \code{summary.csv}, from which every number in the text is typeset; and
+\code{scripts/sync_data.sh} copies all of them into this report's \code{data/}. All nine directories come from a single \code{run.sh all} invocation
+(2026-10-21, 00:43--00:55; one shared timestamp). The superseded runs of 2026-10-19 (\code{latency/},
+\code{granularity/}, \code{rwmix/}, \code{intensity/}, \code{cache_miss/}, \code{pitfall/} and both
+\code{tlb/} runs) and their processed CSVs were removed from the repository.

@@ -2,18 +2,38 @@
 \section{Conclusion}\label{sec:conclusion}
 
 The Micron 2210 NVMe SSD shows the queueing-driven throughput--latency tradeoff the project set out to
-measure, and the numbers are unambiguous once the device is correctly targeted. At QD=1, \qty{4}{\kibi\byte}
-random reads cost \qty{49.6}{\micro\second} (\qty{20}{k} IOPS) and writes only \qty{14.7}{\micro\second}
-(\qty{68}{k} IOPS), because the controller's write buffer hides the flash program latency. Block size moves
-the bottleneck from IOPS-limited to throughput-limited---sequential reads saturate near
-\qty{1.5}{\gibi\byte\per\second}---and mixing reads with writes is strictly worse than either pure workload
-(the 50/50 mix drops to \qty{72}{k} IOPS, below the read-only \qty{105}{k}). The queue-depth sweep locates
-the knee at QD\,$\approx$\,64, where IOPS saturates at \qty{158}{k}; beyond it, latency grows linearly for
-no throughput, and Little's Law holds to within a percent at every depth---so the effective queue depth is
-real and the saturation is the device's, not the benchmark's. Tails are mild (no seeks) but p99.9 still
-runs \num{3}$\times$ the median and is the number a latency SLA must budget for. The sharpest lesson is
-methodological: the same workload \emph{without} \code{O_DIRECT} reported \qty{2}{} million IOPS of pure
-fiction (the page cache), and the first full dataset was accidentally taken against the machine's HDD
-until the \code{rotational} flag gave it away. Storage, like memory, is governed by queueing---but only a
-measurement that bypasses the cache, verifies its effective queue depth, and confirms which device it is
-even talking to can be trusted to say so.
+measure. At QD=1, \qty{4}{\kibi\byte} random reads cost
+\csvq[1]{zero_queue}{mode=read,pattern=rand}{lat_mean_us_median}\,\si{\micro\second} and writes only
+\csvq[1]{zero_queue}{mode=write,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}, because the
+controller's write buffer hides the flash program.
+
+Block size moves the bottleneck from per-request latency to bandwidth. With one request in flight,
+sequential reads stay near \qty{1.4}{\gibi\byte\per\second} from 64 to \qty{256}{\kibi\byte} and reach
+\csvq{block_size}{bs=1048576,pattern=seq,mode=read,qd=1}{mibps_median}\,MiB/s at \qty{1}{\mebi\byte}. At
+QD=32 they top out at \csvq{block_size}{bs=65536,pattern=seq,mode=read,qd=32}{mibps_median}\,MiB/s,
+\qty{57}{\percent} of the \qty{3756}{\mebi\byte\per\second} PCIe~3.0~$\times$4 link. The NAND back end,
+not the interface, is the ceiling. Writes saturate at \ensuremath{\sim}\qty{1.06}{\gibi\byte\per\second}
+of SLC ingest even at QD=1. Mixing reads with writes is worse than either pure workload.
+
+The read knee is at QD~\csvq{queue_depth_knee}{mode=read}{knee_qd} under an explicit
+\qty{10}{\percent}-per-doubling rule. Beyond it, latency doubles with every doubling of QD for at most a
+few percent more IOPS. $L/\text{QD}$ stays at 0.987--0.998. Little's Law holds by construction in a
+closed loop, so this confirms that the harness keeps the queue full and the saturation is the device's.
+
+Device state matters as much as configuration. Once the SLC cache is full, sequential writes fall from
+\csvval{sustained_summary}{burst_mibps} to \csvval{sustained_summary}{steady_mibps}\,MiB/s ($18\times$),
+and random writes average \csvval{sustained_summary}{rand_steady_iops} IOPS with
+\qty{32}{\milli\second} per-second p99. A minute of idle does not bring the cache back. Reads issued
+while the drive is still folding recent writes lose half their IOPS, and their p99.9 grows up to
+$24\times$ the median. Sequential reads of randomly written data run $6$--$9\times$ slower whatever the
+queue depth. Because our device-state run started on a cache already filled by the preceding sweeps, the
+fresh-drive SLC capacity remains unmeasured. The NVMe temperature peaked at \qty{61.9}{\celsius}, far below
+the drive's \qty{86.85}{\celsius} warning threshold, so we saw no thermal effects.
+
+The sharpest lessons are methodological. Without \code{O_DIRECT}, the same workload reported
+page-cache fiction. The first dataset was taken on the HDD until the \code{rotational} flag gave it away.
+A \enquote{sequential} read can be six to nine times slower depending only on how the data was written.
+And on a QLC drive, \emph{what ran just before} changes write throughput by an order of magnitude and read
+tails severalfold. A storage measurement can be trusted only if it bypasses the cache, verifies its
+effective queue depth, controls the data's write history and the drive's recent workload, and confirms
+which device it is talking to.

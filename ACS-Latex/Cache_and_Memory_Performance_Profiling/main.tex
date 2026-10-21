@@ -4,6 +4,7 @@
 \input{../common/preamble}
 \input{../common/macros}
 \input{../common/system_info}
+\input{numbers}   % \val{key}: measured values from data/summary.csv (scripts/derive.py)
 
 \title{Project 2: Cache \& Memory Performance Profiling}
 \author{\acsauthor\\[2pt]\small\acscourse\\\small\href{mailto:\acsemail}{\acsemail}}
@@ -13,17 +14,22 @@
 \maketitle
 
 \begin{abstract}
-  We profile the cache and memory hierarchy of an Intel i9-10900F with three custom
-  single-threaded/multi-threaded microbenchmarks. Zero-queue pointer-chase latency rises in clean steps
-  from \ensuremath{\sim}\qty{1}{\nano\second} (L1, 4--5 cycles) through \ensuremath{\sim}\qty{4}{\nano\second} (L2) and the tens of
-  cycles across the \qty{20}{\mebi\byte} L3 to \ensuremath{\sim}\qty{84}{\nano\second} (\ensuremath{\sim}\num{400} cycles) in
-  DRAM. Single-core streaming bandwidth tops out at \ensuremath{\sim}\qty{14}{\gibi\byte\per\second} and scales to a
-  controller-limited \ensuremath{\sim}\qty{30}{\gibi\byte\per\second} at a four-to-six-core knee that Little's Law
-  attributes to \ensuremath{\sim}\num{42} outstanding cache lines. Random traversal costs up to \num{47}$\times$ more
-  than sequential once the footprint leaves the LLC, quantifying the prefetcher's reach; huge pages
-  showed no effect because the sandbox never granted them (a verified negative result). We close with the
-  cache-reuse bandwidth pitfall---where a too-small buffer reports \qty{56}{\gibi\byte\per\second} of
-  nonexistent ``DRAM'' bandwidth---and honest limitations from the absence of hardware counters.
+  We profile the cache and memory hierarchy of an Intel i9-10900F with four purpose-built
+  microbenchmarks and user-space hardware counters. Zero-queue pointer-chase latency, taken on each
+  level's plateau by a stated rule, is \valqty{zq_L1_ns}{\nano\second} in L1 (\valnum{zq_L1_cyc}~cycles),
+  \valqty{zq_L2_ns}{\nano\second} in L2 (\valnum{zq_L2_cyc}~cycles), \valqty{zq_L3_ns}{\nano\second} in
+  the \qty{20}{\mebi\byte} L3 and \valqty{zq_DRAM_ns}{\nano\second} in DRAM with \qty{4}{\kibi\byte} pages
+  (\valqty{zq_DRAM_hugens}{\nano\second} with \qty{2}{\mebi\byte} pages). A loaded-latency probe running
+  concurrently with up to nine streaming cores traces the throughput--latency curve directly: latency
+  doubles at \valqty{int_knee_gib}{\gibi\byte\per\second} (\valnum{int_knee_frac}\% of the
+  \valqty{int_peak_gib}{\gibi\byte\per\second} peak), and Little's Law with the \emph{measured} loaded
+  latency puts \valnum{int_knee_lines} lines in flight at the knee, against \valnum{int_L0max} that the
+  memory system actually serves---the rest is queueing. A known-concurrency chase shows one core keeps at
+  most \valnum{mlp_t1_Lmem_max} random demand misses in flight, however many independent chains it runs. Counter-based AMAT fits explain the
+  \valnum{cm_rand_span}$\times$ random-SAXPY slowdown, and \qty{2}{\mebi\byte} pages---now verified as
+  granted---remove the page-walk cost past the \qty{4}{\kibi\byte} TLB reach. We close with the
+  cache-reuse bandwidth pitfall, where a \valqty{pit_small_kib}{\kibi\byte} buffer reports
+  \valqty{pit_small_gib}{\gibi\byte\per\second} of nonexistent ``DRAM'' bandwidth.
 \end{abstract}
 
 \ifacsdraft\tableofcontents\clearpage\fi

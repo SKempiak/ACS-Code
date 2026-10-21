@@ -5,8 +5,8 @@ reproducible scripts and a documented environment (with \cref{sec:correctness,se
 
 \subsection{Platform}
 \newcommand{\acspinning}{Each run is pinned to one physical P-core
-(\code{--cpu 2}, \code{sched_setaffinity}); its SMT sibling is left idle and no other
-pinning/isolation is used.}
+(\code{--cpu 2}, \code{sched_setaffinity}); SMT is disabled, so the core has no sibling
+thread, and no other pinning/isolation is used.}
 \input{../common/environment_table}
 
 This CPU (Comet Lake, client Skylake core) implements SSE/AVX/AVX2 and FMA but \emph{not}
@@ -70,14 +70,57 @@ dot-product reduction---an effect we wanted to measure rather than hide.
   \item Warm-up: 3 untimed invocations per configuration; repetitions: 12 per configuration.
   \item Reported statistic: median; error bars show the interquartile range (IQR) across the 12
         repetitions. The median resists the occasional scheduler/turbo outlier better than the mean.
-  \item Pinning, SMT, governor and turbo: \cref{tab:environment}. Turbo is left enabled and the
-        governor is \sysGovernor{}; the resulting frequency variation is a documented limitation
-        (\cref{sec:anomalies}).
+        Speedup error bars span the range implied by the two IQRs,
+        $[\,q_{25}(\text{SIMD})/q_{75}(\text{scalar}),\; q_{75}(\text{SIMD})/q_{25}(\text{scalar})\,]$
+        (\code{scripts/speedup_iqr.awk}), a conservative bound.
+  \item Pinning, SMT, governor and turbo: \cref{tab:environment}. For the reported runs the
+        governor is \sysGovernor{}, turbo is \sysTurbo{} and SMT is off, which fixes the core at its
+        \qty{2.8}{\giga\hertz} base clock. We do not just assume the clock: the cycle counter
+        (\cref{sec:ceilings-method}) gives a per-configuration median of \qtyrange{2.78}{2.79}{\giga\hertz}
+        for all \num{96} locality and \num{123} ceilings configurations except one ceilings sweep point
+        (\qty{2.47}{\giga\hertz}; the clock is user-mode cycles over wall time, so time spent in the
+        kernel lowers it).
+  \item Effect of the fixed clock: an earlier sweep (2026-10-12) ran with turbo enabled. Its dot
+        product, which is latency-bound at exactly $0.5$~FLOP/cycle (\cref{sec:roofline}), reached
+        \qty{2.2}{\giga\flop\per\second}, implying $\approx\qty{4.4}{\giga\hertz}$. Every number in this
+        report comes from the fixed-clock runs. Compute-bound rates are $\approx2.8/4.4$ of the turbo
+        values; DRAM bandwidth is not, so DRAM-resident speedups over scalar are \emph{larger} at the
+        fixed clock (\cref{sec:locality}).
   \item Every kernel result is written through a \code{volatile} sink (\code{acs_consume_*}) and the
         kernels live in their own translation unit, so no loop is eliminated as dead code.
   \item Configuration order: the sweep is run as nested loops over size and variant
         (\code{scripts/run.sh}); it is not shuffled, which we note as a limitation.
 \end{itemize}
+
+\subsection{Machine ceilings and hardware counters}\label{sec:ceilings-method}
+The roofline (\cref{sec:roofline}) needs a peak FLOP rate and memory bandwidths that are
+\emph{not} derived from the kernels it is used to explain. A separate program,
+\code{build/ceilings/ceilings} (\code{src/ceilings.c}, \code{run.sh ceilings}), measures them:
+\begin{itemize}
+  \item \emph{Peak FLOP rate}: a register-only loop of \num{12} independent accumulators updated as
+        $a \leftarrow a\,m + c$. FMA (and multiply/add) latency is \num{4} cycles on this core and two
+        ports execute them, so at least $4\times2=8$ independent chains are needed to saturate both
+        ports; \num{12} leaves headroom while staying in registers. Variants: scalar
+        \code{mulss}+\code{addss} (the ceiling of our \code{scalar} build), scalar FMA, SSE
+        \code{mulps}+\code{addps} on \code{xmm} (the ceiling of \code{autovec}, which has no FMA),
+        and AVX2 \code{vfmadd231ps}/\code{pd} on \code{ymm} (the ceiling of \code{native}).
+  \item \emph{Bandwidth}: STREAM-style \emph{read} ($s \mathrel{+}= a_i$), \emph{copy}
+        ($b_i = a_i$) and \emph{triad} ($a_i = b_i + s\,c_i$) written with AVX2 loads/stores, at a
+        total footprint inside each level (L1 \qty{16}{\kibi\byte}, L2 \qty{128}{\kibi\byte},
+        L3 \qty{8}{\mebi\byte}, DRAM \qty{512}{\mebi\byte}) and over a fine footprint sweep from
+        \qty{4}{\kibi\byte} to \qty{512}{\mebi\byte}. Bytes are counted STREAM-style
+        (explicit loads + stores) and, separately, including the write-allocate read that a store to
+        an unread line costs; the roofline uses the latter, \emph{actual} traffic, and counts the
+        kernels' bytes the same way (\cref{tab:roofline-inputs}).
+\end{itemize}
+\emph{Hardware counters.} We have no root. With
+\code{perf_event_paranoid}~$=\sysPerfParanoid$ an unprivileged process may still count
+\emph{user-space} events of its own threads, and doing so from inside the benchmark lets us bracket
+exactly the timed repetitions. \code{src/perfctr.c} therefore calls \code{perf_event_open(2)} directly
+for cycles, instructions, LLC misses and L1D read misses (kernel time excluded), enabled only around
+each timed repetition; an event that cannot be opened is reported as \code{NA} instead of failing.
+The locality sweep records them (\cref{sec:locality}) and the ceilings record cycles, from which the
+effective clock and FLOP/cycle follow.
 
 \subsection{Data initialization and working-set sizes}
 Inputs are filled with a deterministic linear-congruential sequence in $[-0.5, 0.5)$ (fixed seed),

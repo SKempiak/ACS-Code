@@ -10,8 +10,10 @@ thermal and garbage-collection effects (with \cref{sec:device-state}).}
 \end{hypothesis}
 
 \begin{knobs}
-  Fixed       & \qty{4}{\kibi\byte} random read; one job; \qty{6}{\second} runs, 3 reps \\
-  Varied      & iodepth 8 (mid) and 32 (near-knee, from \cref{sec:queue-depth}) \\
+  Fixed       & \qty{4}{\kibi\byte} random read; one job; \qty{6}{\second} runs, 5 repetitions; NVMe
+                temperature recorded per repetition \\
+  Varied      & iodepth 8 (mid), 32 and 64 (bracketing the knee of \cref{sec:queue-depth}), 128 (past
+                it) \\
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh tail} \\
 \end{knobs}
 
@@ -19,29 +21,53 @@ thermal and garbage-collection effects (with \cref{sec:device-state}).}
   \centering
   \IfDataExists{tail}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, ybar, bar width=9pt, width=0.7\linewidth, ymode=log, log origin=infty,
-                   symbolic x coords={8,32}, xtick=data, enlarge x limits=0.5,
-                   xlabel={iodepth}, ylabel={Latency (\si{\micro\second})}, legend pos=north west, legend columns=2]
-        \addplot table[x=qd, y=lat_p50_us_median]  {data/tail.csv};  \addlegendentry{p50}
-        \addplot table[x=qd, y=lat_p95_us_median]  {data/tail.csv};  \addlegendentry{p95}
-        \addplot table[x=qd, y=lat_p99_us_median]  {data/tail.csv};  \addlegendentry{p99}
-        \addplot table[x=qd, y=lat_p999_us_median] {data/tail.csv};  \addlegendentry{p99.9}
+      \begin{axis}[acs, ybar, bar width=7pt, width=0.78\linewidth, ymode=log, log origin=infty,
+                   symbolic x coords={8,32,64,128}, xtick=data, enlarge x limits=0.2,
+                   xlabel={iodepth}, ylabel={Latency (\si{\micro\second})}, legend pos=north west, legend columns=4]
+        \addplot+[iqr bars] table[x=qd, y=lat_p50_us_median,  iqr of=lat_p50_us]  {data/tail.csv};  \addlegendentry{p50}
+        \addplot+[iqr bars] table[x=qd, y=lat_p95_us_median,  iqr of=lat_p95_us]  {data/tail.csv};  \addlegendentry{p95}
+        \addplot+[iqr bars] table[x=qd, y=lat_p99_us_median,  iqr of=lat_p99_us]  {data/tail.csv};  \addlegendentry{p99}
+        \addplot+[iqr bars] table[x=qd, y=lat_p999_us_median, iqr of=lat_p999_us] {data/tail.csv};  \addlegendentry{p99.9}
       \end{axis}
     \end{tikzpicture}%
   }
-  \caption{Latency percentiles at a mid (QD=8) and near-knee (QD=32) queue depth. The median barely moves
-  but the upper tail stretches with queueing.}\label{fig:tail}
+  \caption{Latency percentiles at a mid queue depth (8), around the knee (32, 64) and past it (128);
+  medians with IQR bars. These runs followed \ensuremath{\sim}\qty{11}{\gibi\byte} of random writes
+  while the drive was still doing background flash work, and the upper tail detaches from the median as
+  QD grows: p99.9/p50 rises from about 4$\times$ to 24$\times$.}\label{fig:tail}
 \end{figure}
 
 \subsection{Analysis}
-At QD=8 the percentiles are p50\,\qty{170}{}, p95\,\qty{281}{}, p99\,\qty{460}{}, p99.9\,\qty{635}{\micro\second}
-(\qty{46}{k} IOPS); at QD=32 they are p50\,\qty{255}{}, p95\,\qty{396}{}, p99\,\qty{563}{},
-p99.9\,\qty{808}{\micro\second} (\qty{126}{k} IOPS). The median rises only $1.5\times$ while IOPS nearly
-triples, but the whole distribution shifts up and the p99.9/p50 ratio stays around $3$--$3.7\times$: the
-tail is dominated by requests that arrive while the controller is busy with a background
-program/erase/GC operation, and a deeper queue makes a waiting request more likely. These tails are
-mild compared with a rotational disk (no seeks), but they still matter: at QD=32 one read in a thousand
-takes \ensuremath{\sim}\qty{800}{\micro\second}, \num{3}$\times$ the median, which for a latency-SLA service is the
-number that governs provisioning, not the mean. This is why the knee from \cref{sec:queue-depth} is a
-latency decision as much as a throughput one---running at QD=64+ buys little IOPS but inflates exactly
-these tails.
+The tail runs did \emph{not} see the same drive as the queue-depth read sweep, and that difference is the
+main result. In \code{run.sh all} they started immediately after the queue-depth \emph{write} sweep,
+which wrote \ensuremath{\sim}\qty{11}{\gibi\byte} of random \qty{4}{\kibi\byte} data, and there was no
+idle gap. At the same queue depth, the tail runs delivered half the IOPS of the earlier, clean read
+sweep: \csvq{tail}{qd=32}{iops_median} vs.\ \csvq{queue_depth}{qd=32,mode=read}{iops_median} at QD=32.
+Their median latency was
+\csvq[0]{tail}{qd=32}{lat_p50_us_median} vs.\ \csvq[0]{queue_depth}{qd=32,mode=read}{lat_p50_us_median}\,\si{\micro\second}.
+The temperature was \qtyrange{50.9}{52.9}{\celsius}, so this is not thermal. The likely cause is
+foreground reads competing with the controller's background folding and garbage collection of the data
+just written.
+
+Under that contention the tail detaches from the body as QD grows, as hypothesised but more strongly:
+\begin{itemize}[nosep]
+  \item QD=8: p50~\csvq{tail}{qd=8}{lat_p50_us_median}, p99~\csvq{tail}{qd=8}{lat_p99_us_median},
+        p99.9~\csvq{tail}{qd=8}{lat_p999_us_median}\,\si{\micro\second}; p99.9/p50 $=4.1\times$.
+  \item QD=32: p50~\csvq{tail}{qd=32}{lat_p50_us_median}, p99~\csvq{tail}{qd=32}{lat_p99_us_median},
+        p99.9~\csvq{tail}{qd=32}{lat_p999_us_median}\,\si{\micro\second}; $6.7\times$.
+  \item QD=64: p99.9 \csvq{tail}{qd=64}{lat_p999_us_median}\,\si{\micro\second}; $15\times$.
+  \item QD=128: p99.9 \csvq{tail}{qd=128}{lat_p999_us_median}\,\si{\micro\second}; $24\times$.
+\end{itemize}
+Meanwhile IOPS barely grow past QD=32 (\csvq{tail}{qd=32}{iops_median}$\to$\csvq{tail}{qd=128}{iops_median}).
+In the clean sweep, by contrast, p99.9/p50 stays between 3.8 and $4.9\times$ from QD=16 to 256: the whole
+distribution shifts up together, which is pure queueing. The tail ratio is therefore a sensitive
+detector of background flash activity. Queueing alone keeps it near $4\times$, and a read that arrives
+during a program/erase or a garbage-collection burst waits milliseconds. Deeper queues hold more requests
+behind each such stall.
+
+These are the numbers that govern provisioning for a latency-SLA service, not the mean. At QD=32 on a
+drive that has recently absorbed writes, one read in a thousand takes
+\csvq{tail}{qd=32}{lat_p999_us_median}\,\si{\micro\second}. The knee from \cref{sec:queue-depth}
+is therefore a latency decision as much as a throughput one: past it, almost no IOPS are gained and these
+tails inflate fastest. The NVMe composite temperature stayed at \qtyrange{33.9}{61.9}{\celsius} across
+all runs, far below the \qty{86.85}{\celsius} warning threshold (\cref{sec:device-state}).

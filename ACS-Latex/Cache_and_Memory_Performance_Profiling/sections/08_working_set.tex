@@ -6,41 +6,88 @@
 \begin{hypothesis}
   Pointer-chase latency should trace the capacity staircase: flat while the set fits in L1
   (\qty{32}{\kibi\byte}), a step up through the \qty{256}{\kibi\byte} L2, a wider plateau across the
-  \qty{20}{\mebi\byte} L3, and a final jump to the DRAM latency once the set exceeds LLC. Transitions
-  should be gradual, not sharp, because of set-associativity and prefetcher spill.
+  \qty{20}{\mebi\byte} L3, and a final jump to DRAM latency. The counters should show the cause: L1D
+  misses per access rising from 0 to 1 past \qty{32}{\kibi\byte}, LLC misses per access rising to 1 past
+  \qty{20}{\mebi\byte}, and dTLB walks appearing once the set exceeds the \qty{4}{\kibi\byte}-page TLB
+  reach (\ensuremath{\sim}\qty{6}{\mebi\byte}) but not with \qty{2}{\mebi\byte} pages.
 \end{hypothesis}
 
 \begin{knobs}
-  Fixed       & 1 thread pinned to CPU~2; random pointer chase; one node per \qty{64}{\byte} line; base pages \\
-  Varied      & working-set size from \qty{8}{\kibi\byte} to \qty{512}{\mebi\byte} \\
-  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh latency} \\
+  Fixed       & 1 thread pinned to CPU~2; one node per \qty{64}{\byte} line; user-space counters \\
+  Varied      & working-set size \qty{8}{\kibi\byte}--\qty{512}{\mebi\byte}; random vs.\ sequential; \qty{4}{\kibi\byte} vs.\ \qty{2}{\mebi\byte} pages (random) \\
+  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh working_set} \\
 \end{knobs}
 
 \begin{figure}[tbp]
   \centering
-  \IfDataExists{latency}{%
+  \begin{subfigure}[t]{0.49\linewidth}
+  \IfDataExists{working_set}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, width=0.78\linewidth,
-                   xlabel={Working-set size (bytes)}, ylabel={Latency (ns/access)}, legend pos=north west]
-        \addplot+[iqr bars] table[x=bytes, y=ns_per_access_median, iqr of=ns_per_access, only if={pattern}{random}] {data/latency.csv};
-        \addlegendentry{random}
-        \acsvline{32768}{L1d \qty{32}{KiB}}
-        \acsvline{262144}{L2 \qty{256}{KiB}}
-        \acsvline{20971520}{L3 \qty{20}{MiB}}
+      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, height=0.85\linewidth,
+                   xlabel={Working-set size (bytes)}, ylabel={Latency (ns/access)}, legend pos=north west,
+                   legend style={font=\scriptsize}]
+        \addplot+[iqr bars] table[x=bytes, y=ns_per_access_median, iqr of=ns_per_access, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
+        \addlegendentry{random, 4\,KiB}
+        \addplot+[iqr bars] table[x=bytes, y=ns_per_access_median, iqr of=ns_per_access, only if={pattern}{random}, only if={pages}{huge}] {data/working_set.csv};
+        \addlegendentry{random, 2\,MiB}
+        \addplot+[iqr bars] table[x=bytes, y=ns_per_access_median, iqr of=ns_per_access, only if={pattern}{sequential}] {data/working_set.csv};
+        \addlegendentry{sequential, 4\,KiB}
+        \acsvline{32768}{L1d}
+        \acsvline{262144}{L2}
+        \acsvline{20971520}{L3}
       \end{axis}
-    \end{tikzpicture}%
-  }
-  \caption{Random-access latency across working-set sizes, with cache capacities marked. Each level is a
-  plateau; latency steps up as the set outgrows L1, L2 and finally the L3.}\label{fig:working-set}
+    \end{tikzpicture}}
+    \caption{Latency.}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.49\linewidth}
+  \IfDataExists{working_set}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, height=0.85\linewidth, ymin=0,
+                   xlabel={Working-set size (bytes)}, ylabel={Events per access}, legend pos=north west,
+                   legend style={font=\scriptsize}]
+        \addplot+[mark=*] table[x=bytes, y=ctr_l1d_miss_pa_median, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
+        \addlegendentry{L1D miss}
+        \addplot+[mark=square*] table[x=bytes, y=ctr_llc_ref_pa_median, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
+        \addlegendentry{LLC ref (L2 miss)}
+        \addplot+[mark=triangle*] table[x=bytes, y=ctr_llc_miss_pa_median, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
+        \addlegendentry{LLC miss}
+        \addplot+[mark=diamond*] table[x=bytes, y=ctr_dtlb_miss_pa_median, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
+        \addlegendentry{dTLB walk}
+        \acsvline{32768}{L1d}
+        \acsvline{262144}{L2}
+        \acsvline{20971520}{L3}
+      \end{axis}
+    \end{tikzpicture}}
+    \caption{Counters, random chase, 4\,KiB pages.}
+  \end{subfigure}
+  \caption{Working-set sweep. Left: latency with cache capacities marked. Right: user-space counters
+  per access for the random 4\,KiB-page chase; each step in latency coincides with a miss ratio rising
+  towards one.}\label{fig:working-set}
 \end{figure}
 
 \subsection{Analysis}
-The curve has four clear regimes separated at the marked capacities. It is flat at
-\ensuremath{\sim}\qty{1}{\nano\second} up to \qty{32}{\kibi\byte} (L1), rises through
-\qtyrange{3}{4}{\nano\second} across the L2 region, sits at \qtyrange{10}{23}{\nano\second} while the set
-is LLC-resident, and saturates near \qty{84}{\nano\second} once it exceeds \qty{20}{\mebi\byte}. The
-transitions are gradual rather than step functions: associativity means some lines spill a level early,
-and the L2$\to$L3 shoulder near \qty{2}{\mebi\byte} shows the adjacent-line/stream prefetchers partly
-hiding L3 latency until the set is several times the L2 size. This staircase is the direct input to the
-AMAT model in \cref{sec:cache-miss}; the per-level plateaus here are the $t_{\text{L1}} \ldots
-t_{\text{DRAM}}$ terms.
+The latency staircase and the counters line up level by level (\cref{fig:working-set}). L1D misses per
+access jump from \ensuremath{\approx}0 to 1 between \qty{32}{\kibi\byte} and \qty{48}{\kibi\byte}, exactly at
+the L1 capacity. LLC references (L2 misses) start rising at \qty{192}{\kibi\byte}, before the
+\qty{256}{\kibi\byte} capacity, and approach one per access only by \qtyrange{1}{2}{\mebi\byte}. LLC misses
+appear from \qtyrange{12}{16}{\mebi\byte}, also before the nominal \qty{20}{\mebi\byte}, since the L3 is
+shared and page-table lines compete for it, and reach one per access by \qty{64}{\mebi\byte}. Page walks
+start at \qty{8}{\mebi\byte}, just past the \ensuremath{\approx}\qty{6}{\mebi\byte} STLB reach, and explain why
+latency already climbs inside the L3 region. In DRAM the
+random 4\,KiB-page chase incurs \val{ws_dram_rand4k_dtlb} completed page walks and
+\val{ws_dram_rand4k_l1d} L1D misses per access (versus \val{ws_dram_randhuge_l1d} with 2\,MiB pages): the
+page walker's own page-table reads miss the L1 too, which is why the 4\,KiB curve sits above the 2\,MiB curve
+(\valqty{ws_dram_rand4k_ns}{\nano\second} vs.\ \valqty{ws_dram_randhuge_ns}{\nano\second} at
+\qty{512}{\mebi\byte}). The sequential chase costs only \valqty{ws_dram_seq_ns}{\nano\second} in DRAM with
+\val{ws_dram_seq_llcmiss} demand LLC misses per access versus \val{ws_dram_rand_llcmiss} for random: the
+prefetcher turns its misses into hits.
+
+Transitions are gradual rather than sharp. At \qty{192}{\kibi\byte} (75\% of L2) the 4\,KiB-page chase
+already costs \valqty{ws_l2edge_4k_ns}{\nano\second} with \val{ws_l2edge_4k_llcref} L2 misses per
+access, while the 2\,MiB-page chase stays at \valqty{ws_l2edge_huge_ns}{\nano\second}
+(\val{ws_l2edge_huge_llcref}): about 20 times fewer L2 misses. The likely explanation is page placement:
+\qty{4}{\kibi\byte} pages scatter the buffer over arbitrary physical
+frames, so some L2 sets receive more lines than their associativity allows (conflict misses), whereas a
+physically contiguous \qty{2}{\mebi\byte} page spreads lines evenly over the sets. This staircase is the
+input to the AMAT model in \cref{sec:cache-miss}. Counter multiplexing was in effect for some events
+(minimum running fraction \val{ws_ctr_cover_min}); counts are scaled accordingly.

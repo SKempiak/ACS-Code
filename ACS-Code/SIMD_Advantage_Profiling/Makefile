@@ -1,6 +1,7 @@
 # SIMD Advantage Profiling — build variants
 #
-#   make              build/<variant>/simd_bench for every variant
+#   make              build/<variant>/simd_bench for every variant, plus
+#                     build/ceilings/ceilings (peak-FLOP + STREAM-style bandwidth)
 #   make CC=clang     another compiler (with BUILD=build-clang to keep both)
 #   make test         correctness validation   (scripts/validate.sh)
 #   make report       vectorization evidence   (scripts/verify_vectorization.sh)
@@ -16,6 +17,11 @@
 # every variant, so a timing difference reflects the kernel's code generation
 # and never the driver's. reference.c additionally disables vectorization and
 # FP contraction so it stays a trustworthy gold reference.
+#
+# ceilings (src/ceilings.c) measures the roofline ceilings independently of the
+# studied kernels. It is built once with fixed flags; its AVX2/FMA paths use
+# function-level target attributes and a runtime CPU check, and
+# -ffp-contract=off keeps its mul+add (non-FMA) peak loops unfused.
 
 CC      ?= cc
 BUILD   ?= build
@@ -32,12 +38,17 @@ CFLAGS_native  := -O3 -march=native
 # Fixed flags for the variant-invariant harness and the reference.
 HARNESS_FLAGS := -O2
 REF_FLAGS     := -O2 -fno-tree-vectorize -ffp-contract=off
+CEIL_FLAGS    := -O2 -ffp-contract=off
 
-HARNESS_OBJS = $(BUILD)/$*/main.o $(BUILD)/$*/common.o $(BUILD)/$*/reference.o
-HEADERS := include/kernels.h ../common/include/common.h
+HARNESS_OBJS = $(BUILD)/$*/main.o $(BUILD)/$*/common.o $(BUILD)/$*/reference.o $(BUILD)/$*/perfctr.o
+HEADERS := include/kernels.h include/perfctr.h ../common/include/common.h
 
 .PHONY: all test report clean
-all: $(VARIANTS:%=$(BUILD)/%/simd_bench)
+all: $(VARIANTS:%=$(BUILD)/%/simd_bench) $(BUILD)/ceilings/ceilings
+
+$(BUILD)/ceilings/ceilings: src/ceilings.c src/perfctr.c ../common/src/common.c $(HEADERS) Makefile
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(CEIL_FLAGS) src/ceilings.c src/perfctr.c ../common/src/common.c -o $@ $(LDLIBS)
 
 .SECONDEXPANSION:
 $(BUILD)/%/simd_bench: $(BUILD)/%/kernels.o $$(HARNESS_OBJS)
@@ -53,6 +64,10 @@ $(BUILD)/%/main.o: src/main.c $(HEADERS) Makefile
 	$(CC) $(CFLAGS) $(HARNESS_FLAGS) -c $< -o $@
 
 $(BUILD)/%/common.o: ../common/src/common.c $(HEADERS) Makefile
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(HARNESS_FLAGS) -c $< -o $@
+
+$(BUILD)/%/perfctr.o: src/perfctr.c $(HEADERS) Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(HARNESS_FLAGS) -c $< -o $@
 

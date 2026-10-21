@@ -24,7 +24,7 @@ declare -A VFLAGS=(
   [native]="-O3 -march=native"
 )
 VARIANTS=(scalar autovec native)
-FUNCS=(saxpy_f32 dot_f32 mul_f32 stencil_f32 saxpy_f64 dot_f64 mul_f64 stencil_f64 mul_i32 saxpy_f32_stride saxpy_f32_gather)
+FUNCS=(saxpy_f32 dot_f32 mul_f32 stencil_f32 saxpy_f64 dot_f64 mul_f64 stencil_f64 mul_i32 saxpy_f32_stride saxpy_f32_gather saxpy_f32_gather_avx2)
 
 TS="$(date +%Y%m%d-%H%M%S)"
 OUT="$ROOT/data/raw/vectorization/$TS"

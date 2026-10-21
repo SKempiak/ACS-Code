@@ -2,47 +2,97 @@
 \section{TLB-Miss Impact}\label{sec:tlb}
 
 \begin{hypothesis}
-  For random access over a footprint far larger than the TLB reach ($\sim$1536 entries $\times$
-  \qty{4}{\kibi\byte} $\approx$ \qty{6}{\mebi\byte} on this core), \qty{2}{\mebi\byte} huge pages should cut
-  dTLB misses and page-walk cost and shave runtime, because one TLB entry then covers 512$\times$ more
-  memory.
+  With \qty{4}{\kibi\byte} pages, a dependent access to a random page should cost extra once the number
+  of pages touched exceeds the L1 dTLB (64 entries) and again past the second-level TLB (1536 entries,
+  \ensuremath{\approx}\qty{6}{\mebi\byte} of reach), where every access needs a page walk. With
+  \qty{2}{\mebi\byte} pages one entry covers 512$\times$ more memory, so the same page counts should need
+  no walks and the extra latency should vanish.
 \end{hypothesis}
 
 \begin{knobs}
-  Kernel       & $y_i = a\,x_i + y_i$ (float64), random traversal \\
-  Varied       & page size (base \qty{4}{\kibi\byte} vs.\ transparent huge pages); $N = 2^{18} \ldots 2^{24}$ \\
-  Verification & \code{AnonHugePages} read from \code{/proc/self/smaps\_rollup} at runtime \\
+  Chase        & one node per \qty{4}{\kibi\byte} page (node stride \qty{4160}{\byte} = page + one line, so nodes fall into different cache sets); random order; 16--65536 pages \\
+  SAXPY        & random-order $y_i = a\,x_i + y_i$, $N = 2^{18}\ldots2^{24}$ \\
+  Varied       & page size: \qty{4}{\kibi\byte} (\code{MADV_NOHUGEPAGE}) vs.\ \qty{2}{\mebi\byte} (\code{MADV_HUGEPAGE}), both before first touch \\
+  Verification & \code{AnonHugePages} per run; dTLB-walk counter per access \\
   Script       & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh tlb} \\
 \end{knobs}
 
+The page-stride chase is designed so that page size is the \emph{only} difference between the two
+curves: both touch the same number of cache lines (one per page, so the cache footprint is $N$ lines),
+and the one-line stagger avoids every node mapping to the same cache set. Any latency gap is therefore
+TLB reach and page-walk cost.
+
 \begin{figure}[tbp]
   \centering
-  \IfDataExists{tlb}{%
+  \begin{subfigure}[t]{0.49\linewidth}
+  \IfDataExists{tlb_chase}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, xmode=log, log basis x=2, width=0.78\linewidth,
-                   xlabel={$N$ (elements)}, ylabel={Time per element (ns)}, legend pos=north west]
-        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={pages}{4k}] {data/tlb.csv};
-        \addlegendentry{base \qty{4}{KiB} pages}
-        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={pages}{huge}] {data/tlb.csv};
-        \addlegendentry{huge pages (requested)}
+      \begin{axis}[acs, xmode=log, log basis x=2, height=0.85\linewidth, ymin=0,
+                   xlabel={Pages touched}, ylabel={Latency (ns/access)}, legend pos=north west,
+                   legend style={font=\scriptsize}]
+        \addplot+[iqr bars] table[x=nodes, y=ns_per_access_median, iqr of=ns_per_access, only if={pages}{4k}] {data/tlb_chase.csv};
+        \addlegendentry{\qty{4}{\kibi\byte} pages}
+        \addplot+[iqr bars] table[x=nodes, y=ns_per_access_median, iqr of=ns_per_access, only if={pages}{huge}] {data/tlb_chase.csv};
+        \addlegendentry{\qty{2}{\mebi\byte} pages}
+        \acsvline{64}{L1 dTLB}
+        \acsvline{1536}{STLB}
       \end{axis}
-    \end{tikzpicture}%
-  }
-  \caption{Random SAXPY runtime with base vs.\ requested huge pages. The curves coincide because huge
-  pages were \emph{not actually granted} in this environment---an honest negative result, not a measured
-  ``no effect''.}\label{fig:tlb}
+    \end{tikzpicture}}
+    \caption{Page-stride chase latency.}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.49\linewidth}
+  \IfDataExists{tlb_chase}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, height=0.85\linewidth, ymin=0,
+                   xlabel={Pages touched}, ylabel={dTLB walks per access}, legend pos=north west,
+                   legend style={font=\scriptsize}]
+        \addplot+[mark=*] table[x=nodes, y=ctr_dtlb_miss_pa_median, only if={pages}{4k}] {data/tlb_chase.csv};
+        \addlegendentry{\qty{4}{\kibi\byte} pages}
+        \addplot+[mark=square*] table[x=nodes, y=ctr_dtlb_miss_pa_median, only if={pages}{huge}] {data/tlb_chase.csv};
+        \addlegendentry{\qty{2}{\mebi\byte} pages}
+        \acsvline{64}{L1 dTLB}
+        \acsvline{1536}{STLB}
+      \end{axis}
+    \end{tikzpicture}}
+    \caption{Completed page walks (counter).}
+  \end{subfigure}
+  \caption{TLB reach: dependent access to one line per page. The gap between the curves is the cost of
+  TLB misses; the counter confirms walks occur only with \qty{4}{\kibi\byte} pages past the STLB reach.}\label{fig:tlb}
 \end{figure}
 
 \subsection{Analysis}
-The base-page and huge-page curves are statistically identical (e.g.\ at $N=2^{24}$,
-\qty{21.6}{\nano\second} vs.\ \qty{21.4}{\nano\second}). The reason is not that huge pages fail to help:
-despite THP being set to \code{always}, a \qty{2}{\mebi\byte}-aligned mapping and
-\code{madvise(MADV\_HUGEPAGE)}, \code{/proc/self/smaps\_rollup} reported \code{AnonHugePages: 0 kB} on
-every run, so the allocation was never backed by huge pages. Short-lived processes do not give
-\code{khugepaged} time to collapse pages, and this sandbox appears to withhold THP from the cgroup.
-Isolating a real TLB effect would require explicit \code{hugetlbfs} (\code{MAP\_HUGETLB} with reserved
-pages, which needs privileges we do not have) or \code{perf}'s \code{dTLB-load-misses} counter (not
-installed). We therefore report this as a limitation rather than a result: the experiment and its
-verification are in place and will show the expected gap on a host where huge pages are actually granted.
-The verification hook is itself the useful outcome---it caught a silent failure that a naive benchmark
-would have mistaken for ``huge pages don't help.''
+The curves show both TLB levels as separate cliffs (\cref{fig:tlb}). Up to 64 pages both page sizes cost
+the same (\valqty{tlb_4k_64_ns}{\nano\second} vs.\ \valqty{tlb_huge_64_ns}{\nano\second}). At 128 pages the
+\qty{4}{\kibi\byte} chase jumps to \valqty{tlb_4k_128_ns}{\nano\second} while the \qty{2}{\mebi\byte} chase
+stays at \valqty{tlb_huge_128_ns}{\nano\second}, with zero page walks in both. The
+\valqty{tlb_gap_128_ns}{\nano\second} (\valnum{tlb_gap_128_cyc}~cycles) gap is the cost of missing the
+64-entry L1 dTLB and hitting the second-level TLB. Near the STLB capacity walks begin
+(\val{tlb_4k_1536_dtlb} per access at 1536 pages), and at 2048 pages every \qty{4}{\kibi\byte} access walks
+(\val{tlb_4k_2048_dtlb} walks per access): \valqty{tlb_4k_2048_ns}{\nano\second} against
+\valqty{tlb_huge_2048_ns}{\nano\second}, a \valqty{tlb_gap_2048_ns}{\nano\second} (\valnum{tlb_gap_2048_cyc}-cycle)
+page-walk penalty while the page-table entries still hit in cache. Past 4096 pages the cache footprint
+itself leaves L2 (4096 lines = \qty{256}{\kibi\byte}), raising both curves---the huge-page chase rises to
+\valqty{tlb_huge_4096_ns}{\nano\second}---so only the gap is attributed to the TLB. That gap grows again
+as the page tables outgrow the caches: \valqty{tlb_gap_16384_ns}{\nano\second} at 16384 pages and
+\valqty{tlb_gap_65536_ns}{\nano\second} at 65536 pages (\valqty{tlb_4k_65536_ns}{\nano\second} vs.\
+\valqty{tlb_huge_65536_ns}{\nano\second}, \val{tlb_ratio_65536}$\times$). With \qty{2}{\mebi\byte} pages the
+walk counter stays at \val{tlb_huge_65536_dtlb} even at 65536 pages.
+
+For random SAXPY at $N=2^{24}$, \qty{2}{\mebi\byte} pages cut page walks from \val{tlbs_4k_dtlb} to
+\val{tlbs_huge_dtlb} per element and runtime from \valqty{tlbs_4k_ns}{\nano\second} to
+\valqty{tlbs_huge_ns}{\nano\second} per element, a \val{tlbs_speedup}$\times$ speedup, close to the
+\val{tlb_ratio_65536}$\times$ of the dependent chase. Overlapping independent misses therefore does not
+hide the walks: each walk adds dependent page-table reads in front of its data miss.
+
+\paragraph{Huge pages are now verified, not assumed.} The previous TLB runs
+(\code{tlb/20261019-232253} and its repeat \code{tlb/20261019-233449}) recorded
+\code{AnonHugePages: 0 kB} on every run, so their ``huge'' curve was really \qty{4}{\kibi\byte} pages and the
+experiment showed nothing; the allocation path has since been replaced, so the cause can no longer be
+established. The benchmarks now map \qty{2}{\mebi\byte}-aligned regions and call \code{madvise} before the
+first touch; each row records the granted \code{AnonHugePages} (summarised in the run's
+\code{anon_thp.txt}), \code{validate.sh} checks the grant before each experiment, and the dTLB-walk counter
+independently confirms the page size in effect. In this run every ``huge'' configuration was
+fully backed: \code{AnonHugePages} equals the buffer size at every point (for example
+\qty{266240}{\kibi\byte} for the 65536-page chase, and \qty{327680}{\kibi\byte} for SAXPY at $N=2^{24}$,
+i.e.\ $x$, $y$ and the index array), and every \qty{4}{\kibi\byte} row records \qty{0}{\kibi\byte}. The
+superseded raw directories were removed from the repository.

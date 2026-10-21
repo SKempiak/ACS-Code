@@ -11,8 +11,10 @@ identification and Little's Law reasoning (with \cref{sec:queue-depth}).}
 \end{hypothesis}
 
 \begin{knobs}
-  Fixed       & \qty{4}{\kibi\byte} random; iodepth 16; one job; \code{O_DIRECT} \\
-  Varied      & reads per 10 I/Os: 10 (100\% R), 7 (70/30), 5 (50/50), 0 (100\% W) \\
+  Fixed       & \qty{4}{\kibi\byte} random; iodepth 16; one job; \code{O_DIRECT}; 5 repetitions of
+                \qty{4}{\second} (points with writes also stop at \qty{256}{\mebi\byte}) \\
+  Varied      & reads per 10 I/Os, deterministically interleaved: 10 (100\% R), 7 (70/30), 5 (50/50),
+                0 (100\% W) \\
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh rw_mix} \\
 \end{knobs}
 
@@ -27,34 +29,48 @@ identification and Little's Law reasoning (with \cref{sec:queue-depth}).}
       \end{axis}
     \end{tikzpicture}%
   }
-  \caption{Total \qty{4}{\kibi\byte} random IOPS at QD=16 across read/write mixes. Both pure workloads
-  beat the mixes; the 50/50 mix is the worst.}\label{fig:rw-mix}
+  \caption{Total \qty{4}{\kibi\byte} random IOPS at QD=16 across read/write mixes (median, IQR bars). Both
+  pure workloads beat the mixes; the 50/50 mix is the worst.}\label{fig:rw-mix}
 \end{figure}
 
 \begin{table}[tbp]
   \centering\small
-  \caption{Read/write mix at QD=16, \qty{4}{\kibi\byte} random (medians).}\label{tab:rw-mix}
-  \begin{tabularx}{\linewidth}{@{}Xrrr@{}}
-    \toprule
-    Mix & Total IOPS & Mean lat (\si{\micro\second}) & p99 (\si{\micro\second}) \\
-    \midrule
-    100\% read & \num{104945} & \num{151.5} & \num{458} \\
-    70/30      & \num{85535}  & \num{185.8} & \num{707} \\
-    50/50      & \num{72119}  & \num{221.0} & \num{995} \\
-    100\% write& \num{185860} & \num{85.3}  & \num{857} \\
-    \bottomrule
-  \end{tabularx}
+  \caption{Read/write mix at QD=16, \qty{4}{\kibi\byte} random: medians with the IQR in brackets;
+  latencies in \si{\micro\second}.}\label{tab:rw-mix}
+  \IfDataExists{rw_mix}{%
+    \ssdload{rw_mix}\def\ssdRows{}%
+    \pgfplotsforeachungrouped \ssdR in {0,...,\ssdLast}{%
+      \ssdstr{rwmix}\ssdM
+      \ssdiqr{iops}\ssdA\ssdiqr[1]{lat_mean_us}\ssdB\ssdiqr{lat_p99_us}\ssdC
+      \eappto\ssdRows{\noexpand\ssdmixname{\ssdM} & \expandonce\ssdA & \expandonce\ssdB & \expandonce\ssdC \noexpand\\}}%
+    \begin{tabularx}{\linewidth}{@{}Xrrr@{}}
+      \toprule
+      Mix & Total IOPS & Mean latency & p99 \\
+      \midrule
+      \ssdRows
+      \bottomrule
+    \end{tabularx}}
 \end{table}
 
 \subsection{Analysis}
-The mix sweep confirms the hypothesis and then some. Pure writes are fastest
-(\qty{185860}{} IOPS, \qty{85}{\micro\second} mean) because at QD=16 the controller coalesces them into
-its SLC/DRAM buffer; pure reads reach \qty{104945}{} IOPS. But mixing is strictly worse than either pure
-case: the 70/30 mix drops to \qty{85535}{} and the 50/50 mix to \qty{72119}{} IOPS---below even the
-read-only number---because every write that lands mid-stream stalls the flash channel a read then queues
-behind, and read-modify interference defeats the write buffer's coalescing. Latency tells the same story
-from the tail: p99 climbs monotonically with the write fraction, from \qty{458}{\micro\second} (pure read)
-through \qty{707}{} and \qty{995}{\micro\second} for the mixes, as background program/erase operations
-inject outliers. The lesson is that a ``70\% read'' workload is not \num{0.7} of the read result plus
-\num{0.3} of the write result; the interaction term is large and negative, which is exactly why the spec
-requires measuring the mixes rather than interpolating them.
+Pure writes are fastest, at \csvq{rw_mix}{rwmix=0}{iops_median} IOPS and
+\csvq[0]{rw_mix}{rwmix=0}{lat_mean_us_median}\,\si{\micro\second} mean, because at QD=16 the controller
+absorbs them into its SLC/SRAM buffer. Pure reads reach \csvq{rw_mix}{rwmix=10}{iops_median} IOPS.
+Mixing is worse than either pure case. The 70/30 mix drops to \csvq{rw_mix}{rwmix=7}{iops_median} IOPS
+and the 50/50 mix to \csvq{rw_mix}{rwmix=5}{iops_median}, below even the read-only number. A write
+landing mid-stream occupies a die (program, or the buffer flush it triggers), and reads mapped to that
+die queue behind it. The interleaved writes also break up the write buffer's batching.
+
+The p99 latency gives a related but not monotonic picture. It rises from
+\csvq{rw_mix}{rwmix=10}{lat_p99_us_median}\,\si{\micro\second} for pure reads to
+\csvq{rw_mix}{rwmix=7}{lat_p99_us_median} (70/30) and
+\csvq{rw_mix}{rwmix=5}{lat_p99_us_median}\,\si{\micro\second} (50/50). Pure writes break the trend: their
+median p99 of \csvq{rw_mix}{rwmix=0}{lat_p99_us_median}\,\si{\micro\second} is the lowest of all four
+mixes, but its IQR (\csvq{rw_mix}{rwmix=0}{lat_p99_us_q25}--\csvq{rw_mix}{rwmix=0}{lat_p99_us_q75}\,\si{\micro\second})
+is by far the widest. A pure-write repetition either stays inside the write buffer and sees no tail, or
+it meets a buffer flush and sees a read-like tail. The worst \emph{typical} tail belongs to the 50/50 mix,
+not to the largest write fraction, so p99 is not monotonic in the write fraction.
+
+The lesson: a \enquote{70\% read} workload is not \num{0.7} of the read result plus \num{0.3} of the
+write result. The interaction term is large and negative, which is why the spec requires measuring the
+mixes rather than interpolating them.

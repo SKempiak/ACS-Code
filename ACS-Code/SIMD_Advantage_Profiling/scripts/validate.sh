@@ -56,6 +56,11 @@ for v in "${VARIANTS[@]}"; do
 
   # gather SAXPY
   for n in 7 16 17 1000 4096 65536; do check "$v" --access gather --n "$n"; done
+
+  # explicit AVX2 gather (vgatherdps): only built into the AVX2+FMA variant
+  if "$ROOT/build/$v/simd_bench" --info | grep -q '^gather_avx2=yes'; then
+    for n in 7 8 9 16 17 1000 4096 65536; do check "$v" --access gather_avx2 --n "$n"; done
+  fi
 done
 
 echo "validate: $((cases - fail))/$cases cases passed across ${VARIANTS[*]}"

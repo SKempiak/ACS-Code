@@ -4,6 +4,7 @@
 \input{../common/preamble}
 \input{../common/macros}
 \input{../common/system_info}
+\input{ssd_macros}
 
 \title{Project 3: SSD Performance Profiling}
 \author{\acsauthor\\[2pt]\small\acscourse\\\small\href{mailto:\acsemail}{\acsemail}}
@@ -13,15 +14,29 @@
 \maketitle
 
 \begin{abstract}
-  We profile a Micron 2210 \qty{512}{\giga\byte} NVMe SSD with an O\_DIRECT \code{libaio} benchmark on a
-  safe disposable file. At QD=1, \qty{4}{\kibi\byte} random reads cost \qty{49.6}{\micro\second}
-  (\qty{20}{k} IOPS) and writes \qty{14.7}{\micro\second} (\qty{68}{k} IOPS), the write buffer hiding the
-  flash program. Throughput moves from IOPS-limited to a \ensuremath{\sim}\qty{1.5}{\gibi\byte\per\second} sequential
-  ceiling with block size, and mixed read/write workloads fall below either pure case. The queue-depth
-  knee is at QD\,$\approx$\,64 (\qty{158}{k} IOPS), with Little's Law tracking the configured depth to
-  within a percent and p99.9 tail latency about \num{3}$\times$ the median. The required misleading-setup
-  case---dropping \code{O_DIRECT}---over-reports throughput \num{24}$\times$ by measuring the page cache;
-  honest limitations follow from the absence of FIO, hardware counters and root-only SMART access.
+  We profile a Micron 2210 \qty{512}{\giga\byte} QLC NVMe SSD on a PCIe~3.0~$\times$4 link with
+  \code{O_DIRECT} I/O against disposable files, using a \code{libaio} benchmark as the primary engine
+  and FIO as a cross-check. At QD=1, \qty{4}{\kibi\byte} random reads take
+  \csvq[1]{zero_queue}{mode=read,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}
+  (\csvq{zero_queue}{mode=read,pattern=rand}{iops_median} IOPS) and writes
+  \csvq[1]{zero_queue}{mode=write,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}, because the
+  write buffer hides the flash program. With one request in flight, sequential reads level off near
+  \csvq{block_size}{bs=262144,pattern=seq,mode=read,qd=1}{mibps_median}\,MiB/s. That limit comes from
+  per-request latency, not the interface. At QD=32 they top out at
+  \csvq{block_size}{bs=65536,pattern=seq,mode=read,qd=32}{mibps_median}\,MiB/s, only
+  \qty{57}{\percent} of the \qty{3756}{\mebi\byte\per\second} raw PCIe link ceiling, so the NAND back
+  end sets the limit.
+  Random-read IOPS saturate at QD~\csvq{queue_depth_knee}{mode=read}{knee_qd}
+  (\csvq{queue_depth_knee}{mode=read}{knee_iops} IOPS) under a stated knee criterion, and Little's Law
+  serves as a consistency check on the closed-loop harness. Writes land in an SLC cache at
+  \csvval{sustained_summary}{burst_mibps}\,MiB/s. Once it is full, sequential writes fall to
+  \csvval{sustained_summary}{steady_mibps}\,MiB/s and 4\,KiB random writes to
+  \csvval{sustained_summary}{rand_steady_iops} IOPS. Reads issued while the drive is still folding
+  recent writes show p99.9 latencies up to 24$\times$ their median, and sequential reads of randomly
+  written data run 6--9$\times$ slower. The required misleading setup, dropping
+  \code{O_DIRECT}, over-reports throughput
+  \csvget\ssdBuf{pitfall}{mode=read-buffered}{iops_median}\csvget\ssdDir{pitfall}{mode=read}{iops_median}%
+  \ssdratio[0]{\ssdBuf}{\ssdDir}$\times$ because it measures the page cache.
 \end{abstract}
 
 \ifacsdraft\tableofcontents\clearpage\fi

@@ -1,44 +1,62 @@
 % !TeX root = ../main.tex
 \section{Reproducibility}\label{app:repro}
 
-Code, scripts and raw data: \coderepo, on the \code{class-wide-project} submission branch (the exact
-commit is recorded in \code{git log}).
+Code, scripts, raw data and this report live in one repository: \code{ACS-Code/} holds the code and data,
+and \code{ACS-Latex/} holds the reports. The exact commit is \code{COMMIT_HASH_PLACEHOLDER}.
 
 \begin{lstlisting}[language=bash]
-git clone https://github.com/SKempiak/ACS-Code.git && cd ACS-Code
-git checkout <commit>
-make tools                                    # tools/summarize
+gh repo clone SKempiak/ACS-Code ACS && cd ACS
+git checkout COMMIT_HASH_PLACEHOLDER
+cd ACS-Code
+make tools                                    # build/tools/summarize
 make -C SSD_Performance_Profiling             # build/blkbench (O_DIRECT, libaio)
-make -C SSD_Performance_Profiling test        # safety + physical-ordering sanity checks
+make -C SSD_Performance_Profiling test        # safety + sanity checks (~70 MiB written, deleted)
 scripts/collect_env.sh --tex > ../ACS-Latex/common/system_info.tex
-# Point the disposable-file scratch at the device you want to profile (here the NVMe SSD at /):
-ACS_SCRATCH="$HOME/acs_ssd_scratch" SSD_Performance_Profiling/scripts/run.sh all
+export ACS_SCRATCH="$HOME/acs_ssd_scratch"    # a directory on the SSD under test
+SSD_Performance_Profiling/scripts/run.sh dryrun        # device, link, temperature, space; writes nothing
+SSD_Performance_Profiling/scripts/run.sh all           # 2 GiB-file sweeps + fio_check (~35 min)
+SUSTAIN_GIB=60 SSD_Performance_Profiling/scripts/run.sh device_state  # sustained + working set (needs 70 GiB free)
 scripts/sync_data.sh SSD_Performance_Profiling
+cd ../ACS-Latex && make ssd
 \end{lstlisting}
 
-The \code{ACS_SCRATCH} override selects the device under test; the \code{safety.sh} gate is identical
-wherever it points (a plain disposable file inside the scratch directory, never a device or mountpoint).
-Omitting it profiles the in-repo \code{data/scratch/} filesystem instead.
+\code{ACS_SCRATCH} selects the device under test, and the \code{safety.sh} gate is identical wherever it
+points: a plain disposable file inside the scratch directory, never a device or mountpoint. Without
+\code{ACS_SCRATCH}, the in-repo \code{data/scratch/} filesystem is profiled instead (an HDD on the test
+host). Knobs (\code{REPS}, \code{RUNTIME}, \code{WRITE_CAP_MIB}, \code{SUSTAIN_GIB}, \code{ENGINE=fio},
+\dots) are documented at the top of \code{run.sh}. \code{run.sh reprocess} rebuilds every processed CSV
+from the newest raw run of each experiment.
+
+The timed runs reported here were executed by the author in a terminal on the test machine, with the
+CPU governor set to \code{performance}, turbo off and SMT off. \code{run.sh all} started at 10:32 and
+\code{SUSTAIN_GIB=60 run.sh device_state} followed immediately at 10:54 on 2026-10-21.
 
 \begin{table}[h]
   \centering\small
-  \caption{Raw data behind each figure.}\label{tab:raw-data}
+  \caption{Raw data behind each figure (\code{ACS-Code/SSD_Performance_Profiling/data/raw/...}).}\label{tab:raw-data}
   \begin{tabularx}{\linewidth}{@{}lX@{}}
     \toprule
-    Figure / table & Raw run directory (\code{SSD_Performance_Profiling/data/raw/...}) \\
+    Figure / table & Raw run directory \\
     \midrule
-    \Cref{tab:zero-queue} & \code{zero_queue/20261020-001056} \\
-    \Cref{fig:block-size} & \code{block_size/20261020-001056} \\
-    \Cref{fig:rw-mix} & \code{rw_mix/20261020-001056} \\
-    \Cref{fig:queue-depth}, \cref{tab:littles-law} & \code{queue_depth/20261020-001056} \\
-    \Cref{fig:tail} & \code{tail/20261020-001056} \\
-    \Cref{fig:device-state} & \code{device_state/20261020-001056} \\
-    \Cref{tab:pitfall} & \code{pitfall/20261020-001056} \\
+    \Cref{tab:zero-queue} & \code{zero_queue/20261021-103201} \\
+    \Cref{fig:block-size,fig:block-size-qd} & \code{block_size/20261021-103201} \\
+    \Cref{fig:rw-mix}, \cref{tab:rw-mix} & \code{rw_mix/20261021-103201} \\
+    \Cref{fig:queue-depth}, \cref{tab:littles-law} & \code{queue_depth/20261021-103201} \\
+    \Cref{fig:tail} & \code{tail/20261021-103201} \\
+    \Cref{tab:pitfall} & \code{pitfall/20261021-103201} \\
+    \Cref{tab:layout} & \code{layout/20261021-103201} \\
+    \Cref{tab:fio-check} & \code{fio_check/20261021-103201} (FIO JSON under \code{fio/}) \\
+    \Cref{fig:sustained}, \cref{tab:sustained} & \code{sustained/20261021-105439} \\
+    \Cref{fig:working-set} & \code{working_set/20261021-105439} \\
     \bottomrule
   \end{tabularx}
 \end{table}
 
-Each raw directory holds \code{raw.csv} (one row per repetition, with full configuration metadata) and
-\code{env.txt} (the \code{collect_env.sh} snapshot plus the device model and \code{rotational} flag); the
-processed CSVs plotted above come from \code{tools/summarize} and are copied into this report's
-\code{data/} by \code{scripts/sync_data.sh}. Every number quoted traces to one of these files.
+Each raw directory holds \code{raw.csv} (one row per repetition or per second, with full configuration
+metadata and the NVMe temperature) and \code{env.txt}. \code{env.txt} contains the
+\code{collect_env.sh} snapshot plus the scratch filesystem's parent disk, its \code{rotational} flag,
+model, firmware, PCIe link, scheduler, temperature and thresholds, and the knob values. FIO runs also
+keep each JSON result under \code{fio/}. \code{tools/summarize} reduces the raw files to the processed
+CSVs plotted here, and \code{scripts/sync_data.sh} copies them into this report's \code{data/}. Tables and
+quoted numbers are read from those CSVs when the report is compiled, so every number traces to one of
+these files.

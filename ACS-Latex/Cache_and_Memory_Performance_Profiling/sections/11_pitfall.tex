@@ -8,7 +8,7 @@ demonstration (with \cref{sec:ai-use}).}
   number several times higher than the real memory bandwidth, because every pass after the first hits
   the cache instead of DRAM. We expect a buffer that fits in L1/L2 to report tens of
   \unit{\gibi\byte\per\second} and a DRAM-resident buffer to settle near the
-  \ensuremath{\sim}\qty{15}{\gibi\byte\per\second} single-core figure from \cref{sec:intensity}.
+  single-core streaming figure from \cref{sec:pattern}.
 \end{hypothesis}
 
 \begin{knobs}
@@ -34,24 +34,23 @@ demonstration (with \cref{sec:ai-use}).}
     \end{tikzpicture}%
   }
   \caption{The same streaming kernel ``measures'' wildly different bandwidth depending only on the buffer
-  size. A \qty{16}{\kibi\byte} buffer reports \ensuremath{\sim}\qty{56}{\gibi\byte\per\second}; the honest
-  DRAM-resident figure is \ensuremath{\sim}\qty{15}{\gibi\byte\per\second}. Nothing about the code changed---only
-  where the data lived.}\label{fig:pitfall}
+  size. A \valqty{pit_small_kib}{\kibi\byte} buffer reports \valqty{pit_small_gib}{\gibi\byte\per\second};
+  the honest DRAM-resident figure is \val{pit_dram_lo}--\valqty{pit_dram_hi}{\gibi\byte\per\second}. Nothing
+  about the code changed---only where the data lived.}\label{fig:pitfall}
 \end{figure}
 
 \subsection{Explanation}
-At \qty{16}{\kibi\byte} the kernel reports \qty{56.5}{\gibi\byte\per\second}; at
-\qty{128}{\kibi\byte} (spilling L1) it drops to \qty{36.2}{\gibi\byte\per\second}; and once the set is
-\qty{64}{\mebi\byte} or larger---genuinely DRAM-resident---it settles at
-\qtyrange{14.8}{15.4}{\gibi\byte\per\second}, matching the one-thread DRAM bandwidth measured
-independently in \cref{sec:intensity}. The inflated small-buffer number is not DRAM bandwidth at all: it
+At \valqty{pit_small_kib}{\kibi\byte} the kernel reports \valqty{pit_small_gib}{\gibi\byte\per\second},
+falling as the set spills L1 and L2; once the set is \qty{64}{\mebi\byte} or larger---genuinely
+DRAM-resident---it settles at \val{pit_dram_lo}--\valqty{pit_dram_hi}{\gibi\byte\per\second}, a
+\val{pit_ratio}$\times$ overstatement for the small buffer. (This kernel is the scalar unit-stride read of
+\cref{sec:pattern}; its DRAM figure is window-limited and is not the single-core peak.) The inflated small-buffer number is not DRAM bandwidth at all: it
 is L1/L2 bandwidth, reported by a loop that re-reads the same cached lines. An AI-generated bandwidth
 microbenchmark very easily falls into this trap, because a \qty{16}{\kibi\byte} array is a perfectly
-natural default and the resulting \qty{56}{\gibi\byte\per\second} looks like a plausible ``memory''
-number. Two cheap detectors flag it: (1) the reported bandwidth \emph{changes with buffer size}, which a
-true DRAM measurement must not once the set exceeds the LLC; and (2) the small-buffer figure exceeds the
-platform's theoretical DRAM ceiling (dual-channel DDR4 is \ensuremath{\sim}\qty{45}{\gibi\byte\per\second} aggregate,
-far below a plausible per-core cache bandwidth). Our methodology avoids the pitfall by sizing every
+natural default and the resulting tens of \unit{\gibi\byte\per\second} look like a plausible
+``memory'' number. Two cheap detectors flag it: (1) the reported bandwidth \emph{changes with buffer size}, which a
+true DRAM measurement must not once the set exceeds the LLC; and (2) the small-buffer figure exceeds what the whole
+memory system delivers to \emph{all} cores (\valqty{int_peak_gib}{\gibi\byte\per\second}, \cref{sec:intensity}). Our methodology avoids the pitfall by sizing every
 bandwidth and latency point explicitly against the cache capacities (\cref{sec:method}) and, for the DRAM
 claims, using working sets at least $3\times$ the LLC so the first-touch pass cannot leave the data
 cached.

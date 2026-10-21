@@ -13,38 +13,51 @@ analysis (with \cref{sec:ai-use}).}
   Pitfall     & Buffered I/O measuring the page cache instead of the device \\
   Wrong setup & \qty{4}{\kibi\byte} sequential reads over a \qty{64}{\mebi\byte} region, \emph{no} \code{O_DIRECT} \\
   Right setup & Identical workload \emph{with} \code{O_DIRECT} (page cache bypassed) \\
+  Fixed       & QD=1, 5 repetitions of \qty{4}{\second}; test file rewritten sequentially just before \\
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh pitfall} \\
 \end{knobs}
 
 \begin{table}[tbp]
   \centering\small
-  \caption{Same \qty{4}{\kibi\byte} sequential-read workload, direct vs.\ buffered (medians). The only
-  difference is the \code{O_DIRECT} flag.}\label{tab:pitfall}
+  \caption{Same \qty{4}{\kibi\byte} sequential-read workload, direct vs.\ buffered: medians with the IQR
+  in brackets. Only the \code{O_DIRECT} flag differs.}\label{tab:pitfall}
   \begin{tabularx}{\linewidth}{@{}Xrrrr@{}}
     \toprule
     Setup & IOPS & MiB/s & Mean (\si{\micro\second}) & p99 (\si{\micro\second}) \\
     \midrule
-    \code{O_DIRECT} (correct) & \num{86201}   & \num{337}  & \num{11.57} & \num{21.3} \\
-    buffered (page cache)     & \num{2057063} & \num{8035} & \num{0.45}  & \num{0.91} \\
+    \code{O_DIRECT} (correct) & \csvq{pitfall}{mode=read}{iops_median} & \csvq{pitfall}{mode=read}{mibps_median}
+      & \csvq[2]{pitfall}{mode=read}{lat_mean_us_median} & \csvq[1]{pitfall}{mode=read}{lat_p99_us_median} \\
+    buffered (page cache)     & \csvq{pitfall}{mode=read-buffered}{iops_median} & \csvq{pitfall}{mode=read-buffered}{mibps_median}
+      & \csvq[2]{pitfall}{mode=read-buffered}{lat_mean_us_median} & \csvq[2]{pitfall}{mode=read-buffered}{lat_p99_us_median} \\
     \bottomrule
   \end{tabularx}
 \end{table}
 
 \subsection{Explanation}
-The buffered run reports \qty{2.06}{} million IOPS at \qty{8.0}{\gibi\byte\per\second} and sub-microsecond
-latency---a $24\times$ inflation over the correct \qty{86}{k} IOPS / \qty{337}{\mebi\byte\per\second}
-figure. None of it is a storage measurement: after the first pass the \qty{64}{\mebi\byte} region lives
-entirely in the page cache, so every subsequent read is a memcpy from RAM. \qty{8}{\gibi\byte\per\second}
-is DRAM bandwidth, and \qty{0.45}{\micro\second} is a cache-hit memory latency, not an NVMe access. This is
-the single easiest way to publish a fraudulently fast SSD number, and an AI-generated benchmark falls into
-it readily because omitting \code{O_DIRECT} is the \emph{default} behaviour of \code{open()}. Three cheap
-detectors flag it: (1) the throughput exceeds the device's interface ceiling and even its own
-QD=1/QD=128 direct numbers by more than an order of magnitude; (2) sub-microsecond ``storage'' latency is
-physically impossible for NAND flash; and (3) the number scales with the \emph{region size} (shrinks once
-the region exceeds RAM), which a true device result must not. Our methodology avoids it structurally:
-\code{O_DIRECT} is the default for every real run (the buffered path exists only to produce this
-comparison), and the validation step (\cref{sec:validation}) asserts the direct-vs-buffered gap to prove
-the cache is bypassed. The same trap underlies ``wrong effective queue depth'': if the async engine never
-keeps iodepth requests in flight, a QD=32 label can really be a QD=2 result---which is why we verify the
-effective depth with the Little's Law table (\cref{tab:littles-law}) rather than trusting the requested
-value.
+\csvget\ssdBuf{pitfall}{mode=read-buffered}{iops_median}\csvget\ssdDir{pitfall}{mode=read}{iops_median}%
+The buffered run reports \csvq{pitfall}{mode=read-buffered}{iops_median} IOPS at
+\csvq{pitfall}{mode=read-buffered}{mibps_median}\,MiB/s and sub-microsecond latency, a
+\ssdratio[0]{\ssdBuf}{\ssdDir}$\times$ inflation over the correct
+\csvq{pitfall}{mode=read}{iops_median} IOPS. None of it is a storage measurement. After the first pass
+the \qty{64}{\mebi\byte} region lives entirely in the page cache, so every later read is a
+\code{memcpy} from RAM. The MiB/s figure is memory-copy bandwidth, and the latency is a cache hit, not an
+NVMe access.
+
+This is the easiest way to publish an impossibly fast SSD number, and an AI-generated benchmark falls
+into it readily because omitting \code{O_DIRECT} is the \emph{default} behaviour of \code{open()}. Three
+cheap detectors flag it:
+\begin{enumerate}
+  \item The throughput exceeds the \qty{3756}{\mebi\byte\per\second} PCIe~3.0~$\times$4 link ceiling
+        measured from sysfs (\cref{sec:method}). No device result can do that.
+  \item Sub-microsecond \enquote{storage} latency is physically impossible for NAND flash.
+  \item The number depends on the \emph{region size}: it collapses once the region exceeds free RAM,
+        which a true device result must not.
+\end{enumerate}
+
+The methodology avoids the trap by construction. \code{O_DIRECT} is the default for every real run, and
+the buffered path exists only to produce this comparison. \code{make test} also asserts that buffered
+re-reads are more than $5\times$ faster than direct ones on the scratch filesystem, which proves the
+cache is actually bypassed. Two related traps are covered elsewhere. A wrong effective queue depth is
+caught by $L/\text{QD}$ in \cref{tab:littles-law}. Insufficient or wrong-order preconditioning, which
+cut a \enquote{sequential} read to a sixth of its true speed in our pilot, is covered in
+\cref{sec:layout}.

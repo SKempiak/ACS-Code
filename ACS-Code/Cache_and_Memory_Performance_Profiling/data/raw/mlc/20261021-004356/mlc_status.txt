@@ -1,0 +1,5 @@
+Intel MLC not installed on this host (, 2026-10-21 00:55:25 EDT).
+'command -v mlc' found nothing and $MLC was not set; no MLC cross-check was run.
+Substitute cross-checks (labelled as such in the report):
+  zero_queue: second ring generator (xorshift64*) + TSC timing   -> zero_queue.csv gen=xorshift
+  intensity : mem_loaded T=0 probe (pointer ring, separate code) -> intensity_loaded.csv threads=0

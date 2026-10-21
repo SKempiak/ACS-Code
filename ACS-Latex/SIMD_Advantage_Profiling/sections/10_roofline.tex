@@ -10,73 +10,171 @@ bandwidth, and a justified compute- vs.\ memory-bound conclusion.}
   the roofline when DRAM-resident, i.e.\ be memory-bound. The stencil, with the highest intensity,
   should come closest to the compute roof.
 \end{hypothesis}
+\begin{hypothesis}
+  (Added with the measured ceilings, before they were run.) Even the L1 bandwidth roof should put the
+  ridge point above \qty{0.5}{\flop\per\byte}, so the cache-resident native kernels should also be
+  bounded by bandwidth (or by the load/store ports that define it), not by the FMA units.
+\end{hypothesis}
 
 Attainable performance at arithmetic intensity $I$ (FLOPs per byte of memory traffic) is bounded by
 \begin{equation}
-  P(I) = \min\bigl(P_{\text{peak}},\; B \cdot I\bigr),
+  P(I) = \min\bigl(P_{\text{peak}},\; B_{\ell} \cdot I\bigr),
 \end{equation}
-where $P_{\text{peak}}$ is the CPU's peak FLOP rate and $B$ the memory bandwidth \cite{williams2009roofline}.
+where $P_{\text{peak}}$ is the core's peak FLOP rate and $B_{\ell}$ the bandwidth of the memory level
+$\ell$ the data lives in \cite{williams2009roofline}. We draw one bandwidth roof per level (a
+cache-aware roofline). Both ceilings are \emph{measured by separate microbenchmarks}
+(\cref{sec:ceilings-method}), never derived from the kernels plotted against them.
 
 \begin{table}[tbp]
   \centering\small
-  \caption{Roofline inputs (single core, float32).}\label{tab:roofline-inputs}
+  \caption{Measured roofline ceilings, single core (\code{run.sh ceilings}). Top: register-only
+  accumulator loops (\num{12} independent chains); FLOP/cycle and clock from the user-space cycle
+  counter. Bottom: STREAM-style bandwidth at one footprint per level; \enquote{incl.\ WA} adds the
+  write-allocate read and is the roof used in \cref{fig:roofline}.}\label{tab:ceilings}
+  \IfDataExists{ceilings_peak}{%
+    \pgfplotstabletypeset[
+      col sep=comma,
+      columns={isa,gflops_median,flops_per_cycle,ghz},
+      columns/isa/.style={column name=Peak loop, string type, string replace*={_}{\_}},
+      columns/gflops_median/.style={column name=GFLOP/s, fixed, zerofill, precision=1},
+      columns/flops_per_cycle/.style={column name=FLOP/cycle, fixed, zerofill, precision=2},
+      columns/ghz/.style={column name=GHz, fixed, zerofill, precision=2},
+      every head row/.style={before row=\toprule, after row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/ceilings_peak.csv}%
+  }\par\medskip
+  \IfDataExists{ceilings_bw}{%
+    \pgfplotstabletypeset[
+      col sep=comma,
+      columns={level,bytes,read,copy,triad,triad_total},
+      columns/level/.style={column name=Level, string type},
+      columns/bytes/.style={column name=Footprint (B), int detect},
+      columns/read/.style={column name=read, fixed, zerofill, precision=1},
+      columns/copy/.style={column name=copy, fixed, zerofill, precision=1},
+      columns/triad/.style={column name=triad, fixed, zerofill, precision=1},
+      columns/triad_total/.style={column name={triad incl.\ WA}, fixed, zerofill, precision=1},
+      every head row/.style={before row={\toprule & & \multicolumn{4}{c}{GiB/s}\\}, after row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/ceilings_bw.csv}%
+  }
+\end{table}
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{Arithmetic intensity (float32), counting the actual traffic per element including
+  write-allocate, the same convention as the triad roof.}\label{tab:roofline-inputs}
   \begin{tabularx}{\linewidth}{@{}lrX@{}}
     \toprule
-    Quantity & Value & Source \\
+    Kernel & $I$ (FLOP/byte) & Traffic per element \\
     \midrule
-    Peak FLOP rate $P_{\text{peak}}$ & $\approx\num{147}$~GFLOP/s & Estimated: 2~FMA units $\times$ 8
-      float32 lanes $\times$ 2 FLOP $\times\approx\qty{4.6}{\giga\hertz}$ single-core turbo. Not
-      independently measured (no compute-bound microbenchmark); see \cref{sec:anomalies}. \\
-    Memory bandwidth $B$            & $\approx\num{45}$~GB/s ($\approx\num{42}$~GiB/s)  & Measured:
-      DRAM-resident native SAXPY, \qty{5.6}{\giga\flop\per\second} $=2.8\times10^{9}$ elem/s
-      $\times\qty{16}{\byte}$ traffic/element (read $x$, read + write-allocate + write $y$). \\
-    Intensity $I$, SAXPY            & \num{0.125}~FLOP/byte & $2\,\text{FLOP} / \qty{16}{\byte}$ \\
-    Intensity $I$, multiply         & \num{0.063}~FLOP/byte & $1\,\text{FLOP} / \qty{16}{\byte}$ \\
-    Intensity $I$, stencil          & \num{0.42}~FLOP/byte & $5\,\text{FLOP} / \qty{12}{\byte}$ (reuses $x$) \\
-    Intensity $I$, dot product      & \num{0.25}~FLOP/byte & $2\,\text{FLOP} / \qty{8}{\byte}$ (no store) \\
+    SAXPY        & \num{0.167} & $2\,\text{FLOP} / \qty{12}{\byte}$: read $x$, read $y$, write $y$
+                                  ($y$ is read before it is written, so no write-allocate) \\
+    multiply     & \num{0.063} & $1\,\text{FLOP} / \qty{16}{\byte}$: read $x,y$, write $z$ + write-allocate of $z$ \\
+    stencil      & \num{0.417} & $5\,\text{FLOP} / \qty{12}{\byte}$: read $x$ once (reuse), write $y$ + write-allocate \\
+    dot product  & \num{0.25}  & $2\,\text{FLOP} / \qty{8}{\byte}$: read $x,y$, no store \\
+    triad (roof) & \num{0.125} & $2\,\text{FLOP} / \qty{16}{\byte}$: read $b,c$, write $a$ + write-allocate \\
     \bottomrule
   \end{tabularx}
 \end{table}
 
-\newcommand{\roofPeak}{147}
-\newcommand{\roofBandwidth}{42}
 \begin{figure}[tbp]
   \centering
-  \begin{tikzpicture}
-    \begin{axis}[acs, xmode=log, ymode=log, xlabel={Arithmetic intensity (FLOP/byte)},
-                 ylabel={Performance (GFLOP/s)}, width=0.7\linewidth, xmin=0.01, xmax=100,
-                 legend pos=south east, legend style={font=\scriptsize}]
-      % bandwidth slope: GiB/s * 2^30 bytes * I FLOP/byte / 1e9
-      \addplot[thick, domain=0.01:100, samples=200]
-        {min(\roofPeak, \roofBandwidth * 1.073741824 * x)};
-      \addlegendentry{roofline}
-      \addplot[only marks, mark=*] coordinates {(0.125,5.6) (0.063,2.0) (0.42,13.6) (0.25,2.2)};
-      \addlegendentry{measured (DRAM, native)}
-      \node[anchor=west, font=\scriptsize] at (axis cs:0.125,5.6) {SAXPY};
-      \node[anchor=west, font=\scriptsize] at (axis cs:0.063,2.0) {mul};
-      \node[anchor=west, font=\scriptsize] at (axis cs:0.42,13.6) {stencil};
-      \node[anchor=north, font=\scriptsize] at (axis cs:0.25,2.2) {dot};
-    \end{axis}
-  \end{tikzpicture}
-  \caption{Roofline for one core with the DRAM-resident native kernels. The ridge point is at
-  $I = P_{\text{peak}}/B \approx \qty{3.3}{\flop\per\byte}$; every kernel lies far to its left.}\label{fig:roofline}
+  \IfDataExists{roofline_points}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, ymode=log, xlabel={Arithmetic intensity (FLOP/byte)},
+                   ylabel={Performance (GFLOP/s)}, width=0.7\linewidth, height=0.6\linewidth,
+                   xmin=0.02, xmax=20, ymin=0.5, ymax=400,
+                   legend pos=outer north east, legend style={font=\scriptsize}]
+        \IfFileExists{data/roofline_roofs.csv}{%
+          \addplot[thick, black] table[x=ai, y=gflops, only if={roof}{L1}] {data/roofline_roofs.csv};
+          \addlegendentry{L1 roof}
+          \addplot[thick, black!70, densely dashed] table[x=ai, y=gflops, only if={roof}{L2}] {data/roofline_roofs.csv};
+          \addlegendentry{L2 roof}
+          \addplot[thick, black!55, dashdotted] table[x=ai, y=gflops, only if={roof}{L3}] {data/roofline_roofs.csv};
+          \addlegendentry{L3 roof}
+          \addplot[thick, black!40, dotted] table[x=ai, y=gflops, only if={roof}{DRAM}] {data/roofline_roofs.csv};
+          \addlegendentry{DRAM roof}
+          \addplot[thin, red!60] table[x=ai, y=gflops, only if={roof}{peak_sse_f32}] {data/roofline_roofs.csv};
+          \addlegendentry{SSE peak (autovec)}
+          \addplot[thin, red!60, densely dashed] table[x=ai, y=gflops, only if={roof}{peak_scalar_f32}] {data/roofline_roofs.csv};
+          \addlegendentry{scalar peak}
+        }{}
+        \addplot+[only marks, mark=*, nodes near coords, point meta=explicit symbolic,
+                  every node near coord/.style={font=\tiny, anchor=south west}]
+          table[x=ai, y=gflops_median, meta=kernel, only if={variant}{native}, only if={level}{L1}] {data/roofline_points.csv};
+        \addlegendentry{native, L1-resident}
+        \addplot+[only marks, mark=square*] table[x=ai, y=gflops_median, only if={variant}{native}, only if={level}{L2}] {data/roofline_points.csv};
+        \addlegendentry{native, L2-resident}
+        \addplot+[only marks, mark=triangle*] table[x=ai, y=gflops_median, only if={variant}{native}, only if={level}{L3}] {data/roofline_points.csv};
+        \addlegendentry{native, L3-resident}
+        \addplot+[only marks, mark=diamond*] table[x=ai, y=gflops_median, only if={variant}{native}, only if={level}{DRAM}] {data/roofline_points.csv};
+        \addlegendentry{native, DRAM}
+        \addplot+[only marks, mark=o, black] table[x=ai, y=gflops_median, only if={variant}{scalar}, only if={level}{DRAM}] {data/roofline_points.csv};
+        \addlegendentry{scalar, DRAM}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Cache-aware roofline for one core. Roofs: measured triad bandwidth per level, capped by the
+  measured AVX2-FMA float32 peak; thin red lines: the measured SSE and scalar peaks that bound the
+  \code{autovec} and \code{scalar} builds. Points: kernel GFLOP/s from \cref{sec:baseline} at
+  $N=\num{1024}$, \num{16384}, \num{524288} and \num{16777216} (L1, L2, L3, DRAM).}\label{fig:roofline}
 \end{figure}
 
 \subsection{Analysis}
-The ridge point sits at $I = P_{\text{peak}}/B \approx \num{147}/\num{45} \approx
-\qty{3.3}{\flop\per\byte}$. Every kernel's intensity (\numrange{0.06}{0.42}~FLOP/byte) is an order of
-magnitude below that, so all four are firmly memory-bound in DRAM---consistent with the hypothesis and
-with the locality sweep (\cref{sec:locality}), where scalar and SIMD converge once the data leaves
-cache. With $B\cdot I$ evaluated at $B\approx\qty{42}{\gibi\byte\per\second}$, SAXPY lands
-essentially \emph{on} the bandwidth line (\num{5.6} measured vs $\approx\qty{5.6}{\giga\flop\per\second}$
-predicted), confirming it is a pure bandwidth test; multiply and stencil reach about
-\SI{71}{\percent} and \SI{72}{\percent} of their bandwidth ceilings
-($\approx\num{2.8}$ and $\approx\qty{18.8}{\giga\flop\per\second}$), the shortfall coming from
-write-allocate traffic and imperfect prefetch.
+\emph{Ceilings} (\cref{tab:ceilings}). The AVX2 FMA loop reaches \qty{89.1}{\giga\flop\per\second}
+float32 (\num{44.6} float64), which is \num{31.99}~FLOP/cycle at the measured
+\qty{2.79}{\giga\hertz}. That is exactly the $2~\text{FMA ports} \times 8~\text{lanes} \times 2 = 32$
+FLOP/cycle the core can do, so the ports, not the loop, set this ceiling. The SSE mul+add loop
+(\code{autovec}'s ISA, no FMA) reaches \qty{22.3}{\giga\flop\per\second} (\num{8.00}~FLOP/cycle,
+expected $2\times4=8$) and the scalar loop \qty{5.55}{\giga\flop\per\second}
+(\num{1.99}~FLOP/cycle, expected $2$). An earlier version of this report \emph{estimated}
+\qty{147}{\giga\flop\per\second} from an assumed \qty{4.6}{\giga\hertz} turbo clock. The FLOP/cycle
+part of that estimate was right; the clock is now fixed and measured. Triad bandwidth (actual
+traffic) falls from \qty{207}{\gibi\byte\per\second} in L1 to \num{99.4}, \num{48.3} and
+\qty{24.3}{\gibi\byte\per\second} in L2, L3 and DRAM, placing the ridge points at
+$I = P_{\text{peak}}/B_\ell \approx \num{0.40}$, \num{0.84}, \num{1.72} and
+\qty{3.41}{\flop\per\byte}. The L1 ridge is slightly \emph{below} the \qty{0.5}{\flop\per\byte}
+the second hypothesis assumed, so the stencil ($I=\num{0.417}$) is, in L1 only, nominally under the
+compute roof.
 
-The dot product is the one kernel \emph{below} its bandwidth line (\num{2.2} vs a predicted
-$\approx\qty{11}{\giga\flop\per\second}$): it is not memory-bound at all but latency-bound by the
-non-reassociated reduction (\cref{sec:vectorization}), so the roofline---a throughput model---simply
-does not apply to it. To move any streaming kernel toward the compute roof one would have to raise its
-arithmetic intensity (e.g.\ fuse multiple passes, or block for cache so the data is re-read from L1
-rather than DRAM); widening the vectors alone cannot help a kernel that is already waiting on memory.
+\emph{DRAM-resident kernels.} Every kernel's intensity (\numrange{0.06}{0.42}~FLOP/byte) is far left
+of the DRAM ridge, so all four are bandwidth-bound in DRAM. This is consistent with the hypothesis
+and with the locality sweep (\cref{sec:locality}). Against the DRAM roof $B_{\text{DRAM}}\cdot I$,
+native multiply reaches \SI{101}{\percent} (\num{1.64} measured vs \qty{1.63}{\giga\flop\per\second}),
+SAXPY \SI{111}{\percent} (\num{4.82} vs \num{4.36}) and the stencil \SI{107}{\percent}. Multiply has
+exactly the triad's access pattern (two reads, one write to an unread line) and lands on the roof.
+SAXPY and the stencil exceed it by \SIrange{7}{11}{\percent}. Their patterns differ from triad's, and
+the copy stream (\qty{26.3}{\gibi\byte\per\second} actual) shows that the sustainable bandwidth
+depends a little on the pattern; the triad roof is a reference, not an upper bound to the byte.
+Because the roof now comes from a different loop, a kernel landing on it is evidence, not a
+tautology. The scalar DRAM points sit at \SIrange{39}{68}{\percent} of the same roof. They are the
+instruction-bound loops of \cref{sec:locality}, which is why SIMD still pays $1.5\text{--}2.8\times$
+there.
+
+\emph{Cache-resident kernels.} The L3-resident native points sit at \SIrange{96}{101}{\percent} of the
+L3 roof (SAXPY \SI{100}{\percent}, multiply \SI{101}{\percent}, stencil \SI{96}{\percent}), so L3
+bandwidth bounds them exactly. Closer to the core they fall below the roof. In L2, SAXPY reaches
+\SI{79}{\percent} and multiply \SI{84}{\percent} of the roof. In L1, native SAXPY delivers
+\qty{20.1}{\giga\flop\per\second} at $I=\num{0.167}$, \SI{54}{\percent} of the L1 roof and
+\SI{23}{\percent} of the FMA peak, and the stencil reaches only \SI{18}{\percent} of the peak. So
+cache-resident kernels are bounded neither by the FMA units (confirming the second hypothesis) nor
+quite by the measured L1 bandwidth. The limit is the loop's own load/store and instruction issue:
+\numrange{0.22}{0.28}~cycles per element for SAXPY versus the \num{0.125} that two loads and a store
+per cycle would allow (\cref{sec:baseline}). The roofline thus explains the step pattern of
+\cref{fig:locality} from L2 outward, since each step is a move down to a lower roof. Inside L1/L2 it
+only gives the upper bound.
+
+\emph{The dot product} is the one kernel far \emph{below} every roof:
+\qtyrange{1.33}{1.52}{\giga\flop\per\second} at all sizes (\cref{sec:baseline}). It is not
+bandwidth-bound but latency-bound by the non-reassociated reduction (\cref{sec:vectorization}). One
+scalar \code{vaddss} per element with a \num{4}-cycle latency gives an in-core ceiling of
+$2~\text{FLOP}/4~\text{cycles} = 0.5$~FLOP/cycle, i.e.\ \qty{1.39}{\giga\flop\per\second} at the
+measured \qty{2.79}{\giga\hertz}. The measured \qtyrange{1.39}{1.42}{\giga\flop\per\second} for every
+$N$ from \num{1024} to \num{1048576} matches it to within \SI{2}{\percent}; only $N\le512$ runs slightly
+above it (\qtyrange{1.45}{1.52}{\giga\flop\per\second}). Each call starts a new, independent chain,
+and with short chains the out-of-order core overlaps the end of one call with the next. DRAM runs
+slightly below it (\qty{1.33}{\giga\flop\per\second}). The roofline, a throughput model, does not apply to the dot
+product until the dependency chain is broken. To move a streaming kernel toward the compute roof one
+would have to raise its arithmetic intensity (fuse passes, or block for cache so data is re-read from
+L1 rather than DRAM); widening the vectors alone cannot help a kernel that is already waiting on
+memory.

@@ -24,6 +24,7 @@
 #define _GNU_SOURCE
 #include "common.h"
 #include "kernels.h"
+#include "perfctr.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -33,7 +34,7 @@
 
 /* ----------------------------------------------------- config */
 typedef enum { DT_F32, DT_F64, DT_I32 } dtype_t;
-typedef enum { ACC_UNIT, ACC_STRIDE, ACC_GATHER } access_t;
+typedef enum { ACC_UNIT, ACC_STRIDE, ACC_GATHER, ACC_GATHER_AVX2 } access_t;
 
 typedef struct {
     const char *kernel;   /* saxpy | dot | mul | stencil */
@@ -49,7 +50,10 @@ typedef struct {
     unsigned    seed;
     int         do_check;
     const char *experiment;
+    int         counters; /* append user-space hardware-counter columns */
 } config_t;
+
+static int is_gather(access_t a) { return a == ACC_GATHER || a == ACC_GATHER_AVX2; }
 
 static const char *dtype_name(dtype_t d) {
     switch (d) {
@@ -62,7 +66,8 @@ static const char *access_name(access_t a) {
     switch (a) {
     case ACC_UNIT:   return "unit";
     case ACC_STRIDE: return "stride";
-    default:         return "gather";
+    case ACC_GATHER: return "gather";
+    default:         return "gather_avx2";
     }
 }
 
@@ -137,7 +142,7 @@ static data_t alloc_data(const config_t *c) {
     int needs_z = !strcmp(c->kernel, "mul");
     if (needs_z)
         d.z = acs_alloc(bytes, align, c->offset);
-    if (c->access == ACC_GATHER)
+    if (is_gather(c->access))
         d.idx = acs_alloc(c->n * sizeof(int32_t), align, 0);
 
     if (c->dtype == DT_F32) {
@@ -150,7 +155,7 @@ static data_t alloc_data(const config_t *c) {
         fill_i32(d.x.ptr, span, c->seed);
         fill_i32(d.y.ptr, span, c->seed ^ 0x9e3779b9u);
     }
-    if (c->access == ACC_GATHER)
+    if (is_gather(c->access))
         fill_perm(d.idx.ptr, c->n, c->seed ^ 0x51ed2701u);
     return d;
 }
@@ -182,6 +187,8 @@ static double run_kernel(const config_t *c, data_t *d) {
         return (saxpy_f32_stride(0.5f, d->x.ptr, d->y.ptr, n, c->stride), 0.0);
     if (c->access == ACC_GATHER)
         return (saxpy_f32_gather(0.5f, d->x.ptr, d->y.ptr, d->idx.ptr, n), 0.0);
+    if (c->access == ACC_GATHER_AVX2)
+        return (saxpy_f32_gather_avx2(0.5f, d->x.ptr, d->y.ptr, d->idx.ptr, n), 0.0);
 
     if (c->dtype == DT_F32) {
         if (!strcmp(k, "saxpy")) { saxpy_f32(0.5f, d->x.ptr, d->y.ptr, n); return 0.0; }
@@ -219,10 +226,13 @@ static int validate(const config_t *c, data_t *d, double *out_err) {
             if (e > err) err = e;
         }
         acs_free(yk);
-    } else if (c->access == ACC_GATHER) {
+    } else if (is_gather(c->access)) {
         acs_buf yk = acs_alloc(n * sizeof(float), 64, c->offset);
         memcpy(yk.ptr, d->y.ptr, n * sizeof(float));
-        saxpy_f32_gather(0.5f, d->x.ptr, yk.ptr, d->idx.ptr, n);
+        if (c->access == ACC_GATHER_AVX2)
+            saxpy_f32_gather_avx2(0.5f, d->x.ptr, yk.ptr, d->idx.ptr, n);
+        else
+            saxpy_f32_gather(0.5f, d->x.ptr, yk.ptr, d->idx.ptr, n);
         saxpy_f32_gather_ref(0.5f, d->x.ptr, d->y.ptr, d->idx.ptr, n);
         for (size_t i = 0; i < n; i++) {
             float a = ((float *)yk.ptr)[i], b = ((float *)d->y.ptr)[i];
@@ -290,6 +300,13 @@ static size_t calibrate_iters(const config_t *c, data_t *d, double min_s) {
     }
 }
 
+/* Print ",<value>" or ",NA" for an unavailable (NAN) counter-derived value. */
+static void print_na(double v, const char *fmt) {
+    putchar(',');
+    if (isnan(v) || isinf(v)) fputs("NA", stdout);
+    else printf(fmt, v);
+}
+
 /* ----------------------------------------------------- self-test */
 /* Known-answer checks that do not depend on reference.c, run against the
  * variant's own kernels. Returns the number of failures. */
@@ -322,6 +339,14 @@ static int selftest(void) {
     stencil_f32(1.0f, 1.0f, 1.0f, xf, yf, N);
     for (int i = 1; i + 1 < N; i++) if (fabsf(yf[i] - 3.0f) > 1e-4f) { fprintf(stderr, "selftest[%s] stencil_f32 wrong at %d\n", acs_variant_name(), i); fails++; break; }
 
+    /* explicit AVX2 gather (native only): reversed permutation, y = 2*1 + 3 = 5 */
+    if (acs_have_gather_avx2()) {
+        int32_t id[N];
+        for (int i = 0; i < N; i++) { id[i] = N - 1 - i; xf[i] = 1.0f; yf[i] = 3.0f; }
+        saxpy_f32_gather_avx2(2.0f, xf, yf, id, N);
+        for (int i = 0; i < N; i++) if (fabsf(yf[i] - 5.0f) > 1e-4f) { fprintf(stderr, "selftest[%s] saxpy_f32_gather_avx2 wrong at %d\n", acs_variant_name(), i); fails++; break; }
+    }
+
     if (!fails) printf("selftest[%s]: all known-answer checks PASS\n", acs_variant_name());
     return fails;
 }
@@ -331,16 +356,16 @@ int main(int argc, char **argv) {
         .kernel = "saxpy", .dtype = DT_F32, .access = ACC_UNIT,
         .n = 1 << 16, .stride = 1, .offset = 0, .reps = 10, .min_ms = 20.0,
         .warmup = 3, .cpu = -1, .seed = 12345u, .do_check = 1,
-        .experiment = "adhoc",
+        .experiment = "adhoc", .counters = 0,
     };
-    int want_header = 0, want_info = 0, want_selftest = 0;
+    int want_header = 0, want_info = 0, want_selftest = 0, want_probe = 0;
 
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
 #define NEXT (argv[++i])
         if (!strcmp(a, "--kernel")) c.kernel = NEXT;
         else if (!strcmp(a, "--dtype")) { const char *v = NEXT; c.dtype = !strcmp(v, "f64") ? DT_F64 : !strcmp(v, "i32") ? DT_I32 : DT_F32; }
-        else if (!strcmp(a, "--access")) { const char *v = NEXT; c.access = !strcmp(v, "stride") ? ACC_STRIDE : !strcmp(v, "gather") ? ACC_GATHER : ACC_UNIT; }
+        else if (!strcmp(a, "--access")) { const char *v = NEXT; c.access = !strcmp(v, "stride") ? ACC_STRIDE : !strcmp(v, "gather") ? ACC_GATHER : !strcmp(v, "gather_avx2") ? ACC_GATHER_AVX2 : ACC_UNIT; }
         else if (!strcmp(a, "--n")) c.n = strtoull(NEXT, 0, 0);
         else if (!strcmp(a, "--stride")) c.stride = strtoull(NEXT, 0, 0);
         else if (!strcmp(a, "--offset")) c.offset = strtoull(NEXT, 0, 0);
@@ -354,15 +379,32 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--header")) want_header = 1;
         else if (!strcmp(a, "--info")) want_info = 1;
         else if (!strcmp(a, "--selftest")) want_selftest = 1;
+        else if (!strcmp(a, "--counters")) c.counters = 1;
+        else if (!strcmp(a, "--counters-probe")) want_probe = 1;
         else { fprintf(stderr, "unknown option: %s\n", a); return 2; }
 #undef NEXT
     }
 
     if (want_info) {
-        printf("variant=%s\nflags=%s\ntimer_res_ns=%.1f\n",
+        acs_perf p;
+        int nctr = acs_perf_open(&p);
+        acs_perf_close(&p);
+        printf("variant=%s\nflags=%s\ntimer_res_ns=%.1f\ngather_avx2=%s\nperf_counters=%d/%d\n",
                acs_variant_name(), acs_variant_flags(),
-               acs_timer_resolution_sec() * 1e9);
+               acs_timer_resolution_sec() * 1e9,
+               acs_have_gather_avx2() ? "yes" : "no", nctr, PC_N);
         return 0;
+    }
+
+    /* Exit 0 iff the cycle counter (at least) can be opened. */
+    if (want_probe) {
+        acs_perf p;
+        acs_perf_open(&p);
+        int ok = p.fd[PC_CYCLES] >= 0;
+        for (int i = 0; i < PC_N; i++)
+            printf("%s=%s\n", acs_perf_name(i), p.fd[i] >= 0 ? "ok" : "unavailable");
+        acs_perf_close(&p);
+        return ok ? 0 : 1;
     }
 
     if (want_selftest)
@@ -370,7 +412,12 @@ int main(int argc, char **argv) {
 
     if (c.stride == 0) c.stride = 1;
     if (c.access == ACC_STRIDE) { c.dtype = DT_F32; c.kernel = "saxpy"; }
-    if (c.access == ACC_GATHER) { c.dtype = DT_F32; c.kernel = "saxpy"; c.stride = 1; }
+    if (is_gather(c.access)) { c.dtype = DT_F32; c.kernel = "saxpy"; c.stride = 1; }
+    if (c.access == ACC_GATHER_AVX2 && !acs_have_gather_avx2()) {
+        fprintf(stderr, "--access gather_avx2 needs the AVX2+FMA build (variant native), not %s\n",
+                acs_variant_name());
+        return 2;
+    }
 
     if (c.cpu >= 0 && acs_pin_cpu(c.cpu) != 0)
         fprintf(stderr, "warning: could not pin to CPU %d\n", c.cpu);
@@ -395,17 +442,29 @@ int main(int argc, char **argv) {
 
     size_t iters = calibrate_iters(&c, &d, c.min_ms / 1000.0);
 
-    if (want_header)
+    if (want_header) {
         printf("experiment,kernel,variant,dtype,n,offset,stride,access,flops_per_elem,"
-               "rep,iters,time_s,elems_per_s,ns_per_elem,gflops,checksum\n");
+               "rep,iters,time_s,elems_per_s,ns_per_elem,gflops,checksum");
+        if (c.counters)
+            printf(",cycles,instructions,llc_misses,l1d_misses,cycles_per_elem,"
+                   "llc_miss_per_elem,l1d_miss_per_elem,ipc,ghz");
+        printf("\n");
+    }
+
+    acs_perf perf;
+    if (c.counters && acs_perf_open(&perf) == 0)
+        fprintf(stderr, "warning: --counters: no hardware counter could be opened; columns are NA\n");
 
     double fpe = flops_per_elem(c.kernel);
     for (int r = 0; r < c.reps; r++) {
         double sink = 0.0;
+        double ctr[PC_N];
+        if (c.counters) acs_perf_start(&perf);
         double t0 = acs_now_sec();
         for (size_t k = 0; k < iters; k++)
             sink += run_kernel(&c, &d);
         double dt = acs_now_sec() - t0;
+        if (c.counters) acs_perf_stop(&perf, ctr);
         acs_consume_f64(sink);
         double per_call = dt / (double)iters;
         double eps = (double)c.n / per_call;
@@ -416,12 +475,24 @@ int main(int argc, char **argv) {
         else if (c.dtype == DT_F32) checksum = acs_checksum_f32(d.y.ptr, c.n);
         else checksum = (double)((int32_t *)(d.z.base ? d.z.ptr : d.y.ptr))[0];
 
-        printf("%s,%s,%s,%s,%zu,%zu,%zu,%s,%.1f,%d,%zu,%.9e,%.6e,%.6e,%.6e,%.6e\n",
+        printf("%s,%s,%s,%s,%zu,%zu,%zu,%s,%.1f,%d,%zu,%.9e,%.6e,%.6e,%.6e,%.6e",
                c.experiment, c.kernel, acs_variant_name(), dtype_name(c.dtype),
                c.n, c.offset, c.stride, access_name(c.access), fpe,
                r, iters, per_call, eps, nspe, gflops, checksum);
+        if (c.counters) {
+            double elems = (double)iters * (double)c.n;
+            for (int i = 0; i < PC_N; i++)
+                print_na(ctr[i], "%.0f");
+            print_na(ctr[PC_CYCLES] / elems, "%.6e");
+            print_na(ctr[PC_LLC_MISS] / elems, "%.6e");
+            print_na(ctr[PC_L1D_MISS] / elems, "%.6e");
+            print_na(ctr[PC_INSNS] / ctr[PC_CYCLES], "%.4f");
+            print_na(ctr[PC_CYCLES] / dt / 1e9, "%.4f");
+        }
+        printf("\n");
     }
 
+    if (c.counters) acs_perf_close(&perf);
     free_data(&d);
     return 0;
 }

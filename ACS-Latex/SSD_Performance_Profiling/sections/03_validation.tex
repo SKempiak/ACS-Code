@@ -1,28 +1,93 @@
 % !TeX root = ../main.tex
 \section{Validation and Sanity Checks}\label{sec:validation}
 
-Before trusting any number we confirm the benchmark describes the SSD and not an artifact. The checks
-in \code{scripts/validate.sh} and the cross-checks below all pass:
+Before trusting any number, we confirm that the benchmark describes the SSD and not an artifact.
+\code{make -C SSD_Performance_Profiling test} (\code{scripts/validate.sh}) runs the automated checks; it
+writes about \qty{70}{\mebi\byte} and deletes it.
 \begin{itemize}
-  \item \textbf{Safety gate works.} \code{safety.sh} refuses a block device (\code{/dev/nvme0n1}), a path
-        outside the scratch directory (\code{/etc/passwd}) and a mountpoint (\code{/}), and accepts only a
-        disposable file inside the scratch directory.
-  \item \textbf{Physical orderings hold.} On a preconditioned file, \qty{128}{\kibi\byte} sequential
-        throughput exceeds \qty{4}{\kibi\byte} random throughput, and keeping more requests in flight
-        (QD${>}1$) raises the measured concurrency $\lambda W$ above the QD=1 value---the Little's-Law
-        sanity check in \cref{sec:queue-depth}.
-  \item \textbf{Direct I/O is real.} With \code{O_DIRECT} the QD=1 \qty{4}{\kibi\byte} random read sits at
-        tens of microseconds and tens of thousands of IOPS; removing \code{O_DIRECT} (the
-        \code{--buffered} path) jumps to \ensuremath{\sim}\num{2}~million IOPS and sub-microsecond latency because
-        the page cache serves from RAM---quantified as the pitfall in \cref{sec:pitfall}. The two-orders-of
-        magnitude gap is itself the proof that the page cache is bypassed in the real runs.
-  \item \textbf{Throughput is below the interface ceiling.} Peak sequential read is
-        \ensuremath{\sim}\qty{1.5}{\gibi\byte\per\second} (\cref{sec:block-size}), comfortably under any modern
-        NVMe PCIe link ceiling, so we are measuring the drive/engine, not saturating the bus.
-  \item \textbf{Device identity recorded.} Every run's \code{env.txt} captures
-        \code{rotational}=0 and the model string \code{Micron_2210_MTFDHBA512QFD}, confirming the target
-        is the NVMe SSD.
+  \item \textbf{Safety gate.} \code{safety.sh} refuses both block devices on the host
+        (\code{/dev/nvme0n1}, the SSD; \code{/dev/sda}, the HDD), a symlink to \code{/dev/sda} placed
+        inside the scratch directory, a directory, a path outside the scratch directory
+        (\code{/etc/passwd}) and a mountpoint (\code{/}). It accepts only a disposable file inside the
+        scratch directory. \code{blkbench} independently refuses a directory and a symlink before opening
+        them. None of these checks opens a device.
+  \item \textbf{Incompressible data.} The preconditioned file does not shrink under \code{gzip -1}
+        (output $\geq 99\%$ of input), so the drive cannot gain from compression or zero detection.
+  \item \textbf{Physical orderings.} On a preconditioned file, \qty{128}{\kibi\byte} sequential
+        throughput exceeds \qty{4}{\kibi\byte} random throughput. Raising QD from 1 to 8 raises the
+        measured concurrency $L=\lambda W$, and $L$ never exceeds the configured QD (a hard invariant of
+        a closed loop with QD slots; \cref{sec:queue-depth}).
+  \item \textbf{Direct I/O is real.} With \code{O_DIRECT} the QD=1 \qty{4}{\kibi\byte} reads take tens of
+        microseconds. The \code{--buffered} path reaches about two million IOPS at sub-microsecond
+        latency because the page cache serves it from RAM (\cref{sec:pitfall}). A gap of two orders of
+        magnitude shows that the real runs bypass the cache. \code{make test} asserts that buffered
+        re-reads are more than $5\times$ faster than direct ones.
+  \item \textbf{Interface ceiling known, not assumed.} sysfs reports the link at
+        \qty{8}{GT/s}~$\times$4, so no measurement may exceed \qty{3756}{\mebi\byte\per\second}
+        (\cref{sec:method}). The highest sequential read we measure,
+        \csvq{block_size}{bs=65536,pattern=seq,mode=read,qd=32}{mibps_median}\,MiB/s (\qty{64}{\kibi\byte}, QD=32)
+        (\cref{sec:block-size}), is checked against this bound.
+  \item \textbf{Device identity.} Every run's \code{env.txt} records the parent disk of the scratch
+        filesystem, its \code{rotational} flag (0), the model string \code{Micron_2210_MTFDHBA512QFD},
+        the firmware and the PCIe link.
 \end{itemize}
-We could not cross-check against \code{iostat}/\code{perf} for the effective aqu-sz (not available in this
-environment); instead the Little's-Law table (\cref{tab:littles-law}) serves as the in-band effective-QD
-check.
+\code{iostat} and \code{perf} are not available here, so the effective queue depth is checked in-band
+instead (\cref{tab:littles-law}).
+
+\subsection{Cross-check against FIO}\label{sec:fio-check}
+\code{run.sh fio_check} runs seven points (QD=1 and QD=32; reads and writes; \qty{4}{\kibi\byte} random
+and \qty{128}{\kibi\byte} sequential) through both engines on the same preconditioned file. The engines
+alternate repetition by repetition, so drift affects both equally. FIO uses \code{fio/job.fio}:
+\code{libaio}, \code{direct=1}, one request per submit, total-latency (\code{lat}) percentiles, which is
+the same submit$\to$completion quantity \code{blkbench} records. \Cref{tab:fio-check} compares the
+medians. We treat agreement within \qty{10}{\percent} in IOPS and p50 as validating \code{blkbench}.
+FIO's percentiles come from a log-bucketed histogram (at most \ensuremath{\sim}\qty{3}{\percent} bin
+error), so small p99 differences are expected.
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{\code{blkbench} vs.\ FIO on identical points (medians of 5 interleaved repetitions each;
+  latencies in \si{\micro\second}).}\label{tab:fio-check}
+  \IfFileExists{data/fio_compare.csv}{%
+    \ssdload{fio_compare}\def\ssdRows{}%
+    \pgfplotsforeachungrouped \ssdR in {0,...,\ssdLast}{%
+      \ssdstr{mode}\ssdM\ssdstr{pattern}\ssdP\ssdstr{bs}\ssdBS\ssdstr{qd}\ssdQD
+      \ssdget{blk_iops}\ssdA\ssdget{fio_iops}\ssdB\ssdget[3]{iops_ratio}\ssdC
+      \ssdget[1]{blk_p50_us}\ssdD\ssdget[1]{fio_p50_us}\ssdE\ssdget[1]{blk_p99_us}\ssdF\ssdget[1]{fio_p99_us}\ssdG
+      \eappto\ssdRows{\expandonce\ssdP\space\expandonce\ssdM & \noexpand\ssdbs{\ssdBS} & \ssdQD &
+        \expandonce\ssdA & \expandonce\ssdB & \expandonce\ssdC & \expandonce\ssdD & \expandonce\ssdE &
+        \expandonce\ssdF & \expandonce\ssdG \noexpand\\}}%
+    \begin{tabular}{@{}llrrrrrrrr@{}}
+      \toprule
+      Pattern & Block & QD & \multicolumn{2}{c}{IOPS} & FIO/blk & \multicolumn{2}{c}{p50} & \multicolumn{2}{c}{p99} \\
+      \cmidrule(lr){4-5}\cmidrule(lr){7-8}\cmidrule(l){9-10}
+      & & & blk & FIO & & blk & FIO & blk & FIO \\
+      \midrule
+      \ssdRows
+      \bottomrule
+    \end{tabular}}{\acsmissing{data/fio_compare.csv}}
+\end{table}
+
+\textbf{Reads agree.} On all four read points, FIO/\code{blkbench} IOPS ratios are 0.983--1.006 and p50
+latencies differ by at most \qty{1}{\percent}, so \code{blkbench} is validated for reads. The two
+\qty{128}{\kibi\byte} sequential read points ran at only \ensuremath{\sim}\qty{225}{\mebi\byte\per\second}
+in \emph{both} engines. In \code{run.sh all}, \code{fio_check} directly followed \code{layout}, which
+leaves the file randomly overwritten, and the script did not rewrite it in between (since fixed). These
+points therefore measured the fragmented layout of \cref{sec:layout}. That does not affect the engine
+comparison, but their absolute values must not be read as sequential-read performance.
+
+\textbf{Writes partly disagree.} QD=1 sequential writes agree (ratio 1.054) and QD=1 random writes are
+within the criterion (0.929, p50 \qty{14.7}{} vs.\ \qty{15.4}{\micro\second}). The QD=32 random-write point
+fails it: FIO reached \csvq{fio_compare}{mode=write,pattern=rand,qd=32}{fio_iops} IOPS against
+\code{blkbench}'s \csvq{fio_compare}{mode=write,pattern=rand,qd=32}{blk_iops} (0.78), with p99 at
+\csvq[0]{fio_compare}{mode=write,pattern=rand,qd=32}{fio_p99_us} vs.\
+\csvq[0]{fio_compare}{mode=write,pattern=rand,qd=32}{blk_p99_us}\,\si{\micro\second}. The medians, by
+contrast, agree (\csvq[0]{fio_compare}{mode=write,pattern=rand,qd=32}{fio_p50_us} vs.\
+\csvq[0]{fio_compare}{mode=write,pattern=rand,qd=32}{blk_p50_us}\,\si{\micro\second}). Identical medians
+argue against a per-I/O engine cost. The deficit sits in the tail, which is the signature of the drive
+pausing to flush its write buffer. Within each pair of repetitions, \code{blkbench} always ran first and
+FIO second, immediately after \code{blkbench} had written \qty{256}{\mebi\byte}. FIO therefore met a
+fuller buffer more often. We consider this ordering effect the most likely explanation, but we did not
+test it: that would need the engine order alternated or randomized per pair. Until then, write numbers
+from either engine carry an uncertainty of about \qty{20}{\percent} at QD=32, set by drive state rather
+than by the tool. The read results, which are not order-sensitive, show no such effect.
