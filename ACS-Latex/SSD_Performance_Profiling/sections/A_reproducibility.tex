@@ -70,9 +70,12 @@ follows. \code{sudo fstrim -v /} ran at 21:34:54, the machine was then left idle
 22:32:17 EDT, with the governor at \code{performance}, turbo off, SMT off and ACPI GPE~0x42 masked. Its
 complete console output, including the free-space, TRIM-evidence and idle checks, the plan table and
 the per-minute temperature during the rests, is in
-\code{ACS-Code/SSD_Performance_Profiling/data/raw/rerun_clean_20261021-220614.log}. The SMART
+\code{ACS-Code/SSD_Performance_Profiling/data/raw/rerun_clean_20261021-220614.log}. The automatic SMART
 snapshots taken before and after the run (in \code{data/raw/smart/}) hold only the hwmon temperature,
-because \code{nvme smart-log} needs root. A second log, \code{rerun_clean_20261021-220544.log}, holds
+because \code{nvme smart-log} needs root. The author therefore ran \code{sudo nvme smart-log /dev/nvme0}
+about one hour after the run; its output is in \code{data/raw/smart/} (file
+\code{20261021-2335_post_smart_log.txt}).
+A second log, \code{rerun_clean_20261021-220544.log}, holds
 only the preflight lines of a start \qty{30}{\second} earlier that did not proceed to any
 measurement.
 \begin{lstlisting}[language=bash]

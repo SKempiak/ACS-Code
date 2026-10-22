@@ -10,7 +10,7 @@ environment documentation.}
 CPU-bound, below the host-saturation queue depths of \cref{sec:queue-depth})}
 \newcommand{\acsenvextra}{%
   SSD       & Micron 2210 \code{MTFDHBA512QFD}, \qty{512}{\giga\byte} QLC NVMe \cite{micron2210brief},
-              firmware \code{P6MA001} (from \code{/sys/class/nvme/nvme0}; SMART logs need root) \\
+              firmware \code{P6MA001} (from \code{/sys/class/nvme/nvme0}; SMART log taken with root after the run, \cref{sec:anomalies}) \\
   Interface & PCIe link \qty{8.0}{GT/s} $\times$4 (Gen3), both current and maximum, read from
               \code{current_link_speed}/\code{current_link_width} in sysfs. Raw ceiling
               $8\,\text{GT/s}\times4\times\tfrac{128}{130}=\qty{3.94}{\giga\byte\per\second}$

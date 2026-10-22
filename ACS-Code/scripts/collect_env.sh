@@ -69,6 +69,9 @@ isolation() {
 memory() { awk '/MemTotal/{printf "%.0f GiB total\n",$2/1024/1024}' /proc/meminfo 2>/dev/null; }
 dimm()   { if have dmidecode && dmidecode -t memory >/dev/null 2>&1; then
              dmidecode -t memory 2>/dev/null | awk -F: '/Speed:/{gsub(/^ +/,"",$2);print $2;exit}'
+           elif [ -r "$(dirname "$0")/../env/dmidecode_memory.txt" ]; then
+             # saved by the author with sudo (see env/dmidecode_memory.txt)
+             echo '2 $\times$ 32 GiB DDR4-3200, one per channel (A, B), running at 2933 MT/s (dmidecode)'
            else na "needs root/dmidecode"; fi; }
 pagesize()  { echo "$(getconf PAGE_SIZE 2>/dev/null) bytes"; }
 hugepages() { sed -n 's/.*\[\(.*\)\].*/\1/p' /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || na; }

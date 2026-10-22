@@ -69,10 +69,15 @@
   \item \textbf{No \code{iostat}/\code{perf} cross-check.} Effective queue depth is checked in-band through
         $L/\text{QD}$ (\cref{tab:littles-law}). That includes time in the kernel block layer, so it
         bounds device-queue occupancy from above.
-  \item \textbf{SMART needs root.} Temperature comes from the NVMe hwmon sensor, which needs no root.
-        The lean re-run's \code{nvme smart-log} snapshots failed with \enquote{Permission denied}, so
-        data-units-written, media errors and the throttle counters are unavailable, and throttling is
-        inferred only from temperature and throughput together.
+  \item \textbf{SMART only after the run.} The automatic snapshots needed root and failed, so the
+        only full SMART log was taken with \code{sudo} about an hour after the lean run
+        (\code{data/raw/smart/20261021-2335_post_smart_log.txt}). Its cumulative counters rule out
+        thermal throttling: both thermal-management transition counts and both over-temperature times
+        are zero, consistent with the \qtyrange{31.9}{61.9}{\degreeCelsius} we logged. Media errors are zero and
+        the spare pool is at \qty{100}{\percent}. The drive is not new, however. It reports
+        \qty{28}{\percent} of its rated life used, \qty{72.61}{TB} written, \num{20028} power-on hours and
+        \num{2105} error-log entries (not inspected). Wear may affect the SLC cache size and
+        tails reported here, and a fresh drive of the same model may behave differently.
   \item \textbf{Filesystem, not raw device; partial LBA range.} I/O goes to disposable files on ext4: a
         \qty{2}{\gibi\byte} (original) or \qty{4}{\gibi\byte} (lean) file for the sweeps, a
         \qty{60}{\gibi\byte} file for the original device-state run (about \qty{13}{\percent} of the

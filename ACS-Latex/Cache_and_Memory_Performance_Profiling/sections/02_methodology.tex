@@ -5,7 +5,7 @@
 \subsection{Platform}
 \newcommand{\acspinning}{single-thread runs and the loaded-latency probe pinned to CPU~2 (a physical
 core, not CPU~0); multi-threaded runs place one thread per physical core}
-% Memory is covered by the shared table's single Memory row (MemTotal; DIMMs not probed without root).
+% Memory is covered by the shared table's single Memory row (MemTotal; DIMMs from a saved dmidecode).
 All measurements were taken on the desktop system in \cref{tab:environment}: a ten-core Intel
 i9-10900F (Comet Lake, Skylake-family core) with per-core \qty{32}{\kibi\byte} L1d and
 \qty{256}{\kibi\byte} L2, a shared \qty{20}{\mebi\byte} L3, and DDR4 memory on one NUMA node. The table is

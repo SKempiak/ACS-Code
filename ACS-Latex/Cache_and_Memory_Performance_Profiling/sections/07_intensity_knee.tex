@@ -9,7 +9,7 @@ Little's Law connection.}
   A single core cannot saturate the DRAM controller because it can keep only about a dozen demand misses
   in flight (its L1 fill buffers). Adding load should raise delivered bandwidth until the memory
   controller saturates in the low tens of \unit{\gibi\byte\per\second} (assuming the usual two DDR4
-  channels of this desktop platform; DIMM population was not recorded); past that point extra load should
+  channels of this desktop platform); past that point extra load should
   buy almost no bandwidth but sharply raise the latency of every request (queueing). By Little's Law,
   saturation needs tens of outstanding lines---more than one core provides.
 \end{hypothesis}
@@ -106,11 +106,14 @@ crossing is at \valqty{int_kneed_gib}{\gibi\byte\per\second}.) The memory-contro
 throughput axis: at $T=4$ and $T=9$ measured DRAM traffic is \val{int_t4_imc_ratio}$\times$ and
 \val{int_t9_imc_ratio}$\times$ the delivered bandwidth. Beyond the knee the memory controller, not the
 cores, is the bottleneck: requests no longer finish faster, they queue.
-% DRAM-PEAK (to be filled in from `sudo dmidecode -t memory`): theoretical peak =
-% channels x MT/s x 8 B; then quote int_sat_gib and int_peak_gib as a percentage of it.
-\emph{Theoretical DRAM peak: not stated.} The DIMM speed and channel population were not recorded
-(\code{env.txt} reports ``DIMM speed: not available''; reading it needs root and \code{dmidecode}), so we do
-not express the knee as a fraction of the theoretical peak; the measured ceiling above is the reference.
+\paragraph{Theoretical DRAM peak.} \code{dmidecode} (\code{ACS-Code/env/dmidecode_memory.txt}) shows
+two \qty{32}{\gibi\byte} DDR4-3200 DIMMs, one in each of the two channels, running at
+\qty{2933}{MT/s}. The theoretical peak is therefore
+$2~\text{channels}\times\qty{8}{\byte}\times\qty{2933}{MT/s}=\qty{46.9}{\giga\byte\per\second}
+=\qty{43.7}{\gibi\byte\per\second}$. The measured peak of \valqty{int_peak_gib}{\gibi\byte\per\second}
+is \qty{73}{\percent} of it, and the knee at \valqty{int_sat_gib}{\gibi\byte\per\second} is
+\qty{70}{\percent}. Reaching roughly 70--75\% of the theoretical figure is the usual practical limit for
+DDR4 reads, because of refresh, bank conflicts and read/write bus turnarounds.
 
 \paragraph{Comparison with Intel MLC.} MLC's \texttt{-{}-loaded\_latency} sweep (nine load cores, injection
 delay from 20\,000 down to 0 cycles, latency thread on CPU~2) is plotted in \cref{fig:intensity}. It

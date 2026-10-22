@@ -75,8 +75,7 @@
         may see a different latency, so $L=\lambda W$ for the streaming sweep assumes the probe's latency
         is representative. The known-concurrency chase sweep does not need that assumption.
   \item \textbf{One machine and one memory configuration.} All numbers come from a single i9-10900F on one
-        NUMA node; DIMM population and speed could not be read without root, so no theoretical DRAM peak
-        is quoted (\cref{sec:intensity}). Frequency policy for the
+        NUMA node with two DDR4 channels at \qty{2933}{MT/s} (\cref{sec:intensity}). Frequency policy for the
         runs: governor \sysGovernor{}, turbo \sysTurbo{}, SMT \sysSMT{}.
   \item \textbf{Report build backend.} The host has \code{bibtex} but not \code{biber}, so
         \code{biblatex} uses \code{backend=bibtex}.

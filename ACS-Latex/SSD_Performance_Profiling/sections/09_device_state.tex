@@ -169,7 +169,7 @@ scratch filesystem had \qty{77}{\gibi\byte} free and was trimmed, but the rest o
 such a cache would scale with is unknown and may be small. Two other explanations remain open. Thirty
 minutes may not have drained all folded data after the TRIM, or the 2210 may simply use a small
 cache in this capacity class. Telling these apart would need fills at several known free-space levels,
-or the vendor and SMART counters that need root (the lean run's SMART snapshot failed without it).
+or vendor counters of SLC usage, which the standard SMART log does not report.
 Under the free-space explanation the cache size is state dependent, and
 \csvval[1]{sustained_summary}{cliff_gib}\,GiB describes this drive at its current fill level.
 
