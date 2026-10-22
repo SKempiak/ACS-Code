@@ -29,39 +29,43 @@ copied by hand.
   \code{mem_bandwidth} & streaming bandwidth with $T$ pinned threads: read/write/copy/triad/rwmix, access-size blocks, byte stride \\
   \code{mem_loaded}    & loaded latency: $T$ load-generator cores (stream, rwmix, or $k$ independent chases) plus a concurrent latency probe \\
   \code{kernel_miss}   & SAXPY loop whose footprint, order and page size vary, with counters \\
-  Counters             & \code{perf_event_open(2)} called directly, user space only \cite{linux_perf} \\
-  Intel MLC            & not installed; substitute cross-checks in \cref{sec:validation} \cite{intel_mlc} \\
+  \code{clock_check}   & diagnostic: fixed core clock vs.\ wall time lost by a pinned thread, idle DRAM traffic \\
+  Core counters        & \code{perf_event_open(2)} called directly, per thread, user space only \cite{linux_perf} \\
+  DRAM counters        & uncore memory-controller events \code{data_reads}/\code{data_writes}, system-wide \\
+  Intel MLC            & v3.13, run as a normal user (\code{run.sh mlc}) \cite{intel_mlc} \\
 \end{knobs}
-\code{perf} (\sysPerf) is installed, but \code{perf_event_paranoid} is \sysPerfParanoid{}, which
-allows only user-mode counting of a process's own events, and we want counts confined to the timed region
-of each repetition rather than to the whole process. The benchmarks therefore call
-\code{perf_event_open(2)} themselves (\code{exclude_kernel=1}, \code{exclude_hv=1}), enable the counters
-immediately before each timed loop and read them immediately after it. The events are cycles,
-instructions, L1D read misses, LLC read references and misses, and dTLB read misses (completed page walks).
-Events are opened independently so the kernel may multiplex them; counts are scaled by
-\code{time_enabled/time_running} and the smallest running fraction is recorded per row
-(\code{ctr_cover}). Intel MLC is the spec's suggested cross-check but is not installed and could not be
-installed for this study; \code{run.sh mlc} records that fact in its raw directory, and
-\cref{sec:validation} describes the clearly labelled substitutes.
+\code{perf} (\sysPerf) is installed, but we want counts confined to the timed region of each
+repetition, so the benchmarks call \code{perf_event_open(2)} themselves, enable the counters immediately
+before each timed loop and read them immediately after it. Core events are counted for the measuring
+thread in user mode only (\code{exclude_kernel=1}): cycles, instructions, L1D read misses, LLC read
+references and misses, and dTLB read misses (completed page walks). They are opened independently so the
+kernel may multiplex them; counts are scaled by \code{time_enabled/time_running} and the smallest running
+fraction is recorded per row (\code{ctr_cover}). DRAM traffic is read from the client uncore
+memory-controller PMU (\code{uncore_imc}: \code{data_reads}, \code{data_writes}, one count per
+\qty{64}{\byte} line, scaled by the PMU's \code{.scale} files), opened system-wide on CPU~0 around the same
+timed windows in \code{mem_loaded}, \code{mem_bandwidth} and \code{clock_check}. System-wide counting
+needs \code{perf_event_paranoid}~$\le 0$, which the user set for these runs. Because the counts include all
+traffic in the machine, the background of an idle system is measured separately (\code{clock_check}) and
+quoted next to every result. Intel MLC v3.13 provides the external cross-check
+(\cref{sec:validation}). Without root it cannot switch off the hardware prefetchers, so it runs with
+\code{-e} (prefetchers left on) and \code{-r} (random access for the latency thread). MLC reports MB/s
+($10^6$\,B/s); we convert to GiB/s ($2^{30}$\,B/s) wherever we compare.
 
 \subsection{Controls}
 \begin{itemize}
   \item \textbf{Pinning and isolation:} \acspinning. SMT: \sysSMT. The machine is otherwise idle and
-        experiments are run one at a time. All experiment data in this report were collected on
-        2026-10-21, 00:43--00:55, in one \code{run.sh all} invocation; the \code{clock_check}
-        diagnostic ran the same day at 19:46.
+        experiments are run one at a time. All data in this report were collected on 2026-10-21,
+        20:22--20:39, in one \code{run.sh all} invocation (all experiments, MLC and \code{clock_check}).
   \item \textbf{Frequency:} governor \sysGovernor, turbo \sysTurbo, so the core runs at its fixed
         \qty{2.8}{\giga\hertz} base clock (equal to the TSC rate). Cycle figures are
-        ns~$\times$~\valqty{zq_ghz}{\giga\hertz}. This conversion was checked against the hardware:
-        user-mode cycles divided by wall time over the timed windows give a median of
-        \valqty{ws_ctr_ghz}{\giga\hertz}. The benchmarks also log an in-process add-chain frequency
-        probe (\code{ghz} column), but it is \emph{not} used: in \val{ws_probe_low_pct}\% of runs it read
-        about \valqty{zq_probe_ghz_min}{\giga\hertz} instead of \valqty{zq_probe_ghz_max}{\giga\hertz}, although the cycle
-        counter shows \valqty{ws_ctr_ghz_lowprobe}{\giga\hertz} during exactly those runs. The low readings
-        are therefore an artifact of the probe, not a clock change: a diagnostic (\code{clock_check})
-        traces them to wall time lost to bursts of ACPI events on this host (\cref{sec:anomalies}). Converting with the probe would have
-        understated DRAM latency by about 14\% (\valnum{zq_DRAM_cyc_probe} instead of \valnum{zq_DRAM_cyc}
-        cycles); see \cref{sec:anomalies}.
+        ns~$\times$~\valqty{zq_ghz}{\giga\hertz}. Two independent checks agree. User-mode cycles divided by
+        wall time over the timed windows give a median of \valqty{ws_ctr_ghz}{\giga\hertz}. The in-process
+        add-chain probe logged by every run reads \val{zq_probe_ghz_min}--\valqty{zq_probe_ghz_max}{\giga\hertz}.
+        The probe is still not used for conversion: in an earlier run it was disturbed by an ACPI event
+        storm (\cref{sec:anomalies}).
+  \item \textbf{Interference:} the ACPI general-purpose event that caused that storm (GPE~0x42) was masked
+        for these runs; its count did not change during the experiments. In \code{clock_check}, a
+        pinned thread kept \val{cc_userfrac_min}--\val{cc_userfrac} of the wall time.
   \item \textbf{Pages:} every buffer is a \qty{2}{\mebi\byte}-aligned anonymous mapping whose page size is
         chosen by \code{madvise} \emph{before first touch}: \code{MADV_HUGEPAGE} for ``huge'' and
         \code{MADV_NOHUGEPAGE} for ``4k''. The second is essential because THP is \sysHugePages{}: without

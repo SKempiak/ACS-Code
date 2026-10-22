@@ -41,7 +41,7 @@ of SIMD gains in the memory-bound regime explained.}
     \end{tikzpicture}%
   }
   \caption{SAXPY time per element across cache levels. The native curve rises in steps at each cache
-  boundary; in DRAM it stays $\approx1.7\times$ below the scalar curve, which barely moves.}\label{fig:locality}
+  boundary; in DRAM it stays $1.88$--$1.96\times$ below the scalar curve.}\label{fig:locality}
 \end{figure}
 
 \begin{table}[tbp]
@@ -148,58 +148,58 @@ of SIMD gains in the memory-bound regime explained.}
 The measured transitions line up with the cache sizes. While $N\lesssim\num{4096}$ (L1-resident)
 native SAXPY takes \qtyrange{0.080}{0.100}{\nano\second} per element, a $5.6\text{--}6.9\times$
 speedup over scalar's \qtyrange{0.55}{0.57}{\nano\second}. Past the \qty{32}{\kibi\byte} L1, at
-$N=\num{6144}$, the native time jumps to \qty{0.145}{\nano\second} and the speedup drops to
-$4.2\times$; it stays at $3.9\text{--}4.2\times$ through L2. Past the \qty{256}{\kibi\byte} L2,
-at $N=\num{49152}$, it falls to $2.8\times$ (\qty{0.21}{\nano\second}), and the L3 plateau holds
-$2.5\text{--}2.9\times$ (\qty{0.23}{\nano\second}). Past L3 the gap narrows but does \emph{not}
-close, contradicting the hypothesis: from $N=\num{16777216}$ on, native settles at
-\qtyrange{0.41}{0.43}{\nano\second} per element and scalar at \qty{0.72}{\nano\second}, a remaining
-speedup of $1.66\text{--}1.73\times$.
+$N=\num{6144}$, the native time jumps to \qty{0.144}{\nano\second} and the speedup drops to
+$4.2\times$; it stays at $4.0\text{--}4.2\times$ through L2. Past the \qty{256}{\kibi\byte} L2,
+at $N=\num{49152}$, it falls to $3.1\times$ (\qty{0.21}{\nano\second}), and the L3 plateau holds
+$2.8\times$ (\qty{0.23}{\nano\second}) from $N=\num{98304}$ to \num{1572864}. Past L3 the gap
+narrows but does \emph{not} close, contradicting the hypothesis: from $N=\num{16777216}$ on, native
+settles at \qtyrange{0.43}{0.45}{\nano\second} per element and scalar at
+\qtyrange{0.83}{0.85}{\nano\second}, a remaining speedup of $1.88\text{--}1.96\times$.
 
 \Cref{tab:locality-bw,fig:locality-bw} convert the same data to bandwidth. Native SAXPY moves
-\qty{117}{\gibi\byte\per\second} in L1, \num{75.8} in L2, \num{48.4} in L3 and
-\qty{26.1}{\gibi\byte\per\second} from DRAM (at the representative $N$ of the table), and each level
+\qty{118}{\gibi\byte\per\second} in L1, \num{77.8} in L2, \num{48.4} in L3 and
+\qty{25.0}{\gibi\byte\per\second} from DRAM (at the representative $N$ of the table), and each level
 boundary is a step in \cref{fig:locality}. The independently measured triad roofs are \num{207},
-\num{99.4}, \num{48.3} and \qty{24.3}{\gibi\byte\per\second}, so native SAXPY reaches 57, 76, 100 and
-\SI{107}{\percent} of the roof. It is therefore bandwidth-bound in L3 and
-DRAM, where it runs exactly at the measured roof. In DRAM it even slightly exceeds the triad roof,
-matching instead the copy stream's \qty{26.3}{\gibi\byte\per\second}, which has the same
-two-reads-one-write pattern. In L1 and L2 it falls short: there the limit is the core's
+\num{90.5}, \num{48.6} and \qty{24.3}{\gibi\byte\per\second}, so native SAXPY reaches 57, 86, 100
+and \SI{103}{\percent} of the roof. It is therefore bandwidth-bound in L3 and DRAM, where it runs at
+the measured roof. In DRAM it slightly exceeds the triad roof, staying below the copy stream's
+\qty{25.7}{\gibi\byte\per\second}; copy has the same two-reads-one-write pattern. In L1 and L2 it falls short: there the limit is the core's
 load/store issue rate (below), not the cache. Scalar SAXPY, by contrast, is flat at
 \qtyrange{17}{20.5}{\gibi\byte\per\second} through L1, L2 and L3, far below every cache roof, and
-drops only to \qty{15.6}{\gibi\byte\per\second} in DRAM.
+drops to \qty{13.3}{\gibi\byte\per\second} in DRAM.
 
 \emph{Counters} (\cref{fig:locality-counters}; effective clock \qtyrange{2.78}{2.79}{\giga\hertz}
-at every point). LLC misses per element are below $10^{-5}$ while the working set fits in L3. For
-DRAM-resident native SAXPY they reach \num{0.126} ($N=\num{33554432}$), matching the compulsory
-$2/16 = 0.125$ (two \qty{64}{\byte} lines, $x$ and $y$, per \num{16} elements; the dirty $y$ line
-is written back, not missed again). So the vector loop moves no more data than it must. Scalar
-shows \num{0.155}, \SI{23}{\percent} more. We cannot attribute this with user-space counters alone;
-one possibility is that the generic LLC-miss event also counts L2 hardware-prefetch requests, which
-behave differently for a slower stream. Either way, scalar does not lose because the vector loop
-saves misses. The cycle counts explain the remaining gap:
+at every point). LLC misses per element stay below $10^{-5}$ while the working set fits in
+L3. For DRAM-resident native SAXPY they reach \numrange{0.122}{0.128}
+($N=\num{16777216}\ldots\num{50331648}$), matching the compulsory $2/16 = 0.125$ (two
+\qty{64}{\byte} lines, $x$ and $y$, per \num{16} elements; the dirty $y$ line is written back, not
+missed again). So the vector loop moves no more data than it must. Scalar shows
+\numrange{0.156}{0.164}, about \SI{28}{\percent} more. We cannot attribute this with user-space
+counters alone; one possibility is that the generic LLC-miss event also counts L2 hardware-prefetch
+requests, which behave differently for a slower stream. Either way, scalar does not lose because
+the vector loop saves misses. The cycle counts explain the remaining gap:
 
 \begin{center}\small
   \begin{tabular}{@{}lrrrr@{}}
     \toprule
     cycles/element (IPC) & L1 ($N=\num{2048}$) & L2 ($N=\num{16384}$) & L3 ($N=\num{524288}$) & DRAM ($N=\num{33554432}$) \\
     \midrule
-    scalar & 1.53 (4.6) & 1.69 (4.2) & 1.81 (3.9) & 1.99 (3.5) \\
-    native & 0.27 (3.1) & 0.41 (1.8) & 0.64 (1.2) & 1.19 (0.6) \\
+    scalar & 1.53 (4.6) & 1.68 (4.2) & 1.81 (3.9) & 2.34 (3.0) \\
+    native & 0.26 (3.1) & 0.40 (1.9) & 0.64 (1.2) & 1.25 (0.6) \\
     \bottomrule
   \end{tabular}
 \end{center}
 
-Native SAXPY's cycles per element grow $4.5\times$ from L1 to DRAM and its IPC falls to
+Native SAXPY's cycles per element grow $4.8\times$ from L1 to DRAM and its IPC falls to
 \num{0.6}: it is waiting on memory. Scalar SAXPY already spends \num{1.53} cycles per element of
-pure core work in L1, at an IPC of \num{4.6}. That is at this core's issue limit (4 fused micro-ops per cycle, with
-compare-and-branch pairs macro-fused). In DRAM it
-needs only \SI{30}{\percent} more (\num{1.99} cycles) while keeping an IPC of \num{3.5}. So the
-memory system can feed scalar SAXPY almost as fast as it can execute it, and $1.99/1.19 = 1.67$ is
-exactly the measured DRAM speedup. This is the mechanism of the ``compression'' the rubric asks
-about. SIMD does not get slower in DRAM; once native SAXPY sits on the bandwidth roof, its advantage
-shrinks to the scalar loop's instruction cost divided by the memory time. That ratio depends on the
-clock. At the earlier turbo clock ($\approx\qty{4.4}{\giga\hertz}$) the same scalar instruction
-work took less time while the memory time stayed fixed, and that sweep measured only
-$1.32\text{--}1.44\times$. Absolute native time grows step by step while scalar time is nearly
-flat, which is why the \emph{ratio} shrinks at every level boundary.
+pure core work in L1, at an IPC of \num{4.6}. That is at this core's issue limit (4 fused micro-ops
+per cycle, with compare-and-branch pairs macro-fused). In DRAM it needs \SI{53}{\percent} more
+(\num{2.34} cycles) but still retires \num{3.0} instructions per cycle. So most of its DRAM time is
+instruction execution, not waiting, and $2.34/1.25 = 1.88$ is exactly the measured DRAM speedup at
+this size. This is the mechanism of the ``compression'' the rubric asks about. SIMD does not get
+slower in DRAM; once native SAXPY sits on the bandwidth roof, its advantage shrinks to the scalar
+loop's (mostly instruction-bound) time divided by the memory time. That ratio depends on the clock.
+At the earlier turbo clock ($\approx\qty{4.4}{\giga\hertz}$) the same scalar instruction work took
+less time while the memory time stayed fixed, and that sweep measured only
+$1.32\text{--}1.44\times$. Absolute native time grows step by step while scalar time is nearly flat,
+which is why the \emph{ratio} shrinks at every level boundary.

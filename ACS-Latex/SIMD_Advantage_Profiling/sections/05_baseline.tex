@@ -43,7 +43,7 @@ across working-set sizes.}
   }
   \caption{Speedup of the SIMD builds over scalar (median; error bars: range implied by the two
   IQRs, \cref{sec:method}). Gains peak while data is cache-resident and compress in DRAM (at
-  $N=2^{24}$: SAXPY $1.85\times$, multiply $1.49\times$, stencil $2.76\times$); the dot product
+  $N=2^{24}$: SAXPY $1.94\times$, multiply $1.51\times$, stencil $2.72\times$); the dot product
   never benefits.}\label{fig:baseline-speedup}
 \end{figure}
 
@@ -63,16 +63,16 @@ across working-set sizes.}
     \end{tikzpicture}%
   }
   \caption{Achieved SAXPY throughput (elements/s, median and IQR). Native drops to a DRAM-limited
-  plateau for large $N$, about $1.7$--$1.9\times$ above scalar, which loses comparatively little
+  plateau for large $N$, $1.89$--$1.94\times$ above scalar, which loses comparatively little
   outside cache.}\label{fig:baseline-throughput}
 \end{figure}
 
 \subsection{Analysis}
-At $N=\num{4096}$ (L1-resident) the \code{native} speedups are SAXPY $5.75\times$
-(\qty{20.1}{\giga\flop\per\second}), stencil $3.49\times$ (\qty{17.3}{\giga\flop\per\second}),
-elementwise multiply $3.51\times$ and dot $1.01\times$. \code{autovec} reaches about half of
-\code{native} for SAXPY ($3.01\times$) and \SIrange{70}{80}{\percent} of it for multiply and stencil
-($2.55\times$, $2.80\times$). None reaches the full $8\times$ lane count even in cache: each vector
+At $N=\num{4096}$ (L1-resident) the \code{native} speedups are SAXPY $5.79\times$
+(\qty{20.2}{\giga\flop\per\second}), stencil $3.49\times$ (\qty{17.3}{\giga\flop\per\second}),
+elementwise multiply $3.55\times$ and dot $1.01\times$. \code{autovec} reaches about half of
+\code{native} for SAXPY ($3.02\times$) and \SIrange{70}{80}{\percent} of it for multiply and stencil
+($2.54\times$, $2.79\times$). None reaches the full $8\times$ lane count even in cache: each vector
 FMA still needs two \qty{256}{bit} loads and a store, and native SAXPY needs
 \numrange{0.22}{0.28}~cycles per element in L1 (\cref{sec:locality}), against the
 $0.125$~cycles/element (one 8-lane iteration per cycle) that two load ports and one store port
@@ -80,28 +80,28 @@ would allow. So the loop is limited by load/store issue well before it is FLOP-b
 
 The kernels mostly behave as predicted, and the exceptions are informative.
 \emph{Elementwise multiply} streams three arrays (\qty{12}{\byte}/element), so it leaves L1 earlier
-(near $N\approx\num{2700}$) than SAXPY. Its speedup peaks at $5.48\times$ at $N=\num{2048}$ and has
-already dropped to $3.51\times$ at $N=\num{4096}$. The \emph{stencil} has the highest FLOP count (5)
-and reuses $x_{i-1},x_i,x_{i+1}$, so it stays the most compute-bound and keeps a $2.7\times$
+(near $N\approx\num{2700}$) than SAXPY. Its speedup peaks at $5.54\times$ at $N=\num{2048}$ and has
+already dropped to $3.55\times$ at $N=\num{4096}$. The \emph{stencil} has the highest FLOP count (5)
+and reuses $x_{i-1},x_i,x_{i+1}$, so it stays the most compute-bound and keeps a $2.6$--$2.7\times$
 advantage even in DRAM (\cref{fig:baseline-speedup}). Its native speedup is irregular, though:
-$3.3$--$3.5\times$ for $N=\num{1024}\ldots\num{16384}$ but $4.5$--$5.7\times$ for the L2/L3-resident
+$3.4$--$3.5\times$ for $N=\num{1024}\ldots\num{16384}$ but $4.5$--$6.2\times$ for the L2/L3-resident
 sizes. In other words, the cache-resident stencil runs \emph{slower} per element than the
 L3-resident one (\cref{sec:anomalies}). The \emph{dot product} is the reduction case from
 \cref{sec:vectorization}: packed multiplies, serial sum, $\approx1\times$ at every size, at
-\qtyrange{1.33}{1.52}{\giga\flop\per\second}.
+\qtyrange{1.33}{1.49}{\giga\flop\per\second}.
 
 By $N=\num{16777216}$ (\qty{128}{\mebi\byte}, far past L3) every speedup has compressed: SAXPY
-$1.85\times$, multiply $1.49\times$, stencil $2.76\times$, dot $1.00\times$.
+$1.94\times$, multiply $1.51\times$, stencil $2.72\times$, dot $1.00\times$.
 \Cref{fig:baseline-throughput} shows the asymmetry behind this. Native SAXPY falls from
-\num{20.1} to \qty{4.8}{\giga\flop\per\second} on a DRAM plateau, while scalar only falls from
-about \qty{3.5}{\giga\flop\per\second} (\numrange{3.3}{3.6} in cache) to about \qty{2.7}{\giga\flop\per\second} (\numrange{2.6}{2.8} in DRAM). The two plateaus do not merge
-because scalar SAXPY is close to its own instruction-throughput limit even in DRAM: it needs
-\numrange{1.5}{1.8}~cycles of core work per element with all data in cache and only
-$\approx2.0$~cycles per element from DRAM (\cref{sec:locality}). At the fixed
-\qty{2.8}{\giga\hertz} clock this persistent ratio is larger than in the earlier turbo-clock sweep
-($\approx1.4\times$), as expected if scalar is core-bound and native memory-bound. Three separate
-measurements of SAXPY at $N=\num{16777216}$ (baseline, locality and negative-case sweeps) give
-$1.85\times$, $1.73\times$ and $1.87\times$; this run-to-run spread is larger than the within-run
-IQR. The curves bend downward at the L1 ($N\approx\num{4096}$) and L2 ($N\approx\num{32768}$)
-boundaries; \cref{sec:locality} resolves those transitions and \cref{sec:roofline} ties each
-plateau to a measured bandwidth roof.
+\num{20.2} to \qty{4.6}{\giga\flop\per\second} on a DRAM plateau, while scalar only falls from
+about \qty{3.5}{\giga\flop\per\second} in L1 to \qty{2.4}{\giga\flop\per\second} in DRAM. The two
+plateaus do not merge because scalar SAXPY stays largely instruction-bound even in DRAM. It needs
+\numrange{1.5}{1.8}~cycles of core work per element with all data in cache, at an IPC near 4, and
+\num{2.3}~cycles per element from DRAM, still at an IPC of \num{3.0} (\cref{sec:locality}). At the
+fixed \qty{2.8}{\giga\hertz} clock this persistent ratio is larger than in the earlier turbo-clock
+sweep ($\approx1.4\times$), as expected if scalar is core-bound and native memory-bound. Three
+separate measurements of SAXPY at $N=\num{16777216}$ (baseline, locality and negative-case sweeps)
+agree closely, at $1.94\times$, $1.94\times$ and $1.95\times$, and at $1.88$--$1.92\times$ at
+$N=\num{33554432}$. The curves bend downward at the L1 ($N\approx\num{4096}$) and L2
+($N\approx\num{32768}$) boundaries; \cref{sec:locality} resolves those transitions and
+\cref{sec:roofline} ties each plateau to a measured bandwidth roof.

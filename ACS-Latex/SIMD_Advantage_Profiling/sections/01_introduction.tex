@@ -20,8 +20,8 @@ This report answers:
 
 In brief: SIMD helps most when data fits in L1/L2, where \code{native} gives roughly $5.8\times$ for
 SAXPY and the cache feeds the vector units fast enough to approach the lane count; the advantage
-shrinks step-by-step as the working set crosses L2 and L3 and falls to $1.7\text{--}1.9\times$ for SAXPY
-in DRAM ($1.4\text{--}1.5\times$ multiply, $2.7\text{--}2.8\times$ stencil), where the vector build runs at the memory-bandwidth roof and only the scalar build's own
+shrinks step-by-step as the working set crosses L2 and L3 and falls to $1.88\text{--}1.99\times$ for SAXPY
+in DRAM ($1.5\text{--}1.6\times$ multiply, $2.6\text{--}2.8\times$ stencil), where the vector build runs at the memory-bandwidth roof and only the scalar build's own
 instruction cost keeps the ratio above $1\times$. Data type matters through lane count (float64
 roughly halves the gain) and access pattern matters even more (any stride~$\ge2$ removes the SIMD
 advantage; gather, even with AVX2 \code{vgatherdps}, never gains). Two cases show the limits of ``it vectorized, so it

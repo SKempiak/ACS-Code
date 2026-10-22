@@ -91,43 +91,43 @@ effects with a convincing explanation (with \cref{sec:stride}).}
 vector width, and it repeats with the load width. Native SAXPY runs at
 \qtyrange{0.098}{0.100}{\nano\second} per element at offsets $0$ and \qty{32}{\byte} (both
 \qty{32}{\byte}-aligned, since the base is \qty{64}{\byte}-aligned). Every other offset costs
-\qtyrange{0.142}{0.144}{\nano\second} (\SI{+46}{\percent}) or, at \numlist{28;36;40;60}, up to
-\qty{0.160}{\nano\second} (\SI{+63}{\percent}). \code{autovec} (\qty{16}{\byte} loads) is fast
+\qtyrange{0.142}{0.143}{\nano\second} (\SI{+46}{\percent}) or, at \numlist{28;36;40;60}, up to
+\qty{0.157}{\nano\second} (\SI{+60}{\percent}). \code{autovec} (\qty{16}{\byte} loads) is fast
 exactly at the multiples of \num{16} (offsets $0$, \num{16}, \num{32}, \num{48}:
-\qtyrange{0.190}{0.198}{\nano\second}) and \SIrange{13}{26}{\percent} slower elsewhere.
-\code{scalar} varies by only \SI{1.6}{\percent} (\qtyrange{0.564}{0.573}{\nano\second}). This
-ordering, native \SI{63}{\percent} > autovec \SI{26}{\percent} > scalar \SI{2}{\percent}, is what
+\qtyrange{0.191}{0.198}{\nano\second}) and \SIrange{13}{25}{\percent} slower elsewhere.
+\code{scalar} varies by only \SI{1.0}{\percent} (\qtyrange{0.568}{0.573}{\nano\second}). This
+ordering, native \SI{60}{\percent} > autovec \SI{25}{\percent} > scalar \SI{1}{\percent}, is what
 cache-line splits predict. At a non-multiple-of-32 offset every second \qty{32}{\byte} load
 straddles a \qty{64}{\byte} line, but only every fourth \qty{16}{\byte} load does, and a
 \qty{4}{\byte} scalar load never does. GCC does not peel the loop to an aligned start
-(\cref{sec:vectorization}), so every split load pays.
+(\cref{sec:vectorization}), so every split load pays. Every configuration's IQR is below
+\SI{0.3}{\percent}.
 
-\emph{DRAM-resident} (\cref{fig:alignment}b). At $N=\num{16777216}$ no offset pattern survives.
-The spread across offsets is \SI{19}{\percent} (native), \SI{34}{\percent} (autovec) and
-\SI{20}{\percent} (scalar), but the slow offsets do not line up with split loads. For native,
-offsets \num{8}, \num{24}, \num{36} and \num{40} are slow while \num{4} and \num{44}--\num{56} are
-fast, and scalar, whose loads are never split, is just as scattered. Each offset is a separate
-process with freshly allocated \qty{128}{\mebi\byte} arrays, so this is process-to-process
-variation of DRAM-bound throughput. An earlier pass of the same sweep (00:34 session, offsets \numrange{40}{56} still missing from
-the list) gave native and autovec spreads of only \SI{2.0}{\percent} and \SI{5.5}{\percent}, with no
-split-load pattern either.
-For the vector builds, then, the split-load cost visible in L1 disappears under DRAM misses, and
-alignment is a cache-resident concern only.
+\emph{DRAM-resident} (\cref{fig:alignment}b). At $N=\num{16777216}$ the penalty all but disappears.
+The spread across offsets is \SI{6.1}{\percent} for native (\qtyrange{0.413}{0.438}{\nano\second}),
+\SI{5.7}{\percent} for autovec and \SI{2.1}{\percent} for scalar, and every IQR is at most
+\SI{2.9}{\percent}. Offset $0$ is among the fastest for both vector builds, but beyond that the
+split-load pattern of L1 does not carry over. Native is equally fast at offset \num{24}, and
+autovec's multiples of \num{16} are not consistently faster: offset \num{32} is among its slower
+points. So the split-load cost hides under DRAM misses, and what remains is a few percent at most,
+comparable to process-to-process variation. An earlier, storm-affected pass of this sweep had
+spreads of up to \SI{34}{\percent} (\cref{sec:method}); the clean run shows that scatter was
+interference, not alignment.
 
 \emph{Tails} (\cref{fig:tail}). Near $N=\num{4096}$ the time per element is flat across the
-\num{8}-lane boundary (native \qtyrange{0.098}{0.109}{\nano\second}, autovec
-\qtyrange{0.184}{0.199}{\nano\second}, scalar \qtyrange{0.56}{0.63}{\nano\second}). With
+\num{8}-lane boundary (native \qtyrange{0.098}{0.103}{\nano\second}, autovec
+\qtyrange{0.185}{0.198}{\nano\second}, scalar \qtyrange{0.57}{0.63}{\nano\second}). With
 \numrange{1}{7} leftover elements out of \num{4096}, the remainder is invisible. Short loops expose
 it. For $N=8\ldots72$, native's time per call is lowest at multiples of \num{8}
-(\qty{13.5}{\nano\second} at $N=16$ rising to \qty{16.7}{\nano\second} at $N=72$, only
-$\approx\qty{0.06}{\nano\second}$ per element) and highest at $N\equiv7 \pmod 8$, about
+(\qty{13.7}{\nano\second} at $N=16$ rising steadily to \qty{16.7}{\nano\second} at $N=72$, only
+$\approx\qty{0.05}{\nano\second}$ per element) and highest at $N\equiv7 \pmod 8$, typically
 \qtyrange{2}{3}{\nano\second} more. That sawtooth is the remainder path from the disassembly
 (\cref{sec:vectorization}): a \qty{128}{bit} epilogue for \num{4} elements and then up to three
-scalar iterations. \code{autovec} grows at $\approx\qty{0.16}{\nano\second}$ per element and
+scalar iterations. \code{autovec} grows at $\approx\qty{0.15}{\nano\second}$ per element and
 \code{scalar} linearly at $\approx\qty{0.63}{\nano\second}$ per element, both with occasional
-single-point outliers. Every call also pays a fixed $\approx\qtyrange{10}{13}{\nano\second}$ (call,
+single-$N$ outliers (reproducible within a run, IQR below \SI{1}{\percent}). Every call also pays a fixed $\approx\qtyrange{10}{13}{\nano\second}$ (call,
 loop setup and the run-time aliasing check of the versioned loop) before the first element. So the
 per-element speedup of short loops is far below the $5.8\times$ at $N=\num{4096}$: native beats
-scalar by only $1.18\times$ at $N=8$ and by $3.34\times$ at $N=72$. There are no AVX-512 mask
+scalar by only $1.11\times$ at $N=8$ and by $3.32\times$ at $N=72$. There are no AVX-512 mask
 registers here (no AVX-512 on this CPU); a masked tail would be the AVX-512 alternative to this
 narrowing epilogue.

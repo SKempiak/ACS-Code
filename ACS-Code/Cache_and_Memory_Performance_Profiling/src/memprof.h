@@ -52,14 +52,22 @@
  * the thread owns all of the wall time; on the test host ~1/3 of 0.3 s windows lose ~13% of
  * wall time to ACPI GPE bursts, so it reads ~2.41 instead of ~2.79 GHz. The analysis
  * converts ns -> cycles with the fixed 2.8 GHz clock instead (scripts/derive.py). */
+/* The loop is 32-byte aligned and unrolled 8x (8 dependent ADDs = 8 cycles per iteration), so
+ * the result no longer depends on where the compiler placed the loop: the original 1-ADD loop
+ * ran at 1 or 2 cycles per iteration depending on code alignment (JCC-erratum mitigation /
+ * taken-branch throughput), i.e. some binaries read half the clock. */
 static inline double mp_measure_ghz(void) {
-    uint64_t a = 1, n = 1000000000ull;
+    uint64_t a = 1, n = 125000000ull;          /* 125M iterations x 8 adds = 1e9 cycles */
     double t0 = acs_now_sec();
 #if defined(__x86_64__)
-    __asm__ volatile("1:\n\t add $1, %[a]\n\t sub $1, %[n]\n\t jnz 1b\n\t"
+    __asm__ volatile(".p2align 5\n"
+                     "1:\n\t"
+                     "add $1, %[a]\n\t add $1, %[a]\n\t add $1, %[a]\n\t add $1, %[a]\n\t"
+                     "add $1, %[a]\n\t add $1, %[a]\n\t add $1, %[a]\n\t add $1, %[a]\n\t"
+                     "sub $1, %[n]\n\t jnz 1b\n\t"
                      : [a] "+r"(a), [n] "+r"(n)::"cc");
 #else
-    for (volatile uint64_t i = 0; i < n; i++) a += 1;
+    for (volatile uint64_t i = 0; i < 8 * n; i++) a += 1;
 #endif
     double dt = acs_now_sec() - t0;
     acs_consume_i64((int64_t)a);
@@ -92,9 +100,32 @@ typedef struct {
     void  *ptr;      /* 2 MiB-aligned usable pointer */
 } mp_buf;
 
+/* huge: 0 = 4 KiB (MADV_NOHUGEPAGE), 1 = transparent 2 MiB (MADV_HUGEPAGE),
+ *       2 = reserved hugetlbfs 2 MiB pages (MAP_HUGETLB; needs vm.nr_hugepages). */
+#define MP_PAGES_4K 0
+#define MP_PAGES_THP 1
+#define MP_PAGES_HUGETLB 2
+static inline const char *mp_pages_name(int huge) {
+    return huge == MP_PAGES_HUGETLB ? "hugetlb" : huge ? "huge" : "4k";
+}
+
 static inline mp_buf mp_alloc(size_t bytes, int huge) {
     mp_buf b = {0, 0, 0};
     size_t len = ((bytes + MP_HUGE_ALIGN - 1) / MP_HUGE_ALIGN) * MP_HUGE_ALIGN;
+    if (huge == MP_PAGES_HUGETLB) {
+#ifndef MAP_HUGE_2MB
+#define MAP_HUGE_2MB (21 << 26)
+#endif
+        b.map_len = len;
+        b.map = mmap(NULL, len, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB, -1, 0);
+        if (b.map == MAP_FAILED) {
+            fprintf(stderr, "mp_alloc: MAP_HUGETLB of %zu bytes failed (vm.nr_hugepages?)\n", len);
+            exit(1);
+        }
+        b.ptr = b.map;
+        return b;
+    }
     b.map_len = len + MP_HUGE_ALIGN;
     b.map = mmap(NULL, b.map_len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (b.map == MAP_FAILED) {
@@ -126,7 +157,87 @@ static inline long mp_anon_thp_kib(void) {
     return v;
 }
 
-static inline int mp_parse_pages(const char *s) { return !strcmp(s, "huge") || !strcmp(s, "2m"); }
+static inline int mp_parse_pages(const char *s) {
+    if (!strcmp(s, "hugetlb")) return MP_PAGES_HUGETLB;
+    return !strcmp(s, "huge") || !strcmp(s, "2m");
+}
+
+/* Free reserved hugetlbfs pages (2 MiB), from /proc/meminfo; -1 if unreadable. */
+static inline long mp_hugetlb_free(void) {
+    FILE *f = fopen("/proc/meminfo", "r");
+    if (!f) return -1;
+    char line[256];
+    long v = -1;
+    while (fgets(line, sizeof line, f))
+        if (sscanf(line, "HugePages_Free: %ld", &v) == 1) break;
+    fclose(f);
+    return v;
+}
+
+/* ------------------------------------------------------------ DRAM traffic (uncore IMC) */
+/* System-wide memory-controller counters (client uncore_imc PMU: data_reads, data_writes,
+ * one count per 64 B line). Needs perf_event_paranoid <= 0 (system-wide counting); returns
+ * enabled = 0 otherwise and callers print nan. Counts include ALL traffic in the system
+ * (other processes, the GPU, the kernel), so experiments subtract an idle-window baseline. */
+typedef struct {
+    int fd[2];          /* data_reads, data_writes */
+    double scale[2];    /* bytes per count */
+    int enabled;
+} mp_imc;
+
+static inline long mp_read_sysfs_long(const char *path) {
+    FILE *f = fopen(path, "r");
+    long v = -1;
+    if (f) { if (fscanf(f, "%ld", &v) != 1) v = -1; fclose(f); }
+    return v;
+}
+
+static inline void mp_imc_open(mp_imc *m, int want) {
+    m->fd[0] = m->fd[1] = -1; m->enabled = 0;
+    if (!want) return;
+    const char *dir = "/sys/bus/event_source/devices/uncore_imc";
+    char path[256];
+    snprintf(path, sizeof path, "%s/type", dir);
+    long type = mp_read_sysfs_long(path);
+    if (type < 0) { fprintf(stderr, "note: no uncore_imc PMU; DRAM traffic = nan\n"); return; }
+    const char *ev[2] = {"data_reads", "data_writes"};
+    for (int i = 0; i < 2; i++) {
+        unsigned cfg = 0;
+        double sc = 64.0, mib = 1;
+        snprintf(path, sizeof path, "%s/events/%s", dir, ev[i]);
+        FILE *f = fopen(path, "r");
+        if (!f || fscanf(f, "event=%x", &cfg) != 1) { if (f) fclose(f); return; }
+        fclose(f);
+        snprintf(path, sizeof path, "%s/events/%s.scale", dir, ev[i]);
+        if ((f = fopen(path, "r"))) { if (fscanf(f, "%lf", &mib) == 1) sc = mib * 1048576.0; fclose(f); }
+        m->scale[i] = sc;
+        struct perf_event_attr a;
+        memset(&a, 0, sizeof a);
+        a.size = sizeof a; a.type = (uint32_t)type; a.config = cfg; a.disabled = 1;
+        m->fd[i] = (int)syscall(SYS_perf_event_open, &a, -1 /* all tasks */, 0 /* cpu 0 (cpumask) */, -1, 0);
+        if (m->fd[i] < 0) {
+            fprintf(stderr, "note: uncore_imc open failed (perf_event_paranoid?); DRAM traffic = nan\n");
+            if (i) close(m->fd[0]);
+            m->fd[0] = m->fd[1] = -1;
+            return;
+        }
+    }
+    m->enabled = 1;
+}
+/* Snapshot cumulative bytes (read, written). */
+static inline void mp_imc_read(mp_imc *m, double out[2]) {
+    for (int i = 0; i < 2; i++) {
+        uint64_t v = 0;
+        out[i] = NAN;
+        if (m->enabled && read(m->fd[i], &v, sizeof v) == (ssize_t)sizeof v) out[i] = (double)v * m->scale[i];
+    }
+}
+static inline void mp_imc_start(mp_imc *m) {
+    for (int i = 0; i < 2 && m->enabled; i++) ioctl(m->fd[i], PERF_EVENT_IOC_ENABLE, 0);
+}
+static inline void mp_imc_close(mp_imc *m) {
+    for (int i = 0; i < 2; i++) if (m->fd[i] >= 0) close(m->fd[i]);
+}
 
 /* ------------------------------------------------------------ permutations */
 /* gen 0 = "lcg": 32-bit LCG (Numerical Recipes constants), `s % i` (the

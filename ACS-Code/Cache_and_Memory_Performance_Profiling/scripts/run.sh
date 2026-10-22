@@ -62,6 +62,7 @@ ms() { echo $(( $1 / MS_DIV > 2 ? $1 / MS_DIV : 2 )); }
 # generator CPUs for mem_loaded: every physical core except the probe's
 GEN_CPUS="$(seq 0 $((MAXT - 1)) | grep -vx "$CPU_PIN" | paste -sd, -)"
 NGEN=$((MAXT - 1))
+GEN_RANGE="$GEN_CPUS"            # MLC -k accepts the same comma list
 
 need() {
   for b in "$LAT" "$BW" "$LOADED" "$KM" "$CLK" "$SUMMARIZE"; do
@@ -123,10 +124,13 @@ SAXPY_EXP=($(seq 8 24))
 TLB_EXP=(18 19 20 21 22 23 24)
 TLB_PAGES=(16 32 48 64 96 128 192 256 384 512 768 1024 1536 2048 3072 4096 8192 16384 32768 65536)
 PITFALL_SIZES=(16384 131072 1048576 8388608 67108864 268435456 536870912)
+MLC_SIZES=(16 128 4096 262144)   # KiB: L1, L2, L3, DRAM
+MLC_T=2                           # seconds per MLC measurement
 if [ "${QUICK:-0}" = 1 ]; then
   LAT_SIZES=(16384 131072 4194304 134217728); ZQ_SIZES=(16384 131072 4194304 134217728)
   ZQ_HUGE=(134217728); ACCESS_SIZES=(64 1024); STRIDES=(8 64); DELAYS=(256); CHAINS=(1 8)
   SAXPY_EXP=(10 16 20 22 23 24); TLB_EXP=(20); TLB_PAGES=(64 4096); PITFALL_SIZES=(16384 134217728)
+  MLC_SIZES=(16 262144); MLC_T=1
 fi
 
 # ----------------------------------------------------------------- zero_queue
@@ -192,7 +196,7 @@ exp_pattern() {
   done
   rm -f "$RAW"
   summ --in "$RAWL" --out "$PROC/pattern_lat.csv" --group pattern,access,pages --stat ns_per_access,gib_s
-  summ --in "$RAWB" --out "$PROC/pattern_bw.csv" --group kernel,pattern,access,strideb --stat gib_s,ns_per_elem
+  summ --in "$RAWB" --out "$PROC/pattern_bw.csv" --group kernel,pattern,access,strideb --stat gib_s,ns_per_elem,imc_rd_gib_s,imc_wr_gib_s
 }
 
 # ----------------------------------------------------------------- rw_mix
@@ -218,8 +222,8 @@ exp_rw_mix() {
         --kernel "$k" --bytes $((MAXT * 134217728)) --pages 4k --experiment rw_mix
   done
   summ --in "$RAW" --out "$PROC/rw_mix.csv" --group kernel,reads10,threads \
-       --stat total_gib_s,traffic_gib_s,gen_gib_s,probe_ns,little_l
-  summ --in "$RAWR" --out "$PROC/rw_mix_ref.csv" --group kernel,threads --stat gib_s,ns_per_elem
+       --stat total_gib_s,traffic_gib_s,gen_gib_s,probe_ns,little_l,imc_rd_gib_s,imc_wr_gib_s
+  summ --in "$RAWR" --out "$PROC/rw_mix_ref.csv" --group kernel,threads --stat gib_s,ns_per_elem,imc_rd_gib_s,imc_wr_gib_s
 }
 
 # ----------------------------------------------------------------- intensity
@@ -247,9 +251,9 @@ exp_intensity() {
         --probe-cpu "$CPU_PIN" --reps "$REPS" --min-ms $(ms 200) --seed "$SEED" --pages 4k --experiment intensity
   done
   summ --in "$RAW" --out "$PROC/intensity_loaded.csv" --group kernel,threads,delay \
-       --stat total_gib_s,probe_ns,probe_cycles,little_l,gen_gib_s
+       --stat total_gib_s,probe_ns,probe_cycles,little_l,gen_gib_s,imc_rd_gib_s,imc_wr_gib_s
   summ --in "$RAWM" --out "$PROC/intensity_mlp.csv" --group kernel,threads,chains \
-       --stat gen_gib_s,gen_lat_ns,little_l,probe_ns,total_gib_s
+       --stat gen_gib_s,gen_lat_ns,little_l,probe_ns,total_gib_s,imc_rd_gib_s,imc_wr_gib_s
 }
 
 # ----------------------------------------------------------------- cache_miss
@@ -275,7 +279,7 @@ exp_tlb() {
   # (1) page-stride pointer chase: one node per 4 KiB page (stride 4096+64), so the
   #     number of pages touched sweeps across the L1 dTLB (64) and STLB (1536) reach
   #     while the cache footprint stays N lines; 4 KiB vs 2 MiB pages isolates the TLB.
-  for pg in 4k huge; do
+  for pg in 4k huge hugetlb; do
     for n in "${TLB_PAGES[@]}"; do
       run "$RAW" "$LAT" --cpu "$CPU_PIN" --reps "$REPS" --min-ms $(ms 40) --seed "$SEED" \
           --bytes $((n * 4160)) --stride 4160 --pattern random --pages "$pg" --counters --experiment tlb
@@ -326,25 +330,36 @@ exp_clock_check() {
 
 # ----------------------------------------------------------------- mlc
 exp_mlc() {
+  # Intel MLC v3.x as the external cross-check. Without root MLC cannot toggle the hardware
+  # prefetchers (no msr module), so latency runs use -e (leave prefetchers as they are) and -r
+  # (random access). Latency thread on CPU_PIN; bandwidth threads on the other physical cores.
   local MLC_BIN="${MLC:-$(command -v mlc || true)}"
   RAWDIR="$DATA/raw/mlc/$TS"; mkdir -p "$RAWDIR"
   if [ -z "$MLC_BIN" ] || [ ! -x "$MLC_BIN" ]; then
-    {
-      echo "Intel MLC not installed on this host ($(hostname), $(date '+%F %T %Z'))."
-      echo "'command -v mlc' found nothing and \$MLC was not set; no MLC cross-check was run."
-      echo "Substitute cross-checks (labelled as such in the report):"
-      echo "  zero_queue: second ring generator (xorshift64*) + TSC timing   -> zero_queue.csv gen=xorshift"
-      echo "  intensity : mem_loaded T=0 probe (pointer ring, separate code) -> intensity_loaded.csv threads=0"
-    } | tee "$RAWDIR/mlc_status.txt" >&2
-    echo "[mlc] SKIPPED: Intel MLC not installed (recorded in $RAWDIR/mlc_status.txt)" >&2
+    echo "Intel MLC not installed on this host ($(date '+%F %T %Z')); no MLC cross-check was run." \
+      | tee "$RAWDIR/mlc_status.txt" >&2
+    echo "[mlc] SKIPPED: Intel MLC not installed" >&2
     return 0
   fi
   echo "[mlc] -> $RAWDIR ($MLC_BIN)"
   "$CODE_ROOT/scripts/collect_env.sh" > "$RAWDIR/env.txt" 2>/dev/null || true
-  "$MLC_BIN" --version        > "$RAWDIR/mlc_version.txt" 2>&1 || true
-  "$MLC_BIN" --idle_latency   > "$RAWDIR/idle_latency.txt" 2>&1 || true
-  "$MLC_BIN" --loaded_latency > "$RAWDIR/loaded_latency.txt" 2>&1 || true
-  "$MLC_BIN" --max_bandwidth  > "$RAWDIR/max_bandwidth.txt" 2>&1 || true
+  : > "$RAWDIR/commands.txt"
+  mlcrun() { local out="$1"; shift; echo "$MLC_BIN $*" >> "$RAWDIR/commands.txt"; "$MLC_BIN" "$@" > "$RAWDIR/$out" 2>&1 || true; }
+  "$MLC_BIN" --version > "$RAWDIR/mlc_version.txt" 2>&1 || head -1 "$RAWDIR/mlc_version.txt" >/dev/null
+  local b r
+  # idle latency per level: L1 16 KiB, L2 128 KiB, L3 4 MiB, DRAM 256 MiB (+ DRAM on 2 MiB pages)
+  for r in 1 2 3; do
+    for b in "${MLC_SIZES[@]}"; do
+      mlcrun "idle_4k_${b}KiB_rep$r.txt" --idle_latency -e -r -c"$CPU_PIN" -b"$b" -t"$MLC_T"
+    done
+    mlcrun "idle_huge_262144KiB_rep$r.txt" --idle_latency -e -r -L -c"$CPU_PIN" -b262144 -t"$MLC_T"
+  done
+  # loaded latency: injection-delay sweep, latency thread on CPU_PIN, generators on GEN_CPUS
+  mlcrun loaded_latency.txt --loaded_latency -e -r -c"$CPU_PIN" -k"$GEN_RANGE" -t"$MLC_T"
+  # bandwidth for several read/write ratios, all physical cores
+  mlcrun peak_injection_bandwidth.txt --peak_injection_bandwidth -e -k"0-$((MAXT - 1))" -t"$MLC_T"
+  mlcrun max_bandwidth.txt --max_bandwidth -e -k"0-$((MAXT - 1))" -t"$MLC_T"
+  python3 "$ROOT/scripts/mlc_to_csv.py" "$RAWDIR" "$PROC"
 }
 
 ALL_EXPERIMENTS=(zero_queue pattern rw_mix intensity working_set cache_miss tlb pitfall mlc clock_check)

@@ -299,17 +299,23 @@ int main(int argc, char **argv) {
 
     if (want_header)
         printf("experiment,kernel,pattern,pages,threads,strideb,access,reads10,wss_bytes,"
-               "anon_thp_kib,total_bytes,rep,iters,time_s,gib_s,ns_per_elem\n");
+               "anon_thp_kib,total_bytes,rep,iters,time_s,gib_s,ns_per_elem,imc_rd_gib_s,imc_wr_gib_s\n");
 
+    mp_imc imc;
+    mp_imc_open(&imc, 1);
+    mp_imc_start(&imc);
     /* r = -1 is an untimed warm-up repetition with all threads (not printed) */
     for (int r = -1; r < reps; r++) {
         pthread_barrier_init(&g_start, NULL, threads + 1);
         pthread_barrier_init(&g_stop,  NULL, threads + 1);
         for (int i = 0; i < threads; i++) { targ[i].iters = iters; pthread_create(&tid[i], NULL, worker, &targ[i]); }
+        double m0[2], m1[2];
         pthread_barrier_wait(&g_start);
+        mp_imc_read(&imc, m0);
         double t0 = acs_now_sec();
         pthread_barrier_wait(&g_stop);
         double dt = acs_now_sec() - t0;
+        mp_imc_read(&imc, m1);
         for (int i = 0; i < threads; i++) { pthread_join(tid[i], NULL); acs_consume_f64(targ[i].sink); }
         pthread_barrier_destroy(&g_start);
         pthread_barrier_destroy(&g_stop);
@@ -317,11 +323,13 @@ int main(int argc, char **argv) {
         if (r < 0) continue;
         double gib = total_bytes / dt / (1024.0*1024.0*1024.0);
         double nspe = dt * 1e9 / total_elems;
-        printf("%s,%s,%s,%s,%d,%zu,%zu,%d,%zu,%ld,%.0f,%d,%zu,%.9e,%.6e,%.6e\n",
+        printf("%s,%s,%s,%s,%d,%zu,%zu,%d,%zu,%ld,%.0f,%d,%zu,%.9e,%.6e,%.6e,%.6e,%.6e\n",
                experiment, kind_name(kind), pattern == PAT_RANDOM ? "random" : "sequential",
-               use_huge ? "huge" : "4k", threads, access ? access : strideb, access, reads10,
-               wss_bytes, ahp, total_bytes, r, iters, dt, gib, nspe);
+               mp_pages_name(use_huge), threads, access ? access : strideb, access, reads10,
+               wss_bytes, ahp, total_bytes, r, iters, dt, gib, nspe,
+               (m1[0] - m0[0]) / dt / (1024.0*1024.0*1024.0), (m1[1] - m0[1]) / dt / (1024.0*1024.0*1024.0));
     }
+    mp_imc_close(&imc);
     for (int i = 0; i < threads * 3; i++) mp_free(bufs[i]);
     for (int i = 0; i < threads; i++) mp_free(obufs[i]);
     return 0;

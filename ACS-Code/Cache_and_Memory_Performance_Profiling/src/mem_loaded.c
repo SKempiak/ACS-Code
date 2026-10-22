@@ -36,6 +36,9 @@
  *                  write-back); equals total_gib_s for read-only kernels
  *   gen_lat_ns     chase only: mean per-chain time per dependent step (= W)
  *   probe_ns       probe latency per access under load (nan without probe)
+ *   imc_rd_gib_s / imc_wr_gib_s  DRAM bytes read / written per second, measured by the
+ *                  system-wide uncore IMC counters over the same window (nan without them;
+ *                  includes all other system traffic).
  *   little_l       lambda * W. For chase, lambda = generator lines/s and W =
  *                  gen_lat_ns, so little_l == T*k by construction: it only checks
  *                  the progress accounting (derive.py computes the informative
@@ -340,6 +343,9 @@ int main(int argc, char **argv) {
     long ahp = mp_anon_thp_kib();
     double ghz = mp_measure_ghz();   /* on the probe CPU (or unpinned) before load starts */
 
+    mp_imc imc;
+    mp_imc_open(&imc, 1);
+    mp_imc_start(&imc);
     atomic_store_explicit(&g_go, 1, memory_order_release);
     double dt;
     if (probe) probe_window(&pp, warm_ms / 1000.0, &dt);
@@ -348,16 +354,19 @@ int main(int argc, char **argv) {
     if (want_header)
         printf("experiment,kernel,pages,threads,chains,reads10,delay,probe,gen_bytes,probe_bytes,"
                "anon_thp_kib,ghz,rep,time_s,gen_gib_s,total_gib_s,traffic_gib_s,gen_lat_ns,"
-               "probe_ns,probe_cycles,little_l\n");
+               "probe_ns,probe_cycles,little_l,imc_rd_gib_s,imc_wr_gib_s\n");
 
     const double GiB = 1024.0 * 1024.0 * 1024.0;
     uint64_t p0[MAXT], p1[MAXT];
     for (int r = 0; r < reps; r++) {
+        double m0[2], m1[2];
+        mp_imc_read(&imc, m0);
         for (int i = 0; i < threads; i++) p0[i] = atomic_load_explicit(&g_prog[i].progress, memory_order_relaxed);
         size_t pacc = 0;
         if (probe) pacc = probe_window(&pp, min_ms / 1000.0, &dt);
         else       sleep_window(min_ms / 1000.0, &dt);
         for (int i = 0; i < threads; i++) p1[i] = atomic_load_explicit(&g_prog[i].progress, memory_order_relaxed);
+        mp_imc_read(&imc, m1);
 
         double gen_units = 0, lat_sum = 0;
         int lat_n = 0;
@@ -375,15 +384,16 @@ int main(int argc, char **argv) {
          * otherwise all lines in flight (generators + probe) at probe latency */
         double lines_per_ns = (gen_units + (kind == G_CHASE ? 0.0 : (double)pacc)) / (dt * 1e9);
         double W = kind == G_CHASE ? gen_lat : probe_ns;
-        printf("%s,%s,%s,%d,%d,%d,%d,%d,%zu,%zu,%ld,%.3f,%d,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e\n",
-               experiment, gkind_name(kind), use_huge ? "huge" : "4k", threads,
+        printf("%s,%s,%s,%d,%d,%d,%d,%d,%zu,%zu,%ld,%.3f,%d,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e\n",
+               experiment, gkind_name(kind), mp_pages_name(use_huge), threads,
                kind == G_CHASE ? chains : 0, kind == G_RWMIX ? reads10 : 10, delay, probe,
                bytes, probe ? probe_bytes : (size_t)0, ahp, ghz, r, dt, gen_gib,
                gen_gib + probe_gib, gen_gib * wfac + probe_gib, gen_lat, probe_ns,
-               probe_ns * ghz, lines_per_ns * W);
+               probe_ns * ghz, lines_per_ns * W, (m1[0] - m0[0]) / dt / GiB, (m1[1] - m0[1]) / dt / GiB);
         fflush(stdout);
     }
 
+    mp_imc_close(&imc);
     atomic_store(&g_stop, 1);
     uint64_t s = (uint64_t)(uintptr_t)pp;
     for (int i = 0; i < threads; i++) { pthread_join(tid[i], NULL); s += gens[i].sink; mp_free(gens[i].buf); }

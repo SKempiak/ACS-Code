@@ -68,8 +68,9 @@
 \subsection{Analysis}
 The latency staircase and the counters line up level by level (\cref{fig:working-set}). L1D misses per
 access jump from \ensuremath{\approx}0 to 1 between \qty{32}{\kibi\byte} and \qty{48}{\kibi\byte}, exactly at
-the L1 capacity. LLC references (L2 misses) start rising at \qty{192}{\kibi\byte}, before the
-\qty{256}{\kibi\byte} capacity, and approach one per access only by \qtyrange{1}{2}{\mebi\byte}. LLC misses
+the L1 capacity. LLC references (L2 misses) already appear at \qtyrange{64}{192}{\kibi\byte}, well before the
+\qty{256}{\kibi\byte} capacity (0.08--0.2 per access, depending on the size; see below), and approach one
+per access only by \qtyrange{1}{2}{\mebi\byte}. LLC misses
 appear from \qtyrange{12}{16}{\mebi\byte}, also before the nominal \qty{20}{\mebi\byte}, since the L3 is
 shared and page-table lines compete for it, and reach one per access by \qty{64}{\mebi\byte}. Page walks
 start at \qty{8}{\mebi\byte}, just past the \ensuremath{\approx}\qty{6}{\mebi\byte} STLB reach, and explain why
@@ -85,7 +86,7 @@ prefetcher turns its misses into hits.
 Transitions are gradual rather than sharp. At \qty{192}{\kibi\byte} (75\% of L2) the 4\,KiB-page chase
 already costs \valqty{ws_l2edge_4k_ns}{\nano\second} with \val{ws_l2edge_4k_llcref} L2 misses per
 access, while the 2\,MiB-page chase stays at \valqty{ws_l2edge_huge_ns}{\nano\second}
-(\val{ws_l2edge_huge_llcref}): about 20 times fewer L2 misses. The likely explanation is page placement:
+(\val{ws_l2edge_huge_llcref}): almost no L2 misses. The likely explanation is page placement:
 \qty{4}{\kibi\byte} pages scatter the buffer over arbitrary physical
 frames, so some L2 sets receive more lines than their associativity allows (conflict misses), whereas a
 physically contiguous \qty{2}{\mebi\byte} page spreads lines evenly over the sets. This staircase is the

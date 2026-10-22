@@ -94,7 +94,7 @@ the \emph{exposed} cost of one DRAM miss. Dividing the zero-queue DRAM latency b
 number of DRAM misses overlapped: \val{amat_rand_mlp} for random and \val{amat_seq_mlp} for sequential
 SAXPY. For random order the same reading holds at every level: the zero-queue L2 and L3 latencies are
 \val{amat_rand_ovlL2}$\times$ and \val{amat_rand_ovlL3}$\times$ the fitted $a_2$ and $a_3$. All three overlap
-factors (7.5--9) match the \valnum{mlp_t1_Lmem_max} demand misses one core keeps in flight in
+factors (\val{amat_rand_mlp}--\val{amat_rand_ovlL2}) are close to the \valnum{mlp_t1_Lmem_max} demand misses one core keeps in flight in
 \cref{sec:intensity}: independent SAXPY iterations fill the same fill buffers that the chase experiment
 measured, and AMAT with serialised misses would overpredict the DRAM-resident runtime about
 \val{amat_rand_mlp}-fold. Sequential order overlaps more (\val{amat_seq_mlp} for DRAM) because the misses

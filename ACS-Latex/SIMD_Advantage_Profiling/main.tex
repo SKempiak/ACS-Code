@@ -53,22 +53,23 @@
   AVX2+FMA, \qty{256}{bit} vectors) running at a fixed \qty{2.8}{\giga\hertz}. With cache-resident
   data a \code{-march=native} build reaches about $5.8\times$ over scalar for SAXPY (\num{8} float32
   lanes), while the generic auto-vectorized (SSE, \qty{128}{bit}) build reaches about $3\times$; once the
-  working set spills to DRAM the gain compresses to $1.7\text{--}1.9\times$ for SAXPY
-  ($1.4\text{--}1.5\times$ for elementwise multiply, $2.7\text{--}2.8\times$ for the stencil; ranges span
-  $N=2^{24}$--$2^{25}$ and three separate sweeps). There the native kernels sit \emph{on} the
-  measured DRAM bandwidth roof, and the speedup that remains only reflects that scalar SAXPY, which hardware counters show needs $\approx1.8$ cycles of core work per
-  element, cannot keep up with memory at this clock. Float64 roughly halves the SIMD advantage
+  working set spills to DRAM the gain compresses to $1.88\text{--}1.99\times$ for SAXPY
+  ($1.5\text{--}1.6\times$ for elementwise multiply, $2.6\text{--}2.8\times$ for the stencil; ranges
+  span $N=2^{24}$--$2^{25}$ and up to four separate sweeps). There the native kernels sit \emph{on} the
+  measured DRAM bandwidth roof, and the speedup that remains only reflects that scalar SAXPY, which hardware counters show needs $\approx1.5$--$1.8$ cycles of core work per
+  element (at an IPC near 4), cannot keep up with memory at this clock. Float64 roughly halves the SIMD advantage
   (\num{4} lanes), and non-unit stride or gather access erases it entirely; an explicit AVX2
-  hardware gather (\code{vgatherdps}) is even $1.5\times$ \emph{slower} than the scalar gather in
+  hardware gather (\code{vgatherdps}) is even $1.5\text{--}1.6\times$ \emph{slower} than the scalar gather in
   cache. Our negative case is memory-bound SAXPY: the loop provably vectorizes, yet wider vectors buy
   nothing in DRAM because it already runs at the bandwidth roof; a second anomaly is the dot product,
   whose non-reassociated reduction leaves a \num{4}-cycle scalar dependency chain and
   $\approx1\times$ speedup despite packed multiplies. A cache-aware roofline whose ceilings are
   measured by separate microbenchmarks---an FMA-throughput loop
-  (\qty{89.1}{\giga\flop\per\second} float32, \num{32.0}~FLOP/cycle) and a STREAM-style triad per
+  (\qty{89.2}{\giga\flop\per\second} float32, \num{32.0}~FLOP/cycle) and a STREAM-style triad per
   cache level (from \qty{207}{\gibi\byte\per\second} in L1 down to \qty{24.3}{\gibi\byte\per\second} from DRAM)---places the
-  L3- and DRAM-resident native streaming kernels at \SIrange{96}{118}{\percent} of their bandwidth
-  roof (the triad roof is a reference; SAXPY's two-reads-one-write pattern sustains slightly more).
+  L3- and DRAM-resident native streaming kernels at \SIrange{95}{107}{\percent} of their bandwidth
+  roof, and at up to \SI{120}{\percent} for SAXPY at an intermediate size (the triad roof is a
+  reference, not a hard bound).
 \end{abstract}
 
 \ifacsdraft\tableofcontents\clearpage\fi

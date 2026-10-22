@@ -116,9 +116,14 @@ $1/\text{stride}$ beyond one line: it is \valqty{pat_stride_seq_256}{\gibi\byte\
 traffic drops from \valqty{pat_stride_seq_64_line}{\gibi\byte\per\second} to
 \valqty{pat_stride_seq_256_line}{\gibi\byte\per\second} and \valqty{pat_stride_seq_1024_line}{\gibi\byte\per\second}.
 Once each access is a separate line, the kernel is limited by how many misses it keeps in flight, not by
-bandwidth; skipping lines saves bandwidth it was not using. At \qty{256}{\byte} and \qty{1024}{\byte} strides the spatial
-(adjacent-line) prefetcher may fetch a second line per access, so DRAM traffic may exceed the touched-line
-traffic; without uncore counters (unavailable at \code{perf_event_paranoid}=\sysPerfParanoid) we cannot
-measure that, and we report only touched-line and useful bandwidth. Random strided access is flat at
-\val{pat_stride_rand_8}--\valqty{pat_stride_rand_1024}{\gibi\byte\per\second}: each access is an independent
-miss, so stride barely matters.
+bandwidth; skipping lines saves bandwidth it was not using. The memory-controller counters show where the bytes go. At \qty{64}{\byte} stride DRAM reads are
+\valqty{pat_stride_seq_64_imcrd}{\gibi\byte\per\second}, \val{pat_stride_seq_64_imc_over_line}$\times$ the
+touched-line traffic. At \qty{256}{\byte} and \qty{1024}{\byte} strides DRAM reads are
+\val{pat_stride_seq_256_imc_over_line}$\times$ and \val{pat_stride_seq_1024_imc_over_line}$\times$ the touched
+lines (\valqty{pat_stride_seq_256_imcrd}{\gibi\byte\per\second} and
+\valqty{pat_stride_seq_1024_imcrd}{\gibi\byte\per\second}): the spatial (adjacent-line) prefetcher fetches the
+other half of each \qty{128}{\byte} pair, so every useful \qty{8}{\byte} costs two lines of DRAM traffic.
+Random 64\,B blocks show the same pairing: DRAM reads are \valqty{pat_bw_rand_64_imcrd}{\gibi\byte\per\second}
+for \valqty{pat_bw_rand_64}{\gibi\byte\per\second} of useful blocks. Random strided access is flat at
+\val{pat_stride_rand_8}--\valqty{pat_stride_rand_1024}{\gibi\byte\per\second} of useful data: each access is
+an independent miss, so stride barely matters.

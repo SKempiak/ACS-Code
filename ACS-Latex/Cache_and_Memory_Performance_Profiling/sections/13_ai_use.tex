@@ -8,8 +8,9 @@ Summarized from \code{AI_USE_LOG.md} in the code repository.
         (2026-10-12 to 10-20), and with Claude Opus~5.5 for the rework of 2026-10-21 that produced every
         measurement in this report. GCC~\sysGCC{} was used for the builds. The AI wrote the code and the
         prose. Claude Code also ran the timed experiments, on the user's machine (\cref{tab:environment})
-        and with the user's approval, after the user had set the performance governor, disabled turbo
-        and taken the SMT siblings offline (these settings need root). Every number comes from those runs.
+        and with the user's approval, after the user had made the root-only settings: performance governor, turbo
+        off, SMT siblings offline, the ACPI event source masked, \code{perf_event_paranoid}=0, 1024
+        reserved huge pages, and Intel MLC installed. Every number comes from those runs.
   \item[What they helped generate] The four microbenchmarks---\code{mem_latency} (Sattolo
         pointer chase with access-size, page-size and counter options), \code{mem_bandwidth} (multi-thread
         streaming with read/write/copy/triad/rwmix and access-size modes), \code{mem_loaded} (loaded-latency
@@ -46,15 +47,20 @@ Summarized from \code{AI_USE_LOG.md} in the code repository.
           \item A hand-copied table disagreed with its CSV. All tables and quoted numbers are now
                 generated from the data (\code{derive.py}, \code{summary.csv}).
           \item Cycle counts were first converted with the in-process add-chain frequency probe, which
-                misreads the clock in about a third of runs (\cref{sec:method,sec:anomalies}). An
-                independent review caught this; conversion now uses the fixed \qty{2.8}{\giga\hertz}
-                clock, confirmed with the cycle counter.
+                misread the clock in about a third of runs. An independent review caught this, and the AI's
+                diagnostic traced it to wall time lost to an ACPI event storm, which the user then masked
+                (\cref{sec:anomalies}). Conversion now uses the fixed \qty{2.8}{\giga\hertz} clock,
+                confirmed with the cycle counter.
         \end{enumerate}
+        In a final round, the AI added Intel MLC runs (\code{run.sh mlc}) as the external cross-check and
+        system-wide memory-controller counters (\code{uncore_imc}) that measure DRAM read/write traffic.
+        Both became possible after the user installed MLC and lowered \code{perf_event_paranoid}. All
+        experiments were then re-run.
   \item[Validation] \code{scripts/validate.sh} asserts the physically necessary orderings (L1 $<$ L2
         $<$ L3 $<$ DRAM latency; L1 bandwidth $>$ DRAM; multi-thread $>$ single-thread; loaded $>$
         unloaded latency) and agreement of the two latency methods; its output is saved with every
-        experiment. Hardware counters confirm the miss level behind every latency step. Intel MLC was
-        unavailable for an external cross-check; the substitutes and their limits are stated in
-        \cref{sec:validation,sec:anomalies}. Every figure traces to a committed raw/processed file
+        experiment. Hardware counters confirm the miss level behind every latency step. Intel MLC provides
+        the external cross-check (\cref{sec:validation}), and the memory-controller counters check the
+        traffic models (\cref{sec:pattern,sec:rw-mix}). Every figure traces to a committed raw/processed file
         (\cref{app:repro}).
 \end{description}

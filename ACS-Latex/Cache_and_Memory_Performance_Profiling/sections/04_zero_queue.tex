@@ -30,47 +30,67 @@ abstract, introduction and conclusion through generated macros, so they cannot d
   \centering\small
   \caption{Zero-queue random-access latency per level (median over the plateau sizes; each size is the
   median of 8 repetitions); cycles = ns $\times$ \qty{2.8}{\giga\hertz}, the fixed core clock with turbo
-  disabled (\cref{sec:method}). ``min--max'' is the spread across plateau sizes. The cross-check is a
-  \emph{substitute} for Intel MLC (not installed): an independently generated ring (xorshift64*) timed
-  with \code{rdtscp}. ``2\,MiB pages'' removes the page-walk component from DRAM latency. Generated from
-  \code{data/zero_queue_table.csv}.}
+  disabled (\cref{sec:method}). ``min--max'' is the spread across plateau sizes. ``x-check'' is our second
+  method (xorshift64* ring, \code{rdtscp} timing). ``2\,MiB'' removes the page-walk component from DRAM
+  latency. ``MLC'' is Intel MLC \texttt{-{}-idle\_latency -e -r} at \qty{16}{\kibi\byte}, \qty{128}{\kibi\byte},
+  \qty{4}{\mebi\byte} and \qty{256}{\mebi\byte} (median of 3 runs), with $\Delta$ relative to our value.
+  Generated from \code{data/zero_queue_table.csv}.}
   \label{tab:zero-queue}
   \IfDataExists{zero_queue_table}{%
   \pgfplotstabletypeset[col sep=comma, string type, empty cells with={---},
-    columns={level,range,ns,cycles,ns_min,ns_max,xcheck_ns,xcheck_diff_pct,huge_ns},
+    columns={level,range,ns,cycles,ns_min,ns_max,xcheck_ns,xcheck_diff_pct,huge_ns,mlc_ns,mlc_diff_pct},
     columns/level/.style={column name=Level, column type=l},
     columns/range/.style={column name={Plateau sizes}, column type=l},
     columns/ns/.style={column name={ns}, column type=r},
     columns/cycles/.style={column name={cycles}, column type=r},
     columns/ns_min/.style={column name={min}, column type=r},
     columns/ns_max/.style={column name={max}, column type=r},
-    columns/xcheck_ns/.style={column name={x-check ns}, column type=r},
-    columns/xcheck_diff_pct/.style={column name={$\Delta$\,\%}, column type=r},
-    columns/huge_ns/.style={column name={2\,MiB pages}, column type=r},
+    columns/xcheck_ns/.style={column name={x-check}, column type=r},
+    columns/xcheck_diff_pct/.style={column name={$\Delta$\%}, column type=r},
+    columns/huge_ns/.style={column name={2\,MiB}, column type=r},
+    columns/mlc_ns/.style={column name={MLC}, column type=r},
+    columns/mlc_diff_pct/.style={column name={$\Delta$\%}, column type=r},
     every head row/.style={before row=\toprule, after row=\midrule},
     every last row/.style={after row=\bottomrule},
   ]{data/zero_queue_table.csv}}
 \end{table}
 
 \subsection{Analysis}
-Latency is flat at \valqty{zq_L1_ns}{\nano\second} (\valnum{zq_L1_cyc}~cycles) while the set fits in L1,
-sits at \valqty{zq_L2_ns}{\nano\second} (\valnum{zq_L2_cyc}~cycles) on the L2 plateau (individual sizes
-\val{zq_L2_min}--\valqty{zq_L2_max}{\nano\second}; the high end is \qty{192}{\kibi\byte}, where
-\qty{4}{\kibi\byte} pages already cause L2 conflict misses, \cref{sec:working-set}), spans
-\val{zq_L3_min}--\valqty{zq_L3_max}{\nano\second} across the L3 (median \valqty{zq_L3_ns}{\nano\second};
-L3 latency is not a single number because larger sets also miss the second-level TLB and travel further
-on the ring), and reaches \valqty{zq_DRAM_ns}{\nano\second} (\valnum{zq_DRAM_cyc}~cycles) in DRAM.
-With \qty{2}{\mebi\byte} pages the DRAM figure drops to \valqty{zq_DRAM_hugens}{\nano\second}: the
-\valqty{zq_DRAM_walk_ns}{\nano\second} difference is the page walk that every random \qty{4}{\kibi\byte}
-access beyond the TLB reach pays (\cref{sec:tlb}), which is why MLC-style tools quote DRAM latency on
-huge pages. The cross-check method differs by \val{zq_L1_xdiff}\%, \val{zq_L2_xdiff}\%,
-\val{zq_L3_xdiff}\% and \val{zq_DRAM_xdiff}\% on L1, L2, L3 and DRAM. Against the hypothesis, L1 (5
-cycles), L2 (\valnum{zq_L2_cyc} vs.\ \ensuremath{\sim}12 cycles) and L3 match; DRAM with \qty{4}{\kibi\byte}
-pages is about a third slower than the \ensuremath{\sim}\qty{80}{\nano\second} we expected, and the
-\qty{2}{\mebi\byte}-page value shows that most of the excess is the page walk.
+Latency is flat at \valqty{zq_L1_ns}{\nano\second} (\valnum{zq_L1_cyc}~cycles) while the set fits in L1.
+The L2 plateau is \valqty{zq_L2_ns}{\nano\second} (\valnum{zq_L2_cyc}~cycles), the median of sizes that
+measure \val{zq_L2_min}--\valqty{zq_L2_max}{\nano\second}. The low end, \qty{4.3}{\nano\second} (12 cycles),
+is the L2 hit latency; the high end comes from \qty{128}{\kibi\byte} and \qty{192}{\kibi\byte}, where
+\qty{4}{\kibi\byte} pages already cause L2 conflict misses (\cref{sec:working-set}). Latency spans
+\val{zq_L3_min}--\valqty{zq_L3_max}{\nano\second} across the L3 (median \valqty{zq_L3_ns}{\nano\second});
+L3 latency is not a single number, because larger sets also miss the second-level TLB. It reaches
+\valqty{zq_DRAM_ns}{\nano\second} (\valnum{zq_DRAM_cyc}~cycles) in DRAM. With \qty{2}{\mebi\byte} pages the
+DRAM figure drops to \valqty{zq_DRAM_hugens}{\nano\second}; the \valqty{zq_DRAM_walk_ns}{\nano\second}
+difference is the page walk that every random \qty{4}{\kibi\byte} access beyond the TLB reach pays
+(\cref{sec:tlb}). Our second method differs by at most \val{zq_L2_xdiff}\% (L2) and by
+\val{zq_DRAM_xdiff}\% on DRAM. Against the hypothesis, L1 (5 cycles), L2 (12 cycles without conflicts) and L3
+match. DRAM with \qty{4}{\kibi\byte} pages is slower than the \ensuremath{\sim}\qty{80}{\nano\second} we
+expected, and the \qty{2}{\mebi\byte}-page value shows that the excess is mostly the page walk.
 
-Caveats: the L3 and DRAM figures are a single-core view of shared resources on an otherwise idle system;
-sequential ``latency'' (\cref{sec:pattern}) is prefetcher throughput, not latency, which is why the
-chase is randomized; and both methods are pointer chases, so the cross-check guards against ring
-construction and timer errors but not against a shared methodological bias, which only an independent
-tool such as MLC could rule out.
+\paragraph{Comparison with Intel MLC.} MLC agrees on L2 (\valqty{zq_L2_mlcns}{\nano\second},
+\val{zq_L2_mlcdiff}\%) but is lower at the other levels: L1 \valqty{zq_L1_mlcns}{\nano\second}
+(\val{zq_L1_mlcdiff}\%), L3 \valqty{zq_L3_mlcns}{\nano\second} (\val{zq_L3_mlcdiff}\%), and DRAM
+\valqty{zq_DRAM_mlcns}{\nano\second} (\val{zq_DRAM_mlcdiff}\%). The differences follow from how the tools walk
+memory, not from noise:
+\begin{itemize}
+  \item \textbf{L1.} MLC's 4 clocks versus our 5 cycles fit the known 4-cycle load-to-use latency for a plain
+        pointer dereference. Our index ring forms \code{ring[p]} with a scaled-index address, which costs
+        one extra cycle.
+  \item \textbf{DRAM.} MLC returns the same \valqty{mlc_DRAM_huge_ns}{\nano\second} with and without
+        \code{-L} (\qty{2}{\mebi\byte} pages). So its random walk takes no page walks, consistent with its
+        \code{-D} random-access range of \qty{4}{\kibi\byte} (the default): consecutive accesses stay
+        inside one page. Our ring is random over the whole buffer, so even with \qty{2}{\mebi\byte} pages it
+        is \val{mlc_DRAM_huge_diff}\% from MLC's figure, and with \qty{4}{\kibi\byte} pages it also pays
+        the walk. Accesses that stay close together should also hit open DRAM rows more often.
+\end{itemize}
+MLC therefore measures a best-case local latency; our numbers are the cost of truly random access. Both
+are valid, and we keep ours as the zero-queue baseline because the rest of the report (AMAT, TLB) needs
+fully random access.
+
+Caveats: the L3 and DRAM figures are a single-core view of shared resources on an otherwise idle
+system. Sequential ``latency'' (\cref{sec:pattern}) is prefetcher throughput, which is why the chase is
+randomized.

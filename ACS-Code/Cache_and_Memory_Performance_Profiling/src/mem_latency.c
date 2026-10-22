@@ -192,7 +192,7 @@ int main(int argc, char **argv) {
         if (use_tsc) dt = (double)(c1 - c0) / (tsc_ghz * 1e9);
         double ns = dt * 1e9 / (double)accesses;
         printf("%s,%s,%s,%s,%s,%zu,%zu,%zu,%zu,%.3f,%.4f,%ld,%d,%zu,%.9e,%.6e,%.6e,%.6e",
-               experiment, pattern_name(pat), use_huge ? "huge" : "4k", mp_gen_name(gen),
+               experiment, pattern_name(pat), mp_pages_name(use_huge), mp_gen_name(gen),
                use_tsc ? "tsc" : "clock", bytes, stride, access, nodes, ghz, tsc_ghz, ahp, r,
                accesses, dt, ns, ns * ghz, (double)access / ns * 1e9 / (1024.0 * 1024 * 1024));
         mp_ctr_print(cv, cover, (double)accesses);

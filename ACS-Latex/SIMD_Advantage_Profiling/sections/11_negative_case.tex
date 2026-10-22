@@ -27,35 +27,36 @@ with size:
     $N$ & working set & native GFLOP/s & \% of roof & speedup \\
     \midrule
     \num{1024}      & \qty{8}{\kibi\byte} (L1)    & 20.1 & 54  & $5.60\times$ \\
-    \num{16384}     & \qty{128}{\kibi\byte} (L2)  & 13.9 & 78  & $4.19\times$ \\
-    \num{262144}    & \qty{2}{\mebi\byte} (L3)    & 8.6  & 100 & $2.82\times$ \\
-    \num{4194304}   & \qty{32}{\mebi\byte} (DRAM) & 6.1  & --  & $2.04\times$ \\
-    \num{8388608}   & \qty{64}{\mebi\byte} (DRAM) & 5.2  & 118 & $2.12\times$ \\
-    \num{16777216}  & \qty{128}{\mebi\byte} (DRAM) & 4.9 & 112 & $1.87\times$ \\
-    \num{33554432}  & \qty{256}{\mebi\byte} (DRAM) & 4.7 & 108 & $1.68\times$ \\
+    \num{16384}     & \qty{128}{\kibi\byte} (L2)  & 13.7 & 84  & $4.11\times$ \\
+    \num{262144}    & \qty{2}{\mebi\byte} (L3)    & 8.6  & 99  & $2.82\times$ \\
+    \num{4194304}   & \qty{32}{\mebi\byte} (DRAM) & 6.0  & --  & $2.31\times$ \\
+    \num{8388608}   & \qty{64}{\mebi\byte} (DRAM) & 5.2  & 120 & $2.19\times$ \\
+    \num{16777216}  & \qty{128}{\mebi\byte} (DRAM) & 4.7 & 109 & $1.95\times$ \\
+    \num{33554432}  & \qty{256}{\mebi\byte} (DRAM) & 4.5 & 104 & $1.92\times$ \\
     \bottomrule
   \end{tabular}
 \end{center}
 ``\% of roof'' is native GFLOP/s over $B_\ell \cdot I$ with the measured triad roof of the level the
 data lives in (\cref{sec:roofline}); at \qty{32}{\mebi\byte} the working set straddles L3 and DRAM.
 The three SAXPY sweeps (baseline, locality, this one) are separate runs. At
-$N=\num{16777216}$ they give $1.85\times$, $1.73\times$ and $1.87\times$, a spread typical of
-DRAM-bound throughput and larger than the within-run IQR.
+$N=\num{16777216}$ they give $1.94\times$, $1.94\times$ and $1.95\times$, and at
+$N=\num{33554432}$ $1.89\times$, $1.88\times$ and $1.92\times$.
 
 \subsection{Explanation}
 The hypothesis was half right. The $\approx6\times$ seen in L1 indeed does not survive in DRAM, but
-the speedup does not fall to ``almost none''. It settles at $1.7\text{--}1.9\times$. Both parts have
+the speedup does not fall to ``almost none''. It settles at $1.92\text{--}1.95\times$ in this sweep. Both parts have
 measured causes. (i) The loop is genuinely vectorized (disassembly), so this is not a failure to
 use SIMD. (ii) The kernel's arithmetic intensity (\qty{0.167}{\flop\per\byte},
 \cref{tab:roofline-inputs}) puts it deep in the bandwidth-bound region, and native SAXPY runs at
-\SIrange{108}{118}{\percent} of the DRAM roof $B_{\text{DRAM}}\cdot I = \qty{4.36}{\giga\flop\per\second}$.
+\SIrange{104}{120}{\percent} of the DRAM roof $B_{\text{DRAM}}\cdot I = \qty{4.35}{\giga\flop\per\second}$.
 $B_{\text{DRAM}}$ is measured by a separate triad benchmark, not by SAXPY. The LLC-miss counter
-gives \num{0.126} misses per element for native, exactly the compulsory $2/16$
+gives \numrange{0.122}{0.128} misses per element for native, the compulsory $2/16$
 (\cref{sec:locality}). The vector loop is waiting on memory and moving no more data than it must.
 \emph{No} wider vector, AVX-512 included, could make it faster. (iii) The remaining
-$1.7\text{--}1.9\times$ is not a SIMD gain in the memory-bound sense: scalar SAXPY is still
-instruction-bound in DRAM (\num{1.99}~cycles per element at IPC \num{3.5}, versus \num{1.53} with
-all data in L1), and the ratio of its cycles to native's (\num{1.19}) is the measured speedup. That
+$\approx1.9\times$ is not a SIMD gain in the memory-bound sense: scalar SAXPY is still
+largely instruction-bound in DRAM (\num{2.34}~cycles per element at IPC \num{3.0}, versus
+\num{1.53} with all data in L1), and the ratio of its cycles to native's (\num{1.25}) is the
+measured speedup. That
 ratio depends on the clock. With turbo enabled the same experiment gave only $1.34\text{--}1.41\times$
 (\cref{sec:anomalies}). (iv) The same kernel \emph{does} reach $5.6\times$ when the array fits in
 L1, so the hardware is capable of the speedup; in DRAM only bandwidth withholds it.

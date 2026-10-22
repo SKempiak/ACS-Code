@@ -1,0 +1,2 @@
+/data/excalidev/repos/ACS-issue3/ACS-Code/Cache_and_Memory_Performance_Profiling/build/clock_check --cpu 2 --windows 40 --ms 300
+/data/excalidev/repos/ACS-issue3/ACS-Code/Cache_and_Memory_Performance_Profiling/build/clock_check --cpu 6 --windows 40 --ms 300

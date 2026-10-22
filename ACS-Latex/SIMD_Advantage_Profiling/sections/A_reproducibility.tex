@@ -22,7 +22,10 @@ SIMD_Advantage_Profiling/scripts/run.sh all     # ceilings, baseline, locality, 
 scripts/sync_data.sh SIMD_Advantage_Profiling   # -> ACS-Latex/SIMD_Advantage_Profiling/data/
 cd ../ACS-Latex && make simd                    # -> SIMD_Advantage_Profiling.pdf
 \end{lstlisting}
-Hardware counters need no root (user-space events, \code{perf_event_paranoid} $\le 2$); with
+Before timing, as root: governor \code{performance}, turbo off
+(\code{intel_pstate/no_turbo}~$=1$), SMT off, and on this machine the ACPI event storm masked with
+\code{echo disable > /sys/firmware/acpi/interrupts/gpe42}. None of these settings persists across
+a reboot (\cref{sec:method}). Hardware counters need no root (user-space events, \code{perf_event_paranoid} $\le 2$); with
 \code{COUNTERS=0}, or where they cannot be opened, \code{run.sh} skips the counter outputs.
 \code{run.sh derive} recomputes the derived tables (roofline points and roofs, per-level bandwidth,
 stride summary) from the processed CSVs without measuring.
@@ -35,13 +38,13 @@ stride summary) from the processed CSVs without measuring.
     \toprule
     Figure / table & Raw run directory \\
     \midrule
-    \Cref{fig:baseline-speedup,fig:baseline-throughput} & \code{baseline/20261021-003450} \\
-    \Cref{fig:locality,fig:locality-bw,fig:locality-counters}, \cref{tab:locality-bw} & \code{locality/20261021-003450} \\
-    \Cref{fig:alignment,fig:tail} & \code{alignment/20261021-194049} (\code{raw.csv}, \code{raw_tail.csv}) \\
-    \Cref{fig:stride}, \cref{tab:stride} & \code{stride/20261021-003450} \\
-    \Cref{fig:dtype} & \code{dtype/20261021-003450} \\
-    \Cref{fig:roofline}, \cref{tab:ceilings} & \code{ceilings/20261021-003450}, \code{baseline/20261021-003450} \\
-    Negative-case table (\cref{sec:negative}) & \code{negative/20261021-003450} \\
+    \Cref{fig:baseline-speedup,fig:baseline-throughput} & \code{baseline/20261021-203854} \\
+    \Cref{fig:locality,fig:locality-bw,fig:locality-counters}, \cref{tab:locality-bw} & \code{locality/20261021-204801} \\
+    \Cref{fig:alignment,fig:tail} & \code{alignment/20261021-204858} (\code{raw.csv}, \code{raw_tail.csv}) \\
+    \Cref{fig:stride}, \cref{tab:stride} & \code{stride/20261021-205143} \\
+    \Cref{fig:dtype} & \code{dtype/20261021-205209} \\
+    \Cref{fig:roofline}, \cref{tab:ceilings} & \code{ceilings/20261021-204708}, \code{baseline/20261021-203854} \\
+    Negative-case table (\cref{sec:negative}) & \code{negative/20261021-205359} \\
     \Cref{tab:vec-summary} & \code{vectorization/20261021-001032} \\
     \bottomrule
   \end{tabularx}

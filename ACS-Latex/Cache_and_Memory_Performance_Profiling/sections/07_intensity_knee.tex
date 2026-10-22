@@ -43,6 +43,9 @@ throughput/latency is a third. All three come from the CSV, not from the eye.
         \addplot+[only marks, mark=triangle*, iqr bars] table[x=total_gib_s_median, y=probe_ns_median,
                   iqr of=probe_ns, only if={threads}{9}] {data/intensity_loaded.csv};
         \addlegendentry{$T=9$ with injection delay}
+        \IfFileExists{data/mlc_loaded.csv}{%
+          \addplot+[mark=o, densely dotted] table[x=gib_s, y=ns, col sep=comma] {data/mlc_loaded.csv};
+          \addlegendentry{Intel MLC loaded latency}}{}
         \IfFileExists{data/knee_ref.csv}{%
           \addplot[densely dashed, black!50, no marks] table[x=gib_s, y=ns, col sep=comma] {data/knee_ref.csv};
           \addlegendentry{$2W_0$}}{}
@@ -52,7 +55,8 @@ throughput/latency is a third. All three come from the CSV, not from the eye.
       \end{axis}
     \end{tikzpicture}%
   }
-  \caption{Measured throughput--latency curve. Each point is one load level; both coordinates are medians
+  \caption{Measured throughput--latency curve, with Intel MLC's loaded-latency sweep for comparison
+  (MLC's MB/s converted to GiB/s). Each of our points is one load level; both coordinates are medians
   of 8 windows (bars: IQR of latency). The knee is where latency first reaches twice its unloaded value.}\label{fig:intensity}
 \end{figure}
 
@@ -61,18 +65,29 @@ The curve has the textbook shape (\cref{fig:intensity}, \cref{tab:littles-law}).
 $T=\val{int_sat_threads}$ bandwidth climbs from the probe's own trickle to
 \valqty{int_sat_gib}{\gibi\byte\per\second}---already 95\% of the \valqty{int_peak_gib}{\gibi\byte\per\second}
 maximum---while latency rises only from \valqty{int_w0_ns}{\nano\second} to \valqty{int_sat_ns}{\nano\second}
-(\val{int_sat_ratio}$\times$). Every core added after that buys no bandwidth: delivered bandwidth wanders
-between \valqty{int_t7_gib}{\gibi\byte\per\second} and \valqty{int_t8_gib}{\gibi\byte\per\second}
-(run-to-run noise; see the IQR in \cref{fig:intensity}), but latency climbs steadily to
-\valqty{int_last_ns}{\nano\second} at $T=\val{int_last_threads}$; at the bandwidth maximum it is already
-\val{int_peak_ratio}$\times$ the unloaded value. By the $2W_0$ rule the knee lies at
-\valqty{int_knee_gib}{\gibi\byte\per\second} (\val{int_knee_frac}\% of peak), between $T=\val{int_knee_prevthreads}$
-and $T=\val{int_knee_threads}$. The delay sweep crosses $2W_0$ at \valqty{int_kneed_gib}{\gibi\byte\per\second}
-(between delays \val{int_kneed_prevdelay} and \val{int_kneed_delay}), and the throughput/latency maximum is at
-$T=\val{int_power_threads}$ (\valqty{int_power_gib}{\gibi\byte\per\second}, \valqty{int_power_ns}{\nano\second}).
-The three estimates agree that the useful operating range ends at four to six streaming cores and
-\qtyrange{29}{31}{\gibi\byte\per\second}. Beyond it the dual-channel controller, not the cores, is the
-bottleneck: requests no longer finish faster, they queue.
+(\val{int_sat_ratio}$\times$). Every core added after that buys almost no bandwidth: the maximum is reached
+at $T=\val{int_peak_threads}$ and $T=9$ still delivers \valqty{int_last_gib}{\gibi\byte\per\second}. Latency,
+however, climbs steadily to \valqty{int_last_ns}{\nano\second}. The memory-controller counters confirm the
+throughput axis: at $T=4$ and $T=9$ measured DRAM traffic is \val{int_t4_imc_ratio}$\times$ and
+\val{int_t9_imc_ratio}$\times$ the delivered bandwidth. By the $2W_0$ rule the knee lies at
+\valqty{int_knee_gib}{\gibi\byte\per\second} (\val{int_knee_frac}\% of peak), between
+$T=\val{int_knee_prevthreads}$ and $T=\val{int_knee_threads}$. Latency therefore does not double until the
+controller is already saturated. The delay sweep crosses $2W_0$ at
+\valqty{int_kneed_gib}{\gibi\byte\per\second} (between delays \val{int_kneed_prevdelay} and
+\val{int_kneed_delay}), and the throughput/latency maximum is at $T=\val{int_power_threads}$
+(\valqty{int_power_gib}{\gibi\byte\per\second}, \valqty{int_power_ns}{\nano\second}). The useful operating range
+thus ends at four to five streaming cores and \qtyrange{30}{32}{\gibi\byte\per\second}. Beyond it the
+dual-channel controller, not the cores, is the bottleneck: requests no longer finish faster, they queue.
+
+\paragraph{Comparison with Intel MLC.} MLC's \texttt{-{}-loaded\_latency} sweep (nine load cores, injection
+delay from 20\,000 down to 0 cycles, latency thread on CPU~2) is plotted in \cref{fig:intensity}. It
+starts lower, at \valqty{mlc_ll_w0_ns}{\nano\second}, for the access-pattern reasons discussed in
+\cref{sec:zero-queue}. It reaches 95\% of its \valqty{mlc_ll_peak_gib}{\gibi\byte\per\second} peak at
+\valqty{mlc_sat_gib}{\gibi\byte\per\second} and \valqty{mlc_sat_ns}{\nano\second}, and its own latency
+doubles at \valqty{mlc_knee_gib}{\gibi\byte\per\second} (\val{mlc_knee_frac}\% of its peak). At full load it
+reports \valqty{mlc_ll_d0_ns}{\nano\second}. The two instruments agree on the ceiling (within 2\%) and on the
+shape: latency stays near its idle value until the controller approaches
+\qtyrange{30}{32}{\gibi\byte\per\second} and then rises about threefold with almost no further bandwidth.
 
 \subsection{Little's Law with measured latency}
 For every load level we compute the mean number of lines in flight, $L = \lambda W$
@@ -152,8 +167,8 @@ $k=\val{mlp_t1_peak_k}$, and its $L_{\text{mem}}$ never exceeds \valnum{mlp_t1_L
 (\cref{fig:mlp}). Chains beyond that do not reach memory any sooner: they wait inside the core, so the
 per-chain step time grows instead (to \valqty{mlp_t1_last_ns}{\nano\second} at $k=\val{mlp_t1_last_k}$).
 About nine outstanding demand misses per core is consistent with the 12 L1D fill buffers of this
-Skylake-family core. The single-core curve is not monotonic in $k$ ($k=8$ and $12$ are slower than $k=6$ and
-$10$); we did not resolve this generator artifact and use only the envelope. With $k=8$ per core, adding
+Skylake-family core. One point, $k=12$, is an outlier (slower than both $k=10$ and $k=16$, with the same memory latency); we
+did not resolve this generator artifact and use the envelope. With $k=8$ per core, adding
 cores raises bandwidth to \valqty{mlp_peak_gib}{\gibi\byte\per\second} at $T=\val{mlp_peak_T}$
 ($L_{\text{mem}}=\valnum{mlp_peak_Lmem}$, $W_{\text{mem}}=\valqty{mlp_peak_wmem}{\nano\second}$). Random demand
 reads thus reach only about 60\% of the streaming peak: without prefetching, nine cores of this kind keep
@@ -161,7 +176,7 @@ about seven lines each in flight and the memory system queues long before it is 
 
 \paragraph{Reconciling one core's streaming concurrency with the fill buffers.} The streaming sweep gives
 one core $L=\valnum{int_t1_L}$ lines in flight at \valqty{int_t1_gib}{\gibi\byte\per\second}
-(\cref{tab:littles-law}), almost three times the \valnum{mlp_t1_Lmem_max} demand misses one core sustains.
+(\cref{tab:littles-law}), about three times the \valnum{mlp_t1_Lmem_max} demand misses one core sustains.
 There is no contradiction: in a sequential stream most lines are brought in by the L2 hardware prefetcher,
 whose requests are tracked in the L2's own request queue rather than in the L1 fill buffers, so a streaming
 core keeps more lines in flight than a core issuing random demand misses. Quoting the fill-buffer count

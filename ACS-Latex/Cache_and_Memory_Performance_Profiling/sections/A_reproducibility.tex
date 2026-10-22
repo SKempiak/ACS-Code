@@ -27,24 +27,27 @@ cd ../ACS-Latex && make memory
     \toprule
     Figure / table & \code{run.sh} experiment & Processed CSV & Raw run directory \\
     \midrule
-    \Cref{tab:zero-queue} & \code{zero_queue} & \code{zero_queue}, \code{zero_queue_table} & \code{zero_queue/20261021-004356} \\
-    \Cref{fig:pattern,fig:stride} & \code{pattern} & \code{pattern_lat}, \code{pattern_bw} & \code{pattern/20261021-004356} \\
-    \Cref{fig:rw-mix} & \code{rw_mix} & \code{rw_mix}, \code{rw_mix_ref} & \code{rw_mix/20261021-004356} \\
-    \Cref{fig:intensity,fig:mlp}, \cref{tab:littles-law} & \code{intensity} & \code{intensity_loaded}, \code{intensity_mlp}, \code{littles_law}, \code{knee} & \code{intensity/20261021-004356} \\
-    \Cref{fig:working-set} & \code{working_set} & \code{working_set} & \code{working_set/20261021-004356} \\
-    \Cref{fig:cache-miss} & \code{cache_miss} & \code{cache_miss_ctr}, \code{amat_fit} & \code{cache_miss/20261021-004356} \\
-    \Cref{fig:tlb} & \code{tlb} & \code{tlb_chase}, \code{tlb_saxpy} & \code{tlb/20261021-004356} \\
-    \Cref{fig:pitfall} & \code{pitfall} & \code{pitfall} & \code{pitfall/20261021-004356} \\
-    \Cref{sec:validation} (MLC) & \code{mlc} & --- & \code{mlc/20261021-004356} \\
-    \Cref{sec:method,sec:anomalies} (clock) & \code{clock_check} & --- (\code{summary.csv}) & \code{clock_check/20261021-194648} \\
+    \Cref{tab:zero-queue} & \code{zero_queue} & \code{zero_queue}, \code{zero_queue_table} & \code{zero_queue/20261021-202254} \\
+    \Cref{fig:pattern,fig:stride} & \code{pattern} & \code{pattern_lat}, \code{pattern_bw} & \code{pattern/20261021-202254} \\
+    \Cref{fig:rw-mix} & \code{rw_mix} & \code{rw_mix}, \code{rw_mix_ref} & \code{rw_mix/20261021-202254} \\
+    \Cref{fig:intensity,fig:mlp}, \cref{tab:littles-law} & \code{intensity} & \code{intensity_loaded}, \code{intensity_mlp}, \code{littles_law}, \code{knee} & \code{intensity/20261021-202254} \\
+    \Cref{fig:working-set} & \code{working_set} & \code{working_set} & \code{working_set/20261021-202254} \\
+    \Cref{fig:cache-miss} & \code{cache_miss} & \code{cache_miss_ctr}, \code{amat_fit} & \code{cache_miss/20261021-202254} \\
+    \Cref{fig:tlb} & \code{tlb} & \code{tlb_chase}, \code{tlb_saxpy} & \code{tlb/20261021-202254} \\
+    \Cref{fig:pitfall} & \code{pitfall} & \code{pitfall} & \code{pitfall/20261021-202254} \\
+    \Cref{tab:zero-queue,fig:intensity}, \cref{sec:rw-mix} (MLC) & \code{mlc} & \code{mlc_idle}, \code{mlc_loaded}, \code{mlc_bw} & \code{mlc/20261021-202254} \\
+    \Cref{sec:method} (clock, idle DRAM traffic) & \code{clock_check} & --- (\code{summary.csv}) & \code{clock_check/20261021-202254} \\
+    \Cref{sec:anomalies} (ACPI storm) & \code{clock_check} & --- (\code{summary.csv}) & \code{clock_check/20261021-194648} \\
     \bottomrule
   \end{tabularx}
 \end{table}
 
-Each raw directory holds the raw rows (one per repetition, with full configuration metadata),
+Each experiment directory holds the raw rows (one per repetition, with full configuration metadata),
 \code{env.txt}, \code{build.txt}, \code{commands.txt} and \code{validate.txt} (\cref{sec:method}). The
 processed CSVs are produced from them by \code{tools/summarize}; \code{scripts/derive.py} computes the
 derived tables and \code{summary.csv}, from which every number in the text is typeset; and
-\code{scripts/sync_data.sh} copies all of them into this report's \code{data/}. The nine experiment directories come from a single \code{run.sh all} invocation (2026-10-21,
-00:43--00:55; one shared timestamp). The \code{clock_check} diagnostic of \cref{sec:anomalies} was run
-separately the same day (\code{clock_check/20261021-194648}).
+\code{scripts/sync_data.sh} copies all of them into this report's \code{data/}. All directories except the last come from a single \code{run.sh all}
+invocation (2026-10-21, 20:22--20:39; one shared timestamp). The earlier \code{clock_check} run
+(\code{clock_check/20261021-194648}), taken before the ACPI event source was masked, is kept as the evidence
+for \cref{sec:anomalies}. MLC's raw text output is in its directory next to the parsed CSVs
+(\code{scripts/mlc_to_csv.py}).

@@ -10,10 +10,11 @@ Summarized from \code{AI_USE_LOG.md} in the code repository.
         counters, AVX2 gather, extended sweeps, the fixed-clock re-run and this revision) used
         Claude Opus~5.5. GCC~\sysGCC{} and \code{objdump} produced the builds and the
         vectorization evidence.
-  \item[Who ran the measurements] The timed SIMD experiments of 2026-10-21 (\code{run.sh all},
-        and the alignment re-run) were executed by Claude Code on the user's machine, with the user's
-        approval. Before the runs the user set the governor to \code{performance} and disabled turbo
-        and SMT. Claude Code checked these settings before each run and serialized its runs with
+  \item[Who ran the measurements] The timed SIMD experiments of 2026-10-21 (the reported runs, plus earlier sessions that
+        were discarded for interference) were executed by Claude
+        Code on the user's machine, with the user's approval. Before the runs the user set the
+        governor to \code{performance}, disabled turbo and SMT, and masked the ACPI GPE~0x42
+        interrupt storm. Claude Code checked these settings before each run and serialized its runs with
         other benchmark jobs through a lock file. All measurements come from these real runs on
         the machine in \cref{tab:environment}, and every quoted number traces to their CSVs.
   \item[What they helped generate] The four kernels and their references; the build-variant
@@ -49,9 +50,12 @@ Summarized from \code{AI_USE_LOG.md} in the code repository.
         landing on that line as confirmation---a circular argument that review caught and that
         the independent ceilings now replace. The re-run at a fixed
         clock also overturned two claims in the AI-drafted text, which we corrected rather than kept:
-        that scalar and SIMD ``converge'' in DRAM (they stay $1.7\times$ apart, and the counters show
+        that scalar and SIMD ``converge'' in DRAM (they stay $\approx1.9\times$ apart, and the counters show
         why), and that small-$N$ speedups are inflated by per-call overhead (the tail study shows the
         opposite). A regrade also found that the alignment sweep had silently skipped offsets
         \qtyrange{40}{56}{\byte} (an incomplete list in \code{run.sh}). The list was fixed and the
-        sweep re-run.
+        sweep re-run. Noisy repeats were traced, with the companion project's wall-clock check, to
+        an ACPI interrupt storm. After the user masked it, every SIMD experiment was re-run. The first
+        clean session was then also re-run, because another agent's unlocked smoke tests had briefly
+        shared the benchmark core, and all earlier data was discarded (\cref{sec:method}).
 \end{description}

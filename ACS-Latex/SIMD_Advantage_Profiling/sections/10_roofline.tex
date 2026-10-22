@@ -121,7 +121,7 @@ cache-aware roofline). Both ceilings are \emph{measured by separate microbenchma
 \end{figure}
 
 \subsection{Analysis}
-\emph{Ceilings} (\cref{tab:ceilings}). The AVX2 FMA loop reaches \qty{89.1}{\giga\flop\per\second}
+\emph{Ceilings} (\cref{tab:ceilings}). The AVX2 FMA loop reaches \qty{89.2}{\giga\flop\per\second}
 float32 (\num{44.6} float64), which is \num{31.99}~FLOP/cycle at the measured
 \qty{2.79}{\giga\hertz}. That is exactly the $2~\text{FMA ports} \times 8~\text{lanes} \times 2 = 32$
 FLOP/cycle the core can do, so the ports, not the loop, set this ceiling. The SSE mul+add loop
@@ -130,33 +130,34 @@ expected $2\times4=8$) and the scalar loop \qty{5.55}{\giga\flop\per\second}
 (\num{1.99}~FLOP/cycle, expected $2$). An earlier version of this report \emph{estimated}
 \qty{147}{\giga\flop\per\second} from an assumed \qty{4.6}{\giga\hertz} turbo clock. The FLOP/cycle
 part of that estimate was right; the clock is now fixed and measured. Triad bandwidth (actual
-traffic) falls from \qty{207}{\gibi\byte\per\second} in L1 to \num{99.4}, \num{48.3} and
+traffic) falls from \qty{207}{\gibi\byte\per\second} in L1 to \num{90.5}, \num{48.6} and
 \qty{24.3}{\gibi\byte\per\second} in L2, L3 and DRAM, placing the ridge points at
-$I = P_{\text{peak}}/B_\ell \approx \num{0.40}$, \num{0.84}, \num{1.72} and
-\qty{3.41}{\flop\per\byte}. The L1 ridge is slightly \emph{below} the \qty{0.5}{\flop\per\byte}
+$I = P_{\text{peak}}/B_\ell \approx \num{0.40}$, \num{0.92}, \num{1.71} and
+\qty{3.42}{\flop\per\byte}. The L1 ridge is slightly \emph{below} the \qty{0.5}{\flop\per\byte}
 the second hypothesis assumed, so the stencil ($I=\num{0.417}$) is, in L1 only, nominally under the
 compute roof.
 
 \emph{DRAM-resident kernels.} Every kernel's intensity (\numrange{0.06}{0.42}~FLOP/byte) is far left
 of the DRAM ridge, so all four are bandwidth-bound in DRAM. This is consistent with the hypothesis
 and with the locality sweep (\cref{sec:locality}). Against the DRAM roof $B_{\text{DRAM}}\cdot I$,
-native multiply reaches \SI{101}{\percent} (\num{1.64} measured vs \qty{1.63}{\giga\flop\per\second}),
-SAXPY \SI{111}{\percent} (\num{4.82} vs \num{4.36}) and the stencil \SI{107}{\percent}. Multiply has
+native multiply reaches \SI{100}{\percent} (\num{1.63} measured vs \qty{1.63}{\giga\flop\per\second}),
+the stencil \SI{101}{\percent} and SAXPY \SI{107}{\percent} (\num{4.65} vs \num{4.35}). Multiply has
 exactly the triad's access pattern (two reads, one write to an unread line) and lands on the roof.
-SAXPY and the stencil exceed it by \SIrange{7}{11}{\percent}. Their patterns differ from triad's, and
-the copy stream (\qty{26.3}{\gibi\byte\per\second} actual) shows that the sustainable bandwidth
-depends a little on the pattern; the triad roof is a reference, not an upper bound to the byte.
+SAXPY, whose pattern differs (two reads, one write to a line it just read), exceeds it by
+\SI{7}{\percent}, and by up to \SI{20}{\percent} at the intermediate $N=\num{8388608}$
+(\cref{sec:negative}). The sustainable bandwidth depends a little on the access pattern, so the
+triad roof is a reference, not an upper bound to the byte.
 Because the roof now comes from a different loop, a kernel landing on it is evidence, not a
-tautology. The scalar DRAM points sit at \SIrange{39}{68}{\percent} of the same roof. They are the
-instruction-bound loops of \cref{sec:locality}, which is why SIMD still pays $1.49\times$ (multiply), $1.85\times$ (SAXPY)
-and $2.76\times$ (stencil) at these points.
+tautology. The scalar DRAM points sit at \SIrange{37}{66}{\percent} of the same roof. They are the
+largely instruction-bound loops of \cref{sec:locality}, which is why SIMD still pays $1.51\times$
+(multiply), $1.94\times$ (SAXPY) and $2.72\times$ (stencil) at these points.
 
-\emph{Cache-resident kernels.} The L3-resident native points sit at \SIrange{96}{101}{\percent} of the
-L3 roof (SAXPY \SI{100}{\percent}, multiply \SI{101}{\percent}, stencil \SI{96}{\percent}), so L3
+\emph{Cache-resident kernels.} The L3-resident native points sit at \SIrange{95}{100}{\percent} of the
+L3 roof (SAXPY \SI{100}{\percent}, multiply \SI{100}{\percent}, stencil \SI{95}{\percent}), so L3
 bandwidth bounds them exactly. Closer to the core they fall below the roof. In L2, SAXPY reaches
-\SI{79}{\percent} and multiply \SI{84}{\percent} of the roof. In L1, native SAXPY delivers
+\SI{86}{\percent} and multiply \SI{88}{\percent} of the roof. In L1, native SAXPY delivers
 \qty{20.1}{\giga\flop\per\second} at $I=\num{0.167}$, \SI{54}{\percent} of the L1 roof and
-\SI{23}{\percent} of the FMA peak, and the stencil reaches only \SI{18}{\percent} of the peak. So
+\SI{23}{\percent} of the FMA peak, and the stencil reaches only \SI{19}{\percent} of the peak. So
 cache-resident kernels are bounded neither by the FMA units (confirming the second hypothesis) nor
 quite by the measured L1 bandwidth. The limit is the loop's own load/store and instruction issue:
 \numrange{0.22}{0.28}~cycles per element for SAXPY versus the \num{0.125} that two loads and a store
@@ -165,13 +166,13 @@ per cycle would allow (\cref{sec:baseline}). The roofline thus explains the step
 only gives the upper bound.
 
 \emph{The dot product} is the one kernel far \emph{below} every roof:
-\qtyrange{1.33}{1.52}{\giga\flop\per\second} at all sizes (\cref{sec:baseline}). It is not
+\qtyrange{1.33}{1.49}{\giga\flop\per\second} at all sizes (\cref{sec:baseline}). It is not
 bandwidth-bound but latency-bound by the non-reassociated reduction (\cref{sec:vectorization}). One
 scalar \code{vaddss} per element with a \num{4}-cycle latency gives an in-core ceiling of
 $2~\text{FLOP}/4~\text{cycles} = 0.5$~FLOP/cycle, i.e.\ \qty{1.39}{\giga\flop\per\second} at the
 measured \qty{2.79}{\giga\hertz}. The measured \qtyrange{1.39}{1.42}{\giga\flop\per\second} for every
 $N$ from \num{1024} to \num{1048576} matches it to within \SI{2}{\percent}; only $N\le512$ runs slightly
-above it (\qtyrange{1.45}{1.52}{\giga\flop\per\second}). Each call starts a new, independent chain,
+above it (\qtyrange{1.45}{1.49}{\giga\flop\per\second}). Each call starts a new, independent chain,
 and with short chains the out-of-order core overlaps the end of one call with the next. DRAM runs
 slightly below it (\qty{1.33}{\giga\flop\per\second}). The roofline, a throughput model, does not apply to the dot
 product until the dependency chain is broken. To move a streaming kernel toward the compute roof one

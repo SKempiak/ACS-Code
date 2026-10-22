@@ -12,7 +12,7 @@
 \begin{knobs}
   Chase        & one node per \qty{4}{\kibi\byte} page (node stride \qty{4160}{\byte} = page + one line, so nodes fall into different cache sets); random order; 16--65536 pages \\
   SAXPY        & random-order $y_i = a\,x_i + y_i$, $N = 2^{18}\ldots2^{24}$ \\
-  Varied       & page size: \qty{4}{\kibi\byte} (\code{MADV_NOHUGEPAGE}) vs.\ \qty{2}{\mebi\byte} (\code{MADV_HUGEPAGE}), both before first touch \\
+  Varied       & page size: \qty{4}{\kibi\byte} (\code{MADV_NOHUGEPAGE}) vs.\ \qty{2}{\mebi\byte} transparent huge pages (\code{MADV_HUGEPAGE}), both set before first touch; the chase also uses reserved \code{hugetlbfs} \qty{2}{\mebi\byte} pages (\code{MAP_HUGETLB}) \\
   Verification & \code{AnonHugePages} per run; dTLB-walk counter per access \\
   Script       & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh tlb} \\
 \end{knobs}
@@ -33,7 +33,9 @@ TLB reach and page-walk cost.
         \addplot+[iqr bars] table[x=nodes, y=ns_per_access_median, iqr of=ns_per_access, only if={pages}{4k}] {data/tlb_chase.csv};
         \addlegendentry{\qty{4}{\kibi\byte} pages}
         \addplot+[iqr bars] table[x=nodes, y=ns_per_access_median, iqr of=ns_per_access, only if={pages}{huge}] {data/tlb_chase.csv};
-        \addlegendentry{\qty{2}{\mebi\byte} pages}
+        \addlegendentry{\qty{2}{\mebi\byte} THP}
+        \addplot+[only marks, mark=o, mark size=2.5pt, black] table[x=nodes, y=ns_per_access_median, only if={pages}{hugetlb}] {data/tlb_chase.csv};
+        \addlegendentry{\qty{2}{\mebi\byte} hugetlbfs}
         \acsvline{64}{L1 dTLB}
         \acsvline{1536}{STLB}
       \end{axis}
@@ -80,9 +82,17 @@ walk counter stays at \val{tlb_huge_65536_dtlb} even at 65536 pages.
 
 For random SAXPY at $N=2^{24}$, \qty{2}{\mebi\byte} pages cut page walks from \val{tlbs_4k_dtlb} to
 \val{tlbs_huge_dtlb} per element and runtime from \valqty{tlbs_4k_ns}{\nano\second} to
-\valqty{tlbs_huge_ns}{\nano\second} per element, a \val{tlbs_speedup}$\times$ speedup, close to the
-\val{tlb_ratio_65536}$\times$ of the dependent chase. Overlapping independent misses therefore does not
-hide the walks: each walk adds dependent page-table reads in front of its data miss.
+\valqty{tlbs_huge_ns}{\nano\second} per element, a \val{tlbs_speedup}$\times$ speedup, a little below the
+\val{tlb_ratio_65536}$\times$ of the dependent chase. Overlapping independent misses hides only a small part
+of the walks: each walk adds dependent page-table reads in front of its data miss.
+
+\paragraph{Two huge-page mechanisms agree.} Reserved \code{hugetlbfs} pages (\code{MAP_HUGETLB}, from the
+1024 pages the user set aside) give the same chase latency as transparent huge pages at every size
+(\valqty{tlb_hugetlb_4096_ns}{\nano\second} vs.\ \valqty{tlb_huge_4096_ns}{\nano\second} at 4096 pages,
+\valqty{tlb_hugetlb_65536_ns}{\nano\second} vs.\ \valqty{tlb_huge_65536_ns}{\nano\second} at 65536), with zero
+walks. A \code{MAP_HUGETLB} mapping either gets reserved pages or fails, so no grant check is needed
+(these pages are not counted in \code{AnonHugePages}). The THP result is therefore not an artifact of how
+the kernel assembled the pages.
 
 \paragraph{Huge pages are verified, not assumed.} Requesting huge pages does not guarantee them: a
 benchmark that only asks for THP can silently run on \qty{4}{\kibi\byte} pages and report ``no effect''

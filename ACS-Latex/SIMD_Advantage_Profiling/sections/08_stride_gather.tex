@@ -89,38 +89,40 @@
 
 \subsection{Analysis}
 \Cref{tab:stride} makes the pattern stark. Only unit stride lets \code{native} beat \code{scalar}:
-$3.4\text{--}3.9\times$ at $N=\num{32768}$ and $1.99\times$ in DRAM. The range at
-$N=\num{32768}$ comes from the scalar build, not from the kernels. The table's \emph{unit} row
-(plain \code{saxpy_f32}, scalar \qty{0.635}{\nano\second}, $3.90\times$) and the stride-1 point of
-\cref{fig:stride}a (\code{saxpy_f32_stride} with $s=1$, scalar \qty{0.568}{\nano\second},
-$3.39\times$) compile to the identical scalar loop (same four instructions, same alignment, checked
-in the disassembly) and use the same allocation. Scalar SAXPY at this size runs in one of two
-states, $\approx1.6$ or $\approx1.8$ cycles per element, and the state is picked per process and
-occasionally changes within one. Twelve alternating check runs (six each, cycle counter on) gave
-\qtyrange{0.58}{0.64}{\nano\second} for \emph{unit} and \qtyrange{0.57}{0.65}{\nano\second} for
-stride~1. We did not identify the cause (\cref{sec:anomalies}). At stride~2 and beyond the three builds
-agree within \numrange{1.00}{1.02}$\times$ (native vs.\ scalar) at both sizes; \code{autovec} is
-within \SI{10}{\percent} of them everywhere, as expected since its strided loop is equally scalar.
-Two things happen at once. First, the effective bandwidth collapses. In DRAM the time per processed
-element grows from stride~2 to~4 to~8 to~16 as \num{1.14} $\to$ \num{1.83} $\to$ \num{3.42} $\to$
-\qty{7.24}{\nano\second} (native), approaching a doubling per step. Once the stride reaches \num{16}
-elements, each access pulls a fresh \qty{64}{\byte} line and $15/16$ of every line is wasted. With
-$N=\num{32768}$ the span stays in L2/L3 and the progression is milder (\num{0.78} $\to$ \num{1.06}
-$\to$ \num{1.85} $\to$ \qty{3.54}{\nano\second}), but the near-doubling from stride~8 to~16 is the
-same: the cost per element is set by the cache lines touched, not by arithmetic. Second, the SIMD
-advantage disappears. The vectorized body exists only for $s=1$ (GCC's run-time loop versioning,
-\cref{sec:vectorization}); every $s>1$ runs the scalar copy of the loop, so no build has vector lanes
-to offer. Gather is the worst pattern: \qty{10.1}{\nano\second} per element in DRAM (native),
-$29\times$ slower than unit stride, because the random permutation also defeats the hardware
-prefetcher. Even at $N=\num{32768}$ it costs \qty{1.92}{\nano\second}, $12\times$ unit stride.
+$3.6\text{--}4.1\times$ at $N=\num{32768}$ and $2.35\times$ in DRAM. The range at $N=\num{32768}$
+comes from two measurements of the same configuration. The table's \emph{unit} row (plain
+\code{saxpy_f32}: scalar \num{0.636}, native \qty{0.178}{\nano\second}, $3.57\times$) and the
+stride-1 point of \cref{fig:stride}a (\code{saxpy_f32_stride} with $s=1$: scalar \num{0.645},
+native \qty{0.156}{\nano\second}, $4.13\times$) run the identical machine code: the scalar loops
+match instruction for instruction, and the native stride kernel takes the same vectorized path
+when $s=1$ (checked in the disassembly). They also use the same allocation. The
+differences (\SI{1}{\percent} for scalar, \SI{14}{\percent} for native) are therefore
+process-to-process variation, plausibly
+because at this $N$ the two arrays fill exactly the \qty{256}{\kibi\byte} L2, which makes the
+timing sensitive to physical page placement (\cref{sec:anomalies}). At stride~2 and beyond the three
+builds agree within \numrange{0.98}{1.03}$\times$ (native vs.\ scalar) at both sizes; \code{autovec}
+is within \SI{10}{\percent} of them everywhere, as expected since its strided loop is equally
+scalar. Two things happen at once. First, the effective bandwidth collapses. In DRAM the time per
+processed element grows from stride~2 to~4 to~8 to~16 as \num{1.13} $\to$ \num{1.85} $\to$
+\num{3.61} $\to$ \qty{7.34}{\nano\second} (native), approaching a doubling per step. Once the
+stride reaches \num{16} elements, each access pulls a fresh \qty{64}{\byte} line and $15/16$ of
+every line is wasted. With $N=\num{32768}$ the span stays in L2/L3 and the progression is milder
+(\num{0.78} $\to$ \num{1.06} $\to$ \num{1.85} $\to$ \qty{3.54}{\nano\second}), but the
+near-doubling from stride~8 to~16 is the same: the cost per element is set by the cache lines
+touched, not by arithmetic. Second, the SIMD advantage disappears. The vectorized body exists only
+for $s=1$ (GCC's run-time loop versioning, \cref{sec:vectorization}); every $s>1$ runs the scalar
+copy of the loop, so no build has vector lanes to offer. Gather is the worst pattern:
+\qty{10.2}{\nano\second} per element in DRAM (native), $31\times$ slower than unit stride, because
+the random permutation also defeats the hardware prefetcher. Even at $N=\num{32768}$ it costs
+\qty{2.2}{\nano\second}, $12\times$ unit stride.
 
-\emph{Hardware gather.} The explicit AVX2 kernel takes \num{3.20} and \qty{10.56}{\nano\second} per
-element at $N=\num{32768}$ and \num{4194304}. That is $1.54\times$ and $1.03\times$ the time of the
+\emph{Hardware gather.} The explicit AVX2 kernel takes \num{3.23} and \qty{10.91}{\nano\second} per
+element at $N=\num{32768}$ and \num{4194304}. That is $1.59\times$ and $1.07\times$ the time of the
 scalar build's gather, i.e.\ \emph{slower}, decisively so when the data is cache-resident. The
-hypothesis above anticipated this. Each 8-lane step issues two \code{vgatherdps},
-which the active Gather Data Sampling microcode mitigation is known to make expensive, followed by
-eight scalar stores. In DRAM the random line fetches dominate either way and the difference
-shrinks to \SI{3}{\percent}. We could not run without the mitigation (that needs a reboot with
-root), so the attribution remains a hypothesis (\cref{sec:anomalies}). Either way, a SIMD gather
-does not recover the unit-stride advantage. The practical lesson is that access pattern, not vector
-width, is the first-order knob for these kernels.
+hypothesis above anticipated this. Each 8-lane step issues two \code{vgatherdps}, which the active
+Gather Data Sampling microcode mitigation is known to make expensive, followed by eight scalar
+stores. In DRAM the random line fetches dominate either way and the difference shrinks to
+\SI{7}{\percent}. We could not run without the mitigation (that needs a reboot with root), so the
+attribution remains a hypothesis (\cref{sec:anomalies}). Either way, a SIMD gather does not recover
+the unit-stride advantage. The practical lesson is that access pattern, not vector width, is the
+first-order knob for these kernels.

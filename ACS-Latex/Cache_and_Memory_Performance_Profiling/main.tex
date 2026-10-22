@@ -15,20 +15,22 @@
 
 \begin{abstract}
   We profile the cache and memory hierarchy of an Intel i9-10900F with four purpose-built
-  microbenchmarks and user-space hardware counters. Zero-queue pointer-chase latency, taken on each
-  level's plateau by a stated rule, is \valqty{zq_L1_ns}{\nano\second} in L1 (\valnum{zq_L1_cyc}~cycles),
-  \valqty{zq_L2_ns}{\nano\second} in L2 (\valnum{zq_L2_cyc}~cycles), \valqty{zq_L3_ns}{\nano\second} in
-  the \qty{20}{\mebi\byte} L3 and \valqty{zq_DRAM_ns}{\nano\second} in DRAM with \qty{4}{\kibi\byte} pages
-  (\valqty{zq_DRAM_hugens}{\nano\second} with \qty{2}{\mebi\byte} pages). A loaded-latency probe running
-  concurrently with up to nine streaming cores traces the throughput--latency curve directly: latency
-  doubles at \valqty{int_knee_gib}{\gibi\byte\per\second} (\valnum{int_knee_frac}\% of the
-  \valqty{int_peak_gib}{\gibi\byte\per\second} peak), and Little's Law with the \emph{measured} loaded
-  latency puts \valnum{int_knee_lines} lines in flight at the knee, against \valnum{int_L0max} that the
-  memory system actually serves---the rest is queueing. A known-concurrency chase shows one core keeps at
-  most \valnum{mlp_t1_Lmem_max} random demand misses in flight, however many independent chains it runs. Counter-based AMAT fits explain the
-  \valnum{cm_rand_span}$\times$ random-SAXPY slowdown, and \qty{2}{\mebi\byte} pages---verified as
-  granted---remove the page-walk cost past the \qty{4}{\kibi\byte} TLB reach. We close with the
-  cache-reuse bandwidth pitfall, where a \valqty{pit_small_kib}{\kibi\byte} buffer reports
+  microbenchmarks, user-space core counters, system-wide memory-controller counters and Intel MLC.
+  Zero-queue pointer-chase latency, taken on each level's plateau by a stated rule, is
+  \valqty{zq_L1_ns}{\nano\second} in L1 (\valnum{zq_L1_cyc}~cycles), \valqty{zq_L2_ns}{\nano\second} in L2,
+  \valqty{zq_L3_ns}{\nano\second} in the \qty{20}{\mebi\byte} L3 and \valqty{zq_DRAM_ns}{\nano\second} in DRAM
+  with \qty{4}{\kibi\byte} pages (\valqty{zq_DRAM_hugens}{\nano\second} with \qty{2}{\mebi\byte} pages). MLC
+  reports a lower \valqty{zq_DRAM_mlcns}{\nano\second}, because its random walk stays within a page. A
+  loaded-latency probe running concurrently with up to nine streaming cores traces the throughput--latency
+  curve directly. Bandwidth saturates at \valqty{int_sat_gib}{\gibi\byte\per\second} with four cores
+  (\val{int_sat_ratio}$\times$ the unloaded latency); more cores add queueing but no bandwidth, and latency
+  doubles at \valqty{int_knee_gib}{\gibi\byte\per\second}, in agreement with MLC's own sweep. With measured
+  latency, Little's Law separates the \valnum{int_L0max} lines the controller serves from up to
+  \valnum{int_Lmax} that queue, and one core sustains at most \valnum{mlp_t1_Lmem_max} random demand misses.
+  Counter-based AMAT fits explain the \valnum{cm_rand_span}$\times$ random-SAXPY slowdown; verified
+  \qty{2}{\mebi\byte} pages remove a page-walk cost of up to \valqty{tlb_gap_65536_ns}{\nano\second} per access;
+  and the memory-controller counters confirm the read-for-ownership cost of writes to within a few percent.
+  We close with the cache-reuse bandwidth pitfall, where a \valqty{pit_small_kib}{\kibi\byte} buffer reports
   \valqty{pit_small_gib}{\gibi\byte\per\second} of nonexistent ``DRAM'' bandwidth.
 \end{abstract}
 

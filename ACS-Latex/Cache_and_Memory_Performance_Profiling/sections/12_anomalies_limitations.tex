@@ -4,21 +4,26 @@
 
 \subsection{Unexpected results and how they were resolved}
 \begin{itemize}
-  \item \textbf{The in-process frequency probe misreads the clock.} With turbo disabled, the add-chain
-        probe logged by every run reads either \valqty{zq_probe_ghz_max}{\giga\hertz} or about
-        \valqty{zq_probe_ghz_min}{\giga\hertz}, which would understate DRAM latency by about 14\% in cycles.
-        Hypothesis: the clock does not change, but the thread loses wall time. Test: \code{clock_check}
-        (\code{run.sh clock_check}) compares core cycles, reference cycles and wall time in \val{cc_windows}
-        windows of \valqty{cc_window_ms}{\milli\second} on CPUs 2 and 6. The core clock is
-        \valqty{cc_core_ghz}{\giga\hertz} in every window. In \val{cc_gpe_pct}\% of the windows there is a
-        burst of ACPI general-purpose events (about \val{cc_gpe_per_window} per window, from a
-        long-running ACPI notify storm on this host). In those windows the pinned thread executes user code
-        for only \val{cc_userfrac_gpe} of the wall time (quiet windows: \val{cc_userfrac_quiet}), with no
-        system time or context switches accounted to it, and the probe reads \valqty{cc_probe_gpe}{\giga\hertz}
-        (quiet: \valqty{cc_probe_quiet}{\giga\hertz}). The lost time is therefore invisible to the OS,
-        which is consistent with firmware (SMM) handling of the events and affects every core. Resolution:
-        cycles are converted with the fixed \qty{2.8}{\giga\hertz} clock, and the probe is not used
-        (\cref{sec:method}).
+  \item \textbf{An ACPI event storm stole wall time from every core.} In a first complete run, the
+        in-process add-chain frequency probe read either \qty{2.79}{\giga\hertz} or about
+        \qty{2.41}{\giga\hertz} with turbo off, which would have understated DRAM latency by about 14\% in
+        cycles. Hypothesis: the clock does not change, but the thread loses wall time. Test:
+        \code{clock_check} compared core cycles, reference cycles and wall time in \val{cc_acpi_windows}
+        windows of \valqty{cc_acpi_window_ms}{\milli\second} on CPUs 2 and 6. The core clock was
+        \valqty{cc_acpi_core_ghz}{\giga\hertz} in every window. In \val{cc_acpi_gpe_pct}\% of the windows a
+        burst of ACPI general-purpose events occurred (about \val{cc_acpi_gpe_per_window} per window), and in
+        those windows the pinned thread executed user code for only \val{cc_acpi_userfrac_gpe} of the wall
+        time (quiet windows: \val{cc_acpi_userfrac_quiet}), with no system time or context switches charged
+        to it. The probe read \valqty{cc_acpi_probe_gpe}{\giga\hertz} in those windows (quiet:
+        \valqty{cc_acpi_probe_quiet}{\giga\hertz}). The lost time is invisible to the OS and hits every core,
+        consistent with firmware (SMM) handling of the events. The source, GPE~0x42, was then masked by the
+        user, and all data in this report were re-measured. In the final \code{clock_check} run the
+        thread keeps \val{cc_userfrac_min}--\val{cc_userfrac} of the wall time, and the probe reads
+        \val{cc_probe_min}--\valqty{cc_probe_max}{\giga\hertz}. Cycles are still converted with the fixed
+        \qty{2.8}{\giga\hertz} clock, which does not depend on the probe (\cref{sec:method}).
+  \item \textbf{The add-chain probe is code-alignment sensitive.} A one-ADD loop ran at one or two cycles per
+        iteration depending on where the compiler placed it, so some builds read half the clock. The probe
+        now uses a 32-byte-aligned loop of eight dependent ADDs.
   \item \textbf{Unit-stride ``peak'' versus strided line traffic.} At \qty{64}{\byte} stride the line
         traffic (\valqty{pat_stride_seq_64_line}{\gibi\byte\per\second}) exceeds the unit-stride scalar
         read (\valqty{pat_stride_seq_8}{\gibi\byte\per\second}), the kernel one would naturally use as the
@@ -29,21 +34,14 @@
   \item \textbf{$L/N=1$ is not a test.} In the known-concurrency sweep, $\lambda$ times the per-chain step
         time equals $N$ by construction. The informative quantity is $L_{\text{mem}}$ with the probe's
         memory latency, which saturates at \valnum{mlp_t1_Lmem_max} lines per core (\cref{sec:intensity}).
-  \item \textbf{Bandwidth is non-monotonic past saturation.} With 5--9 streaming cores, delivered
-        bandwidth scatters between \valqty{int_t7_gib}{\gibi\byte\per\second} and
-        \valqty{int_t8_gib}{\gibi\byte\per\second} with wide IQRs, while latency rises steadily. A knee
-        rule that orders points by delivered bandwidth is therefore unstable; ours follows offered load.
-  \item \textbf{Single-core chase bandwidth alternates with $k$.} $k=8,12,20$ chains are slower than
-        $k=6,10,16$. Probe latency is unchanged, so the cause is in the generator loop, not in memory.
-        Unresolved; only the envelope is used.
-  \item \textbf{Two unloaded DRAM latencies differ by 6\%.} The \code{mem_loaded} probe gives
-        \valqty{int_w0_ns}{\nano\second} and \code{mem_latency} gives \valqty{zq_DRAM256_ns}{\nano\second},
-        both at \qty{256}{\mebi\byte} with \qty{4}{\kibi\byte} pages. The identical \code{mem_latency}
-        configuration measured \valqty{ws_dram256_rand4k_ns}{\nano\second} in the \code{working_set} run
-        a few minutes later, so half of the gap is run-to-run spread. That spread is consistent with
-        repetitions overlapping the ACPI bursts above, which inflate a window by up to \ensuremath{\sim}15\%.
-        We did not isolate the rest; candidates are the ring layout (raw pointers vs.\ indices with a scaled
-        addressing mode) and the physical-page placement of each allocation.
+  \item \textbf{A single-core chase outlier.} With one generator core, $k=12$ chains deliver less bandwidth
+        than $k=10$ or $k=16$ at the same memory latency. The probe is unaffected, so the cause is in the
+        generator loop, not in memory. Unresolved; only the envelope is used. (In the run disturbed by the
+        ACPI storm, $k=8$ and $k=20$ were also low; they are not in the final data.)
+  \item \textbf{The two unloaded DRAM latencies agree once the interference is gone.} In the disturbed run,
+        the \code{mem_loaded} probe and \code{mem_latency} differed by 6\% at \qty{256}{\mebi\byte}. In the
+        final run they give \valqty{int_w0_ns}{\nano\second} and \valqty{zq_DRAM256_ns}{\nano\second}, so the gap
+        was run-to-run noise from the stolen wall time, not a property of the two rings.
   \item \textbf{Element-level read/write mixes measure the wrong thing.} Mixing \qty{8}{\byte} elements
         reads every source line and writes every destination line, so a nominal 70/30 mix moves about three
         lines per useful line; mixes must be defined on lines (\cref{sec:rw-mix}).
@@ -57,25 +55,15 @@
 
 \subsection{Limitations}
 \begin{itemize}
-  \item \textbf{Lost wall time from ACPI activity.} The host has a long-running ACPI notify storm that
-        takes about 13\% of the wall time from every core in \val{cc_gpe_pct}\% of
-        \qty{0.3}{\second} windows (above). We cannot stop it (root needed). Each timed repetition lasts
-        \qtyrange{40}{200}{\milli\second}, so some repetitions are inflated by up to that amount. Medians
-        over 8 repetitions limit the effect, and the IQR bars show it; the cycle counter over the timed
-        windows gives a median of \valqty{ws_ctr_ghz}{\giga\hertz} of user cycles per wall nanosecond, i.e.\
-        typical timed windows were not affected. Rejecting repetitions whose reference-cycle/wall ratio is
-        below 0.95 would remove the effect entirely, but this filter was added after the data were taken.
-  \item \textbf{Intel MLC was unavailable.} It is not installed on the test host;
-        \code{run.sh mlc} records this in \code{data/raw/mlc/<timestamp>/mlc_status.txt}. The cross-checks
-        in \cref{sec:validation} are clearly labelled substitutes: they validate ring construction, timing
-        and code path, but share our pointer-chase methodology.
-  \item \textbf{Core-only counters.} At \code{perf_event_paranoid}=\sysPerfParanoid{} only user-space core
-        events of our own process are available: no uncore/IMC counters (actual DRAM traffic, prefetch
-        fills, write-backs) and no kernel-mode events. DRAM traffic for write mixes is therefore an estimate
-        (one RFO per written line), and prefetcher traffic is inferred. Generic LLC events map to
-        offcore-response events on this core and may undercount prefetch-driven fills. Counters were
-        multiplexed when more events were requested than free hardware counters; counts are scaled and the
-        running fraction is recorded.
+  \item \textbf{DRAM counters are system-wide.} The memory-controller counts include all traffic in the
+        machine; an idle window carries \valqty{cc_imc_rd_idle}{\gibi\byte\per\second} of reads and
+        \valqty{cc_imc_wr_idle}{\gibi\byte\per\second} of writes (\code{clock_check}), which is small
+        next to every loaded measurement but is not subtracted. Core events are counted in user mode for
+        the measuring thread only; generic LLC events map to offcore-response events on this core and may
+        undercount prefetch-driven fills. Core counters are multiplexed when more events are requested
+        than free hardware counters; counts are scaled and the running fraction is recorded.
+  \item \textbf{MLC ran with prefetchers enabled.} Without root, MLC cannot switch the hardware
+        prefetchers off, so its latencies use random access (\code{-r}) with prefetchers on, like ours.
   \item \textbf{Loaded latency is measured with a probe that is itself load.} The probe adds one line in
         flight (included in throughput) and measures a demand read; the streaming generators' prefetches
         may see a different latency, so $L=\lambda W$ for the streaming sweep assumes the probe's latency

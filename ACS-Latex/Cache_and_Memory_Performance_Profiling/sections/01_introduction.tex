@@ -24,16 +24,20 @@ This report answers:
 (\code{data/summary.csv}, \cref{app:repro}). Zero-queue latency is \valqty{zq_L1_ns}{\nano\second}
 (\valnum{zq_L1_cyc}~cycles) in L1, \valqty{zq_L2_ns}{\nano\second} (\valnum{zq_L2_cyc}~cycles) on the
 L2 plateau, \valqty{zq_L3_ns}{\nano\second} in L3 and \valqty{zq_DRAM_ns}{\nano\second}
-(\valnum{zq_DRAM_cyc}~cycles) in DRAM; an independently built cross-check agrees within
-\val{zq_DRAM_xdiff}\% on DRAM. Under load, the probe's latency reaches twice its unloaded value at
-\valqty{int_knee_gib}{\gibi\byte\per\second}, against a \valqty{int_peak_gib}{\gibi\byte\per\second}
-ceiling; beyond the knee, extra cores buy little bandwidth but a lot of latency. Little's Law with the
-measured loaded latency gives \valnum{int_knee_lines} lines in flight at the knee, while a single core
-keeps at most \valnum{mlp_t1_Lmem_max} random demand misses in flight---below its fill-buffer count---so
+(\valnum{zq_DRAM_cyc}~cycles) in DRAM. Intel MLC agrees on L2 and measures lower L1, L3 and DRAM
+latency (\valqty{zq_DRAM_mlcns}{\nano\second}), because its random walk stays within \qty{4}{\kibi\byte}
+windows. Under load, bandwidth reaches 95\% of its \valqty{int_peak_gib}{\gibi\byte\per\second} ceiling
+with only \val{int_sat_ratio}$\times$ the unloaded latency; beyond that, extra cores buy no bandwidth while
+latency doubles and nearly triples. MLC's loaded-latency sweep shows the same ceiling and knee. Little's Law
+with the measured loaded latency gives \valnum{int_knee_lines} lines in flight at the knee, of which the
+controller serves only \valnum{int_L0max}. A single core keeps at most \valnum{mlp_t1_Lmem_max} random
+demand misses in flight---below its fill-buffer count---so
 several cores are needed to fill the pipe. Random SAXPY runs \valnum{cm_rand_span}$\times$ slower per element once
 its footprint reaches DRAM, versus \valnum{cm_seq_span}$\times$ for sequential order, and an AMAT model
 fitted to the counters attributes this to DRAM misses whose effective cost is
 \valqty{amat_rand_aD}{\nano\second} each---the zero-queue latency divided by \valnum{amat_rand_mlp}-way
-memory-level parallelism. Finally, a one-line change of working-set size turns a
+memory-level parallelism. Memory-controller counters confirm the read-for-ownership model of writes
+exactly, and show that the adjacent-line prefetcher doubles DRAM traffic for sparse strided reads.
+Finally, a one-line change of working-set size turns a
 \valqty{pit_dram_lo}{\gibi\byte\per\second} DRAM result into a fictitious
 \valqty{pit_small_gib}{\gibi\byte\per\second} ``bandwidth'' that is really L1 reuse (\cref{sec:pitfall}).

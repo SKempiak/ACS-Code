@@ -151,6 +151,13 @@ def zero_queue(proc, S):
     prim = rows_where(rows, pattern="random", pages="4k", gen="lcg", timer="clock")
     xchk = rows_where(rows, pattern="random", pages="4k", gen="xorshift", timer="tsc")
     huge = rows_where(rows, pattern="random", pages="huge", gen="lcg", timer="clock")
+    # Intel MLC idle latency (median of repetitions) at one size inside each plateau window
+    mlc = read(proc, "mlc_idle") or []
+    mlc_kib = {"L1": 16, "L2": 128, "L3": 4096, "DRAM": 262144}
+
+    def mlc_ns(level, pages="4k"):
+        return median([num(r["ns"]) for r in mlc
+                       if r["pages"] == pages and int(r["buffer_kib"]) == mlc_kib[level]])
     out = []
     for name, lo, hi, label in levels:
         sel = [r for r in prim if lo <= int(r["bytes"]) <= hi]
@@ -160,17 +167,26 @@ def zero_queue(proc, S):
         xns = plateau(xchk, lo, hi, "ns_per_access")
         hns = plateau(huge, lo, hi, "ns_per_access") if name == "DRAM" else math.nan
         diff = 100.0 * (xns - ns) / ns if ok(ns) and ok(xns) else math.nan
+        mns = mlc_ns(name)
+        mdiff = 100.0 * (mns - ns) / ns if ok(ns) and ok(mns) else math.nan
         out.append([name, label, len(sel), fmt(ns), fmt(cyc), fmt(min(vals)) if vals else "nan",
-                    fmt(max(vals)) if vals else "nan", fmt(xns), fmt(diff, 2), fmt(hns)])
+                    fmt(max(vals)) if vals else "nan", fmt(xns), fmt(diff, 2), fmt(hns),
+                    fmt(mns), fmt(mdiff, 2)])
         for key, v, d in (("ns", ns, 3), ("cyc", cyc, 3), ("xns", xns, 3), ("xdiff", diff, 2),
-                          ("hugens", hns, 3)):
+                          ("hugens", hns, 3), ("mlcns", mns, 3), ("mlcdiff", mdiff, 2)):
             S[f"zq_{name}_{key}"] = fmt(v, d)
         if vals:
             S[f"zq_{name}_min"] = fmt(min(vals))
             S[f"zq_{name}_max"] = fmt(max(vals))
     write_csv(proc, "zero_queue_table",
               ["level", "range", "nsizes", "ns", "cycles", "ns_min", "ns_max", "xcheck_ns",
-               "xcheck_diff_pct", "huge_ns"], out)
+               "xcheck_diff_pct", "huge_ns", "mlc_ns", "mlc_diff_pct"], out)
+    mh = mlc_ns("DRAM", "huge")
+    if ok(mh):
+        S["mlc_DRAM_huge_ns"] = fmt(mh)
+        dh = num(S.get("zq_DRAM_hugens"))
+        if ok(dh):
+            S["mlc_DRAM_huge_diff"] = fmt(100.0 * (mh - dh) / dh, 2)
     for r in prim:
         if r["bytes"] == "268435456":
             S["zq_DRAM256_ns"] = fmt(num(r["ns_per_access_median"]))
@@ -240,31 +256,83 @@ def freq_check(proc, S):
 
 
 def clock_check(proc, S):
-    """Diagnostic run of build/clock_check: core clock, fraction of wall time the pinned thread
-    actually executes, add-chain probe reading, and ACPI GPE activity per window."""
+    """Diagnostic runs of build/clock_check: core clock, fraction of wall time the pinned thread
+    actually executes, add-chain probe reading, ACPI GPE activity and idle DRAM traffic per window.
+    The OLDEST run (taken while an ACPI GPE storm was active) is reported with prefix cc_acpi_,
+    the NEWEST (the conditions of the final data) with prefix cc_."""
     import glob
     files = sorted(glob.glob(os.path.join(proc, "..", "raw", "clock_check", "*", "raw.csv")))
     if not files:
         return
-    rows = list(csv.DictReader(open(files[-1], newline="")))
+    for prefix, path in (("cc_acpi_", files[0]), ("cc_", files[-1])):
+        _clock_keys(S, prefix, list(csv.DictReader(open(path, newline=""))))
+
+
+def _clock_keys(S, P, rows):
     if not rows:
         return
     gpe = [r for r in rows if num(r["gpe"]) > 0]
     quiet = [r for r in rows if num(r["gpe"]) == 0]
-    S["cc_core_ghz"] = fmt(median([num(r["core_ghz"]) for r in rows]))
-    S["cc_windows"] = str(len(rows))
-    S["cc_gpe_pct"] = fmt(100.0 * len(gpe) / len(rows), 2)
+    S[P + "core_ghz"] = fmt(median([num(r["core_ghz"]) for r in rows]))
+    S[P + "windows"] = str(len(rows))
+    S[P + "gpe_pct"] = fmt(100.0 * len(gpe) / len(rows), 2)
+    S[P + "window_ms"] = fmt(1000 * median([num(r["wall_s"]) for r in rows]), 3)
+    S[P + "userfrac"] = fmt(median([num(r["user_frac"]) for r in rows]), 3)
+    S[P + "userfrac_min"] = fmt(min(num(r["user_frac"]) for r in rows), 3)
     for tag, sel in (("gpe", gpe), ("quiet", quiet)):
         if sel:
-            S[f"cc_userfrac_{tag}"] = fmt(median([num(r["user_frac"]) for r in sel]), 3)
-            S[f"cc_core_ghz_{tag}"] = fmt(median([num(r["core_ghz"]) for r in sel]))
+            S[f"{P}userfrac_{tag}"] = fmt(median([num(r["user_frac"]) for r in sel]), 3)
+            S[f"{P}core_ghz_{tag}"] = fmt(median([num(r["core_ghz"]) for r in sel]))
             pr = [num(r["probe_ghz"]) for r in sel if r["kind"] == "probe"]
             if pr:
-                S[f"cc_probe_{tag}"] = fmt(median(pr))
+                S[f"{P}probe_{tag}"] = fmt(median(pr))
+    pr_all = [num(r["probe_ghz"]) for r in rows if r["kind"] == "probe"]
+    if pr_all:
+        S[P + "probe_min"] = fmt(min(pr_all)); S[P + "probe_max"] = fmt(max(pr_all))
+        S[P + "probe_med"] = fmt(median(pr_all))
     g = [num(r["gpe"]) for r in gpe]
     if g:
-        S["cc_gpe_per_window"] = fmt(median(g), 3)
-        S["cc_window_ms"] = fmt(1000 * median([num(r["wall_s"]) for r in rows]), 3)
+        S[P + "gpe_per_window"] = fmt(median(g), 3)
+    if "imc_rd_gib_s" in rows[0]:
+        S[P + "imc_rd_idle"] = fmt(median([num(r["imc_rd_gib_s"]) for r in rows]), 2)
+        S[P + "imc_wr_idle"] = fmt(median([num(r["imc_wr_gib_s"]) for r in rows]), 2)
+        S[P + "imc_rd_idle_max"] = fmt(max(num(r["imc_rd_gib_s"]) for r in rows), 2)
+
+
+def mlc(proc, S):
+    """MLC loaded-latency knee (same 2x rule, ordered by decreasing injection delay) and the
+    bandwidth table. MLC reports MB/s = 1e6 B/s; converted to GiB/s here."""
+    rows = read(proc, "mlc_loaded")
+    if rows:
+        pts = sorted(({"d": int(r["delay"]), "w": num(r["ns"]), "bw": num(r["gib_s"])} for r in rows),
+                     key=lambda p: -p["d"])        # light load first
+        w0 = pts[0]["w"]
+        peak = max(pts, key=lambda p: p["bw"])
+        S["mlc_ll_w0_ns"] = fmt(w0); S["mlc_ll_w0_delay"] = str(pts[0]["d"])
+        S["mlc_ll_peak_gib"] = fmt(peak["bw"]); S["mlc_ll_peak_ns"] = fmt(peak["w"])
+        S["mlc_ll_max_ns"] = fmt(max(p["w"] for p in pts))
+        S["mlc_ll_d0_ns"] = fmt(next((p["w"] for p in pts if p["d"] == 0), math.nan))
+        S["mlc_ll_d0_gib"] = fmt(next((p["bw"] for p in pts if p["d"] == 0), math.nan))
+        for i, p in enumerate(pts):
+            if p["w"] >= 2 * w0 and i > 0:
+                q = pts[i - 1]
+                f = (2 * w0 - q["w"]) / (p["w"] - q["w"]) if p["w"] != q["w"] else 1.0
+                S["mlc_knee_gib"] = fmt(q["bw"] + f * (p["bw"] - q["bw"]))
+                S["mlc_knee_ns"] = fmt(2 * w0)
+                S["mlc_knee_frac"] = fmt(100.0 * (q["bw"] + f * (p["bw"] - q["bw"])) / peak["bw"], 2)
+                break
+        sat = next((p for p in pts if p["bw"] >= 0.95 * peak["bw"]), None)
+        if sat:
+            S["mlc_sat_gib"] = fmt(sat["bw"]); S["mlc_sat_ns"] = fmt(sat["w"]); S["mlc_sat_delay"] = str(sat["d"])
+    bw = read(proc, "mlc_bw") or []
+    names = {"ALL Reads": "allreads", "3:1 Reads-Writes": "r31", "2:1 Reads-Writes": "r21",
+             "1:1 Reads-Writes": "r11", "Stream-triad like": "triad"}
+    for r in bw:
+        tag = names.get(r["traffic"])
+        if tag:
+            pre = "mlc_pk" if r["mode"] == "peak_injection_bandwidth" else "mlc_max"
+            S[f"{pre}_{tag}_gib"] = fmt(num(r["gib_s"]))
+            S[f"{pre}_{tag}_mbs"] = fmt(num(r["mb_s"]), 4)
 
 
 def pattern(proc, S):
@@ -279,12 +347,18 @@ def pattern(proc, S):
         g = num(r["gib_s_median"])
         if r["access"] != "0":
             S[f"pat_bw_{p}_{r['access']}"] = fmt(g)
+            if "imc_rd_gib_s_median" in r:
+                S[f"pat_bw_{p}_{r['access']}_imcrd"] = fmt(num(r["imc_rd_gib_s_median"]))
         else:
             s = int(r["strideb"])
             S[f"pat_stride_{p}_{s}"] = fmt(g)
             # one 8 B element used per stride; every touched line moves 64 B
             line = g * (LINE / 8.0) if s >= LINE else g
             S[f"pat_stride_{p}_{s}_line"] = fmt(line)
+            if "imc_rd_gib_s_median" in r:
+                S[f"pat_stride_{p}_{s}_imcrd"] = fmt(num(r["imc_rd_gib_s_median"]))
+                if ok(line) and line > 0:
+                    S[f"pat_stride_{p}_{s}_imc_over_line"] = fmt(num(r["imc_rd_gib_s_median"]) / line, 3)
     if bw:
         seqs = [num(v) for k, v in S.items() if k.startswith("pat_bw_seq_")]
         if seqs:
@@ -309,6 +383,14 @@ def rw_mix(proc, S):
             S["rw_unloaded_ns"] = fmt(num(r["probe_ns_median"]))
             continue
         tag = f"rw_{rd}_t{t}"
+        if "imc_rd_gib_s_median" in r:
+            ir, iw = num(r["imc_rd_gib_s_median"]), num(r["imc_wr_gib_s_median"])
+            S[tag + "_imcrd"] = fmt(ir); S[tag + "_imcwr"] = fmt(iw)
+            if ok(ir) and ok(iw):
+                S[tag + "_imc"] = fmt(ir + iw)
+                est = num(r["traffic_gib_s_median"])
+                if ok(est) and est > 0:
+                    S[tag + "_imc_over_est"] = fmt((ir + iw) / est, 3)
         S[tag + "_gib"] = fmt(num(r["total_gib_s_median"]))
         S[tag + "_traffic"] = fmt(num(r["traffic_gib_s_median"]))
         S[tag + "_ns"] = fmt(num(r["probe_ns_median"]))
@@ -320,6 +402,9 @@ def rw_mix(proc, S):
     ref = read(proc, "rw_mix_ref")
     for r in ref or []:
         S[f"rw_ref_{r['kernel']}"] = fmt(num(r["gib_s_median"]))
+        if "imc_rd_gib_s_median" in r:
+            S[f"rw_ref_{r['kernel']}_imcrd"] = fmt(num(r["imc_rd_gib_s_median"]))
+            S[f"rw_ref_{r['kernel']}_imcwr"] = fmt(num(r["imc_wr_gib_s_median"]))
 
 
 def intensity(proc, S):
@@ -330,7 +415,8 @@ def intensity(proc, S):
             pts.append(dict(t=int(r["threads"]), d=int(r["delay"]),
                             bw=num(r["total_gib_s_median"]), w=num(r["probe_ns_median"]),
                             wq25=num(r["probe_ns_q25"]), wq75=num(r["probe_ns_q75"]),
-                            L=num(r["little_l_median"])))
+                            L=num(r["little_l_median"]),
+                            imc=num(r.get("imc_rd_gib_s_median")) + num(r.get("imc_wr_gib_s_median"))))
         base = [p for p in pts if p["t"] == 0 and p["d"] == 0]
         w0 = base[0]["w"] if base else math.nan
         S["int_w0_ns"] = fmt(w0)
@@ -397,6 +483,9 @@ def intensity(proc, S):
             L0 = lam * 1e6 * w0 * 1e-9 if ok(w0) else math.nan
             ll.append([p["t"], p["bw"], lam, p["w"], L, L0])
             if p["t"] > 0:
+                S[f"int_t{p['t']}_imc"] = fmt(p["imc"])
+                if ok(p["imc"]) and p["bw"] > 0:
+                    S[f"int_t{p['t']}_imc_ratio"] = fmt(p["imc"] / p["bw"], 3)
                 S[f"int_t{p['t']}_gib"] = fmt(p["bw"])
                 S[f"int_t{p['t']}_ns"] = fmt(p["w"])
                 S[f"int_t{p['t']}_L"] = fmt(L)
@@ -569,7 +658,7 @@ def main():
     proc = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "..", "data", "processed")
     S = {}
-    for fn in (zero_queue, working_set, clock_check, pattern, rw_mix, intensity, cache_miss, tlb, pitfall):
+    for fn in (zero_queue, working_set, clock_check, mlc, pattern, rw_mix, intensity, cache_miss, tlb, pitfall):
         try:
             fn(proc, S)
         except (KeyError, ValueError, ZeroDivisionError) as e:   # schema drift: skip, don't die

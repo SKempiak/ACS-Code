@@ -153,7 +153,7 @@ int main(int argc, char **argv) {
         double gflops = fpe * (double)n / per_call / 1e9;
         printf("%s,%s,%s,%s,%zu,%zu,%.3f,%ld,%d,%zu,%.9e,%.6e,%.6e",
                experiment, k.mul ? "mul" : "saxpy", random_order ? "random" : "sequential",
-               use_huge ? "huge" : "4k", n, n * sizeof(double) * (size_t)narr, ghz, ahp, r, iters,
+               mp_pages_name(use_huge), n, n * sizeof(double) * (size_t)narr, ghz, ahp, r, iters,
                per_call, nspe, gflops);
         mp_ctr_print(cv, cover, (double)n * (double)iters);
         printf("\n");
