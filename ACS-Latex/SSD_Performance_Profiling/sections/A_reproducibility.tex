@@ -2,11 +2,11 @@
 \section{Reproducibility}\label{app:repro}
 
 Code, scripts, raw data and this report live in one repository: \code{ACS-Code/} holds the code and data,
-and \code{ACS-Latex/} holds the reports. The exact commit is \code{b00db669940b}.
+and \code{ACS-Latex/} holds the reports. The exact commit is \code{64507e8a4d2e}.
 
 \begin{lstlisting}[language=bash]
 gh repo clone SKempiak/ACS-Code ACS && cd ACS
-git checkout b00db669940b
+git checkout 64507e8a4d2e
 cd ACS-Code
 make tools                                    # build/tools/summarize
 make -C SSD_Performance_Profiling             # build/blkbench (O_DIRECT, libaio)
