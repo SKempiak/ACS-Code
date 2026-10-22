@@ -2,7 +2,7 @@
 #
 #   make          build build/blkbench
 #   make test     safety-gate refusals + physical-sanity checks (scripts/validate.sh);
-#                 writes <= ~200 MiB to a scratch file and deletes it
+#                 writes one 64 MiB scratch file (everything else only reads) and deletes it
 #   make clean
 #
 # blkbench is a small O_DIRECT storage benchmark built on Linux libaio (the same

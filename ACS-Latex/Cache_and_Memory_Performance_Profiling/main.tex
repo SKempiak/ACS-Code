@@ -17,7 +17,9 @@
   We profile the cache and memory hierarchy of an Intel i9-10900F with four purpose-built
   microbenchmarks, user-space core counters, system-wide memory-controller counters and Intel MLC.
   Zero-queue pointer-chase latency, taken on each level's plateau by a stated rule, is
-  \valqty{zq_L1_ns}{\nano\second} in L1 (\valnum{zq_L1_cyc}~cycles), \valqty{zq_L2_ns}{\nano\second} in L2,
+  \valqty{zq_L1_ns}{\nano\second} in L1 (\valnum{zq_L1_cyc}~cycles), \valqty{zq_L2_ns}{\nano\second} on the L2
+  plateau with \qty{4}{\kibi\byte} pages (this includes page-placement conflict misses; the L2 hit latency,
+  measured with \qty{2}{\mebi\byte} pages, is \valqty{zq_L2_hugens}{\nano\second}),
   \valqty{zq_L3_ns}{\nano\second} in the \qty{20}{\mebi\byte} L3 and \valqty{zq_DRAM_ns}{\nano\second} in DRAM
   with \qty{4}{\kibi\byte} pages (\valqty{zq_DRAM_hugens}{\nano\second} with \qty{2}{\mebi\byte} pages). MLC
   reports a lower \valqty{zq_DRAM_mlcns}{\nano\second}, because its random walk stays within a page. A

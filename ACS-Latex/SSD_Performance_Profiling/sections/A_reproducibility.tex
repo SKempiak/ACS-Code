@@ -84,7 +84,9 @@ scripts/sync_data.sh SSD_Performance_Profiling
 \end{lstlisting}
 
 \code{ACS_SCRATCH} selects the device under test, and the \code{safety.sh} gate is identical wherever it
-points: a plain disposable file inside the scratch directory, never a device or mountpoint. Without
+points: a plain disposable file inside the scratch directory, never a device or mountpoint, and the
+scratch directory itself must be a user-owned directory that is not \code{/}, \code{\$HOME} or the root
+of a mounted filesystem. Without
 \code{ACS_SCRATCH}, the in-repo \code{data/scratch/} filesystem is profiled instead (an HDD on the test
 host). Knobs (\code{REPS}, \code{RUNTIME}, \code{WRITE_CAP_MIB}, \code{SUSTAIN_GIB}, \code{ENGINE=fio},
 \dots) are documented at the top of \code{run.sh}. \code{run.sh reprocess} rebuilds every processed CSV
@@ -115,6 +117,7 @@ followed at 22:06 the same day.
     \Cref{fig:sustained}, \cref{tab:sustained} & \code{sustained/20261021-220614} (original run: \code{sustained/20261021-105439}) \\
     \Cref{fig:working-set} & \code{working_set/20261021-220614} (original run: \code{working_set/20261021-105439}) \\
     \Cref{tab:lean} & \code{rerun_clean_20261021-220614.log} \\
+    tmpfs $L/\text{QD}$ (\cref{sec:queue-depth}) & \code{validate_tmpfs/20261021-231433.txt} (\code{make test} output, scratch on \code{/dev/shm}) \\
     \bottomrule
   \end{tabularx}
 \end{table}

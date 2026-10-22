@@ -437,6 +437,10 @@ int main(int argc, char **argv) {
             free_data(&d);
             return 1;
         }
+        if (getenv("ACS_REPORT_ERR")) /* make test: log the error of every passing case */
+            fprintf(stderr, "validate-err,%s,%s,%s,%zu,%s,%zu,%zu,%.3e\n", acs_variant_name(),
+                    c.kernel, dtype_name(c.dtype), c.n, access_name(c.access), c.stride,
+                    c.offset, err);
     }
 
     reset_y(&c, &d);

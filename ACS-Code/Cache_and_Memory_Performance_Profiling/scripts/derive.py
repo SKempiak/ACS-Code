@@ -16,6 +16,7 @@ _q25 / _q75 per configuration) and writes, next to them:
   knee.csv / knee2x.csv / knee_ref.csv  the knee (first load reaching 95% of peak bandwidth),
                         the 2x-unloaded-latency crossing, and the 2x reference line
   amat_fit.csv          cache_miss: measured vs AMAT-model ns/element
+  tlb_saxpy_table.csv   random SAXPY, 4 KiB vs 2 MiB pages: ns/element, walks, LLC misses, speedup
 
 Rules (stated in the report):
   * Plateau of a cache level = median, over the measured working-set sizes s with
@@ -155,6 +156,7 @@ def zero_queue(proc, S):
     # Intel MLC idle latency (median of repetitions) at one size inside each plateau window
     mlc = read(proc, "mlc_idle") or []
     mlc_kib = {"L1": 16, "L2": 128, "L3": 4096, "DRAM": 262144}
+    ws_huge = rows_where(read(proc, "working_set"), pattern="random", pages="huge")
 
     def mlc_ns(level, pages="4k"):
         return median([num(r["ns"]) for r in mlc
@@ -167,6 +169,11 @@ def zero_queue(proc, S):
         vals = [num(r["ns_per_access_median"]) for r in sel]
         xns = plateau(xchk, lo, hi, "ns_per_access")
         hns = plateau(huge, lo, hi, "ns_per_access") if name == "DRAM" else math.nan
+        if name == "L2" and ws_huge:
+            # zero_queue has no 2 MiB rows inside L2; the working_set sweep (same chase, same
+            # generator) does. 2 MiB pages avoid the 4 KiB-page L2 conflict misses, so this
+            # plateau is the L2 hit latency.
+            hns = plateau(ws_huge, lo, hi, "ns_per_access")
         diff = 100.0 * (xns - ns) / ns if ok(ns) and ok(xns) else math.nan
         iqrs = [100.0 * (num(r["ns_per_access_q75"]) - num(r["ns_per_access_q25"])) / num(r["ns_per_access_median"])
                 for r in sel if num(r["ns_per_access_median"]) > 0]
@@ -174,9 +181,13 @@ def zero_queue(proc, S):
         S[f"zq_{name}_iqrmax"] = fmt(iqr_max, 2)
         mns = mlc_ns(name)
         mdiff = 100.0 * (mns - ns) / ns if ok(ns) and ok(mns) else math.nan
+        # signed percentage columns: fixed, one decimal (the table typesets them numerically)
+        pct = lambda v: f"{v:.1f}" if ok(v) else "nan"
         out.append([name, label, len(sel), fmt(ns), fmt(cyc), fmt(min(vals)) if vals else "nan",
-                    fmt(max(vals)) if vals else "nan", fmt(xns), fmt(diff, 2), fmt(hns),
-                    fmt(mns), fmt(mdiff, 2), fmt(iqr_max, 2)])
+                    fmt(max(vals)) if vals else "nan", fmt(xns), pct(diff), fmt(hns),
+                    fmt(mns), pct(mdiff), fmt(iqr_max, 2)])
+        if ok(diff):
+            S[f"zq_{name}_xdiff_abs"] = fmt(abs(diff), 2)
         for key, v, d in (("ns", ns, 3), ("cyc", cyc, 3), ("xns", xns, 3), ("xdiff", diff, 2),
                           ("hugens", hns, 3), ("mlcns", mns, 3), ("mlcdiff", mdiff, 2)):
             S[f"zq_{name}_{key}"] = fmt(v, d)
@@ -192,6 +203,12 @@ def zero_queue(proc, S):
         dh = num(S.get("zq_DRAM_hugens"))
         if ok(dh):
             S["mlc_DRAM_huge_diff"] = fmt(100.0 * (mh - dh) / dh, 2)
+            # unsigned wording for the text: MLC's figure is this many percent below ours
+            S["mlc_DRAM_huge_below"] = fmt(100.0 * (dh - mh) / dh, 2)
+    xd = [num(S.get(f"zq_{n}_xdiff_abs")) for n, *_ in levels]
+    xd = [v for v in xd if ok(v)]
+    if xd:
+        S["zq_xdiff_absmax"] = fmt(max(xd), 2)
     for r in prim:
         if r["bytes"] == "268435456":
             S["zq_DRAM256_ns"] = fmt(num(r["ns_per_access_median"]))
@@ -229,6 +246,21 @@ def working_set(proc, S):
     S["ws_l2edge_huge_ns"] = fmt(at("random", "huge", 196608, "ns_per_access"))
     S["ws_l2edge_4k_llcref"] = fmt(at("random", "4k", 196608, "ctr_llc_ref_pa"))
     S["ws_l2edge_huge_llcref"] = fmt(at("random", "huge", 196608, "ctr_llc_ref_pa"))
+    # L3 edge: 2 MiB vs 4 KiB pages at 8/12/16/24 MiB (ns, LLC misses and walks per access)
+    for mib in (8, 12, 16, 24):
+        b = mib * MIB
+        for pg in ("4k", "huge"):
+            S[f"ws_{mib}m_{pg}_ns"] = fmt(at("random", pg, b, "ns_per_access"))
+            S[f"ws_{mib}m_{pg}_llcmiss"] = fmt(at("random", pg, b, "ctr_llc_miss_pa"), 2)
+            S[f"ws_{mib}m_{pg}_dtlb"] = fmt(at("random", pg, b, "ctr_dtlb_miss_pa"), 2)
+    # L2 window, 4 KiB pages: L2 misses per access at each size (page-colour variation)
+    for kib in (48, 64, 96, 128, 192):
+        S[f"ws_{kib}k_4k_llcref"] = fmt(at("random", "4k", kib * KIB, "ctr_llc_ref_pa"), 2)
+        S[f"ws_{kib}k_4k_ns"] = fmt(at("random", "4k", kib * KIB, "ns_per_access"))
+    zq = rows_where(read(proc, "zero_queue"), pattern="random", pages="4k", gen="lcg", timer="clock")
+    for r in zq:
+        if int(r["bytes"]) in (64 * KIB, 96 * KIB, 128 * KIB, 192 * KIB):
+            S[f"zq_{int(r['bytes']) // KIB}k_ns"] = fmt(num(r["ns_per_access_median"]))
     cov = [num(r.get("ctr_cover_median")) for r in rows]
     if any(ok(c) for c in cov):
         S["ws_ctr_cover_min"] = fmt(min(c for c in cov if ok(c)))
@@ -434,6 +466,11 @@ def rw_mix(proc, S):
         v = [x for x in v if ok(x)]
         if v:
             S[f"rw_t{t}_ns_min"] = fmt(min(v)); S[f"rw_t{t}_ns_max"] = fmt(max(v))
+    r10 = num(S.get("rw_10_t9_ns"))
+    for m in ("7", "5", "0"):
+        v = num(S.get(f"rw_{m}_t9_ns"))
+        if ok(v) and ok(r10) and r10 > 0:
+            S[f"rw_{m}_t9_ns_rel"] = fmt(v / r10, 3)
     ref = read(proc, "rw_mix_ref")
     for r in ref or []:
         S[f"rw_ref_{r['kernel']}"] = fmt(num(r["gib_s_median"]))
@@ -624,6 +661,10 @@ def cache_miss(proc, S):
             S[f"cm_{tag}_span"] = fmt(hi / lo, 2)
         for key in ("ctr_l1d_miss_pe", "ctr_llc_miss_pe", "ctr_dtlb_miss_pe"):
             S[f"cm_{tag}_max_{key[4:-3]}"] = fmt(num(sel[-1][key + "_median"]))
+        for r in sel:
+            if int(r["n"]) == 1 << 20:
+                for key in ("ctr_llc_miss_pe", "ctr_dtlb_miss_pe"):
+                    S[f"cm_{tag}_1m_{key[4:-3]}"] = fmt(num(r[key + "_median"]))
         X, y, ns_ = [], [], []
         for r in sel:
             l1, lr, lm = (num(r[c + "_median"]) for c in ("ctr_l1d_miss_pe", "ctr_llc_ref_pe",
@@ -649,6 +690,24 @@ def cache_miss(proc, S):
                         S[f"amat_{tag}_ovl{lvl}"] = fmt(z / b, 2)
                 resid = [abs(t - sum(bb * xi for bb, xi in zip(beta, x))) / t for x, t in zip(X, y)]
                 S[f"amat_{tag}_maxrelerr"] = fmt(100 * max(resid), 2)
+                for n, x, t, e in zip(ns_, X, y, resid):
+                    if n in (ns_[0], 1 << 20):
+                        S[f"amat_{tag}_{n}_meas"] = fmt(t)
+                        S[f"amat_{tag}_{n}_pred"] = fmt(sum(bb * xi for bb, xi in zip(beta, x)))
+                        S[f"amat_{tag}_{n}_relerr"] = fmt(100 * e, 2)
+                # classic AMAT with misses serialised: fitted t0 for the L1-hit work plus the
+                # zero-queue latency of the serving level for every L2 hit, L3 hit and DRAM miss
+                zl2, zl3, zd = (num(S.get(f"zq_{l}_ns")) for l in ("L2", "L3", "DRAM"))
+                if all(ok(v) for v in (zl2, zl3, zd)):
+                    x = X[-1]
+                    ser = beta[0] + x[1] * zl2 + x[2] * zl3 + x[3] * zd
+                    S[f"amat_{tag}_serial_n"] = str(ns_[-1])
+                    S[f"amat_{tag}_serial_ns"] = fmt(ser)
+                    S[f"amat_{tag}_serial_dram_ns"] = fmt(x[3] * zd)
+                    S[f"amat_{tag}_serial_ratio"] = fmt(ser / y[-1], 2)
+                    S[f"amat_{tag}_hl2_last"] = fmt(x[1], 2)
+                    S[f"amat_{tag}_hl3_last"] = fmt(x[2], 3)
+                    S[f"amat_{tag}_md_last"] = fmt(x[3], 3)
                 for n, x, t in zip(ns_, X, y):
                     out.append([n, pat, t, sum(b * xi for b, xi in zip(beta, x))])
     if out:
@@ -676,6 +735,25 @@ def tlb(proc, S):
         if r["n"] == str(1 << 24):
             S[f"tlbs_{r['pages']}_ns"] = fmt(num(r["ns_per_elem_median"]))
             S[f"tlbs_{r['pages']}_dtlb"] = fmt(num(r["ctr_dtlb_miss_pe_median"]))
+    if sx:
+        by = {}
+        for r in sx:
+            by.setdefault(int(r["n"]), {})[r["pages"]] = r
+        tab = []
+        for n in sorted(by):
+            a4, hg = by[n].get("4k"), by[n].get("huge")
+            if not (a4 and hg):
+                continue
+            t4, th = num(a4["ns_per_elem_median"]), num(hg["ns_per_elem_median"])
+            tab.append([n, f"$2^{{{round(math.log2(n))}}}$", fmt(20.0 * n / MIB), fmt(t4), fmt(th),
+                        fmt(num(a4["ctr_dtlb_miss_pe_median"]), 3), fmt(num(hg["ctr_dtlb_miss_pe_median"]), 3),
+                        fmt(num(a4["ctr_llc_miss_pe_median"]), 3), fmt(num(hg["ctr_llc_miss_pe_median"]), 3),
+                        fmt(t4 / th, 3) if ok(t4) and ok(th) and th > 0 else "nan"])
+            if n == 1 << 20:
+                S["tlbs_huge_1m_ns"] = fmt(th); S["tlbs_4k_1m_ns"] = fmt(t4)
+        # footprint = x + y (8 B each) + the uint32 index array = 20 N bytes
+        write_csv(proc, "tlb_saxpy_table", ["n", "n_tex", "mib", "ns_4k", "ns_huge", "walks_4k", "walks_huge",
+                                             "llcmiss_4k", "llcmiss_huge", "speedup"], tab)
     a, b = num(S.get("tlbs_4k_ns")), num(S.get("tlbs_huge_ns"))
     if ok(a) and ok(b):
         S["tlbs_speedup"] = fmt(a / b, 3)

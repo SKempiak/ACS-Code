@@ -25,9 +25,14 @@ product of two all-ones vectors equals $N$; $y=2x+y$ with $x=1,y=3$ gives $5$ ev
 with $x=2,y=3$ gives $6$; and the stencil with $a=b=c=1$ on a constant-1 input gives $3$ in the
 interior; and the explicit AVX2 gather through a reversed permutation gives $5$ everywhere. These guard against a reference and kernel sharing the same mistake.
 
-The sweep covers sizes with and without a vector-width remainder (to exercise the scalar/masked tail)
+The sweep covers sizes with and without a vector-width remainder (to exercise the vector epilogue and scalar tail)
 and deliberately misaligned start addresses (to exercise the loop prologue), so correctness is
 established precisely in the regimes the later experiments stress.
 
-Result: all \num{578} validation cases pass for every variant (scalar, autovec, native); the maximum
-observed float32 relative error was below $10^{-6}$, consistent with FMA contraction alone.
+Result (\code{data/raw/validation/20261021-231629/make_test.txt}): all \num{578} cases pass
+(\num{190} each for scalar and autovec, \num{198} for native, which adds the AVX2 gather). Each
+passing comparison logs its maximum relative error. The largest is \num{2.1e-7} (native float32 dot
+product, $N=127$); every other case, including all float64 and int32 cases, matches the reference
+bit for bit. The test coefficients ($a=0.5$; stencil $0.25, 0.5, 0.25$) make every product exact,
+so FMA contraction cannot change SAXPY or stencil results here, and only the reduction exercises
+the tolerance.

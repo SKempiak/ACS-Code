@@ -20,9 +20,11 @@
   \csvq[1]{zero_queue}{mode=read,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}
   (\csvq{zero_queue}{mode=read,pattern=rand}{iops_median} IOPS) and writes
   \csvq[1]{zero_queue}{mode=write,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}, because the
-  write buffer hides the flash program. With one request in flight, sequential reads level off near
-  \csvq{block_size}{bs=262144,pattern=seq,mode=read,qd=1}{mibps_median}\,MiB/s. That limit comes from
-  per-request latency, not the interface. At QD=32 they top out at
+  write buffer hides the flash program. With one request in flight, sequential reads stay near
+  \csvq{block_size}{bs=262144,pattern=seq,mode=read,qd=1}{mibps_median}\,MiB/s from 64 to
+  \qty{256}{\kibi\byte} and reach only
+  \csvq{block_size}{bs=1048576,pattern=seq,mode=read,qd=1}{mibps_median}\,MiB/s at \qty{1}{\mebi\byte},
+  under half the link rate. That limit comes from per-request latency, not the interface. At QD=32 they top out at
   \csvq{block_size}{bs=65536,pattern=seq,mode=read,qd=32}{mibps_median}\,MiB/s, only
   \qty{57}{\percent} of the \qty{3756}{\mebi\byte\per\second} raw PCIe link ceiling, so the NAND back
   end sets the limit.

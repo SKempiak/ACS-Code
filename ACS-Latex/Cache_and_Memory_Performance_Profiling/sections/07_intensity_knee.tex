@@ -3,13 +3,17 @@
 \rubric{Throughput--latency knee}{35}{Clear knee identification, diminishing-returns discussion and a
 Little's Law connection.}
 
+% minipage: keep the hypothesis box in one piece (it must not split around Figure 4)
+\noindent\begin{minipage}{\linewidth}
 \begin{hypothesis}
   A single core cannot saturate the DRAM controller because it can keep only about a dozen demand misses
-  in flight (its L1 fill buffers). Adding load should raise delivered bandwidth until the dual-channel
-  controller saturates in the low tens of \unit{\gibi\byte\per\second}; past that point extra load should
+  in flight (its L1 fill buffers). Adding load should raise delivered bandwidth until the memory
+  controller saturates in the low tens of \unit{\gibi\byte\per\second} (assuming the usual two DDR4
+  channels of this desktop platform; DIMM population was not recorded); past that point extra load should
   buy almost no bandwidth but sharply raise the latency of every request (queueing). By Little's Law,
   saturation needs tens of outstanding lines---more than one core provides.
 \end{hypothesis}
+\end{minipage}
 
 \begin{knobs}
   Generators  & \code{mem_loaded}: $T = 0 \ldots 9$ cores (all physical cores except CPU~2), each streaming its own \qty{128}{\mebi\byte} region with \qty{256}{\bit} loads; then $T=9$ throttled by an injection delay of 8--2048 empty iterations per line \\
@@ -34,18 +38,20 @@ saturation rather than the knee. All three come from the CSV (\code{derive.py}),
 
 \begin{figure}[tbp]
   \centering
+  \begin{subfigure}[t]{0.53\linewidth}
   \IfDataExists{intensity_loaded}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, width=0.8\linewidth, xlabel={Delivered bandwidth (GiB/s)},
-                   ylabel={Loaded latency of a random read (ns)}, xmin=0, ymin=0, legend pos=north west]
-        \addplot+[mark=*, iqr bars] table[x=total_gib_s_median, y=probe_ns_median, iqr of=probe_ns,
+      \begin{axis}[acs, height=0.8\linewidth, xlabel={Delivered bandwidth (GiB/s)},
+                   ylabel={Loaded latency of a random read (ns)}, xmin=0, xmax=34, ymin=0, ymax=320,
+                   legend pos=north west, legend style={font=\scriptsize, inner sep=1pt, row sep=-1pt}]
+        \addplot+[blue, mark=*, mark options={fill=blue}, thick, iqr bars] table[x=total_gib_s_median, y=probe_ns_median, iqr of=probe_ns,
                   only if={delay}{0}] {data/intensity_loaded.csv};
-        \addlegendentry{$T=0\ldots9$ streaming cores}
-        \addplot+[only marks, mark=triangle*, iqr bars] table[x=total_gib_s_median, y=probe_ns_median,
+        \addlegendentry{ours: $T=0\ldots9$ cores}
+        \addplot+[only marks, orange!85!black, mark=triangle*, mark options={fill=orange}, iqr bars] table[x=total_gib_s_median, y=probe_ns_median,
                   iqr of=probe_ns, only if={threads}{9}] {data/intensity_loaded.csv};
-        \addlegendentry{$T=9$ with injection delay}
+        \addlegendentry{ours: $T=9$, injection delay}
         \IfFileExists{data/mlc_loaded.csv}{%
-          \addplot+[mark=o, densely dotted] table[x=gib_s, y=ns, col sep=comma] {data/mlc_loaded.csv};
+          \addplot[black!80, solid, thick, mark=o, mark size=1.5pt] table[x=gib_s, y=ns, col sep=comma] {data/mlc_loaded.csv};
           \addlegendentry{Intel MLC loaded latency}}{}
         \IfFileExists{data/knee_ref.csv}{%
           \addplot[densely dashed, black!50, no marks] table[x=gib_s, y=ns, col sep=comma] {data/knee_ref.csv};
@@ -54,12 +60,34 @@ saturation rather than the knee. All three come from the CSV (\code{derive.py}),
           \addplot[only marks, mark=diamond*, mark size=4pt, red] table[x=gib_s, y=ns, col sep=comma] {data/knee.csv};
           \addlegendentry{knee (95\% of peak)}}{}
       \end{axis}
-    \end{tikzpicture}%
-  }
-  \caption{Measured throughput--latency curve, with Intel MLC's loaded-latency sweep for comparison
-  (MLC's MB/s converted to GiB/s). Each of our points is one load level; both coordinates are medians
-  of 8 windows (bars: IQR of latency). The knee is the first load level that reaches 95\% of peak bandwidth;
-  the dashed line marks twice the unloaded latency.}\label{fig:intensity}
+    \end{tikzpicture}}
+    \caption{Latency vs.\ delivered bandwidth.}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.45\linewidth}
+  \IfDataExists{intensity_loaded}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, width=0.86\linewidth, height=1.0\linewidth, xmin=-0.3, xmax=9.3, ymin=0, ymax=320, xtick={0,...,9},
+                   axis y line*=left, xlabel={Streaming cores $T$},
+                   ylabel={Loaded latency (ns)}, ylabel style={blue}]
+        \addplot+[blue, mark=*, mark options={fill=blue}, thick, iqr bars] table[x=threads, y=probe_ns_median,
+                  iqr of=probe_ns, only if={delay}{0}] {data/intensity_loaded.csv};
+        \addplot[densely dashed, black!50, domain=-0.3:9.3, samples=2] {2*\val{int_w0_ns}};
+        \node[font=\scriptsize, black!60, anchor=south west, inner sep=1pt] at (axis cs:-0.2,{2*\val{int_w0_ns}}) {$2W_0$};
+        \acsvline{\val{int_sat_threads}}{knee}
+      \end{axis}
+      \begin{axis}[acs, width=0.86\linewidth, height=1.0\linewidth, xmin=-0.3, xmax=9.3, ymin=0, ymax=36, grid=none,
+                   axis y line*=right, axis x line=none, ylabel={Bandwidth (GiB/s)}, ylabel style={red!80!black}]
+        \addplot+[red!80!black, mark=square*, mark options={fill=red!80!black}, densely dashed] table[x=threads, y=total_gib_s_median,
+                  only if={delay}{0}] {data/intensity_loaded.csv};
+      \end{axis}
+    \end{tikzpicture}}
+    \caption{Latency (left, blue) and bandwidth (right, red) vs.\ cores.}
+  \end{subfigure}
+  \caption{Measured throughput--latency curve. (a)~Our load levels with Intel MLC's loaded-latency sweep
+  for comparison (MLC's MB/s converted to GiB/s). (b)~The thread sweep against offered load: bandwidth
+  flattens at the knee while latency keeps rising. Each of our points is one load level; both coordinates
+  are medians of 8 windows (bars: IQR of latency). The knee is the first load level that reaches 95\% of peak
+  bandwidth; the dashed horizontal line marks twice the unloaded latency.}\label{fig:intensity}
 \end{figure}
 
 \subsection{Knee and diminishing returns}
@@ -76,8 +104,13 @@ however, climbs steadily to \valqty{int_last_ns}{\nano\second}. It crosses $2W_0
 $T=\val{int_knee_threads}$, i.e.\ at the bandwidth peak itself. (In the injection-delay sweep at $T=9$ the
 crossing is at \valqty{int_kneed_gib}{\gibi\byte\per\second}.) The memory-controller counters confirm the
 throughput axis: at $T=4$ and $T=9$ measured DRAM traffic is \val{int_t4_imc_ratio}$\times$ and
-\val{int_t9_imc_ratio}$\times$ the delivered bandwidth. Beyond the knee the dual-channel controller, not the
+\val{int_t9_imc_ratio}$\times$ the delivered bandwidth. Beyond the knee the memory controller, not the
 cores, is the bottleneck: requests no longer finish faster, they queue.
+% DRAM-PEAK (to be filled in from `sudo dmidecode -t memory`): theoretical peak =
+% channels x MT/s x 8 B; then quote int_sat_gib and int_peak_gib as a percentage of it.
+\emph{Theoretical DRAM peak: not stated.} The DIMM speed and channel population were not recorded
+(\code{env.txt} reports ``DIMM speed: not available''; reading it needs root and \code{dmidecode}), so we do
+not express the knee as a fraction of the theoretical peak; the measured ceiling above is the reference.
 
 \paragraph{Comparison with Intel MLC.} MLC's \texttt{-{}-loaded\_latency} sweep (nine load cores, injection
 delay from 20\,000 down to 0 cycles, latency thread on CPU~2) is plotted in \cref{fig:intensity}. It

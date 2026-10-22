@@ -3,7 +3,8 @@
 
 The hierarchy behaves as its capacities predict, and the counters show \emph{why} each step occurs.
 Zero-queue latency is \valqty{zq_L1_ns}{\nano\second} (\valnum{zq_L1_cyc}~cycles) in L1,
-\valqty{zq_L2_ns}{\nano\second} in L2, \valqty{zq_L3_ns}{\nano\second} in L3 and
+\valqty{zq_L2_ns}{\nano\second} on the L2 plateau with \qty{4}{\kibi\byte} pages (L2 hit latency
+\valqty{zq_L2_hugens}{\nano\second} without conflict misses), \valqty{zq_L3_ns}{\nano\second} in L3 and
 \valqty{zq_DRAM_ns}{\nano\second} in DRAM, of which \valqty{zq_DRAM_walk_ns}{\nano\second} is page walking
 that \qty{2}{\mebi\byte} pages remove. Concurrency is the other half of the story. Measured under load,
 bandwidth reaches \valqty{int_sat_gib}{\gibi\byte\per\second} at only \val{int_sat_ratio}$\times$ the

@@ -25,15 +25,15 @@ across working-set sizes.}
     \begin{tikzpicture}
       \begin{axis}[acs, xmode=log, log basis x=2, xlabel={$N$ (elements)}, ylabel={Speedup over scalar},
                    legend pos=outer north east, width=0.75\linewidth]
-        \addplot+[iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{saxpy}, only if={variant}{native}] {data/baseline.csv};
+        \addplot+[blue, mark=*, mark options={fill=blue}, iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{saxpy}, only if={variant}{native}] {data/baseline.csv};
         \addlegendentry{SAXPY native}
-        \addplot+[iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{saxpy}, only if={variant}{autovec}] {data/baseline.csv};
+        \addplot+[blue, densely dashed, mark=o, mark options={solid}, iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{saxpy}, only if={variant}{autovec}] {data/baseline.csv};
         \addlegendentry{SAXPY autovec}
-        \addplot+[iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{mul}, only if={variant}{native}] {data/baseline.csv};
+        \addplot+[red, mark=square*, mark options={fill=red}, iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{mul}, only if={variant}{native}] {data/baseline.csv};
         \addlegendentry{multiply native}
-        \addplot+[iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{stencil}, only if={variant}{native}] {data/baseline.csv};
+        \addplot+[brown!80!black, mark=triangle*, mark options={fill=brown!80!black}, iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{stencil}, only if={variant}{native}] {data/baseline.csv};
         \addlegendentry{stencil native}
-        \addplot+[iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{dot}, only if={variant}{native}] {data/baseline.csv};
+        \addplot+[black, mark=diamond*, mark options={fill=black}, iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{dot}, only if={variant}{native}] {data/baseline.csv};
         \addlegendentry{dot native}
         \acsvline{4096}{L1d}
         \acsvline{32768}{L2}
@@ -67,6 +67,27 @@ across working-set sizes.}
   outside cache.}\label{fig:baseline-throughput}
 \end{figure}
 
+\begin{table}[tbp]
+  \centering\small
+  \caption{Achieved GFLOP/s (median) of every kernel and build at one $N$ per level: L1
+  ($N=\num{1024}$), L2 (\num{16384}), L3 (\num{524288}) and DRAM (\num{16777216}). The same points
+  appear in the roofline (\cref{fig:roofline}).}\label{tab:baseline-gflops}
+  \IfDataExists{baseline_gflops}{%
+    \pgfplotstabletypeset[
+      col sep=comma, string type,
+      columns={kernel,variant,L1,L2,L3,DRAM},
+      columns/kernel/.style={column name=Kernel},
+      columns/variant/.style={column name=Build},
+      columns/L1/.style={column type=r}, columns/L2/.style={column type=r},
+      columns/L3/.style={column type=r}, columns/DRAM/.style={column type=r},
+      every head row/.style={before row=\toprule, after row=\midrule},
+      every row no 3/.style={before row=\midrule}, every row no 6/.style={before row=\midrule},
+      every row no 9/.style={before row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/baseline_gflops.csv}%
+  }
+\end{table}
+
 \subsection{Analysis}
 At $N=\num{4096}$ (L1-resident) the \code{native} speedups are SAXPY $5.79\times$
 (\qty{20.2}{\giga\flop\per\second}), stencil $3.49\times$ (\qty{17.3}{\giga\flop\per\second}),
@@ -84,24 +105,25 @@ The kernels mostly behave as predicted, and the exceptions are informative.
 already dropped to $3.55\times$ at $N=\num{4096}$. The \emph{stencil} has the highest FLOP count (5)
 and reuses $x_{i-1},x_i,x_{i+1}$, so it stays the most compute-bound and keeps a $2.6$--$2.7\times$
 advantage even in DRAM (\cref{fig:baseline-speedup}). Its native speedup is irregular, though:
-$3.4$--$3.5\times$ for $N=\num{1024}\ldots\num{16384}$ but $4.5$--$6.2\times$ for the L2/L3-resident
-sizes. In other words, the cache-resident stencil runs \emph{slower} per element than the
+$3.3$--$3.5\times$ for $N=\num{1024}\ldots\num{16384}$ but $4.5$--$6.2\times$ for
+$N=\num{32768}\ldots\num{1048576}$. In other words, the cache-resident stencil runs \emph{slower} per element than the
 L3-resident one (\cref{sec:anomalies}). The \emph{dot product} is the reduction case from
 \cref{sec:vectorization}: packed multiplies, serial sum, $\approx1\times$ at every size, at
 \qtyrange{1.33}{1.49}{\giga\flop\per\second}.
 
 By $N=\num{16777216}$ (\qty{128}{\mebi\byte}, far past L3) every speedup has compressed: SAXPY
-$1.94\times$, multiply $1.51\times$, stencil $2.72\times$, dot $1.00\times$.
+$1.94\times$, multiply $1.51\times$, stencil $2.72\times$, dot $1.00\times$ (GFLOP/s of every
+kernel and build: \cref{tab:baseline-gflops}).
 \Cref{fig:baseline-throughput} shows the asymmetry behind this. Native SAXPY falls from
-\num{20.2} to \qty{4.6}{\giga\flop\per\second} on a DRAM plateau, while scalar only falls from
+\num{20.2} to \qty{4.7}{\giga\flop\per\second} on a DRAM plateau, while scalar only falls from
 about \qty{3.5}{\giga\flop\per\second} in L1 to \qty{2.4}{\giga\flop\per\second} in DRAM. The two
 plateaus do not merge because scalar SAXPY stays largely instruction-bound even in DRAM. It needs
 \numrange{1.5}{1.8}~cycles of core work per element with all data in cache, at an IPC near 4, and
 \num{2.3}~cycles per element from DRAM, still at an IPC of \num{3.0} (\cref{sec:locality}). At the
-fixed \qty{2.8}{\giga\hertz} clock this persistent ratio is larger than in the earlier turbo-clock
-sweep ($\approx1.4\times$), as expected if scalar is core-bound and native memory-bound. Three
-separate measurements of SAXPY at $N=\num{16777216}$ (baseline, locality and negative-case sweeps)
-agree closely, at $1.94\times$, $1.94\times$ and $1.95\times$, and at $1.88$--$1.92\times$ at
-$N=\num{33554432}$. The curves bend downward at the L1 ($N\approx\num{4096}$) and L2
+fixed \qty{2.8}{\giga\hertz} clock this persistent ratio is larger than in the turbo-clock sweep
+($1.32\text{--}1.44\times$, \cref{sec:method}), as expected if scalar is core-bound and native
+memory-bound. Separate sweeps agree: SAXPY at $N=\num{16777216}$ gives $1.94\times$ (baseline and
+locality), $1.95\times$ (negative case), $1.99\times$ (data type) and $1.91\text{--}2.02\times$
+across the alignment sweep's offsets, and $1.88$--$1.92\times$ at $N=\num{33554432}$. The curves bend downward at the L1 ($N\approx\num{4096}$) and L2
 ($N\approx\num{32768}$) boundaries; \cref{sec:locality} resolves those transitions and
 \cref{sec:roofline} ties each plateau to a measured bandwidth roof.

@@ -30,17 +30,23 @@ traffic measured by the memory-controller counters over the same window.
   \begin{subfigure}[t]{0.49\linewidth}
     \IfDataExists{rw_mix}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, height=0.85\linewidth, ymin=0, xtick={0,5,7,10},
+      \begin{axis}[acs, height=0.85\linewidth, ymin=0, ymax=50, xtick={0,5,7,10},
                    xticklabels={0/100,50/50,70/30,100/0}, xlabel={Read/write mix (lines)},
-                   ylabel={Bandwidth (GiB/s)}, legend pos=south west, legend style={font=\scriptsize}]
-        \addplot+[iqr bars] table[x=reads10, y=total_gib_s_median, iqr of=total_gib_s, only if={threads}{9}] {data/rw_mix.csv};
+                   ylabel={Bandwidth (GiB/s)},
+                   legend style={font=\scriptsize, inner sep=1pt, at={(0.5,1.03)}, anchor=south},
+                   legend columns=2]
+        \addplot+[blue, mark=*, mark options={fill=blue}, iqr bars] table[x=reads10, y=total_gib_s_median, iqr of=total_gib_s, only if={threads}{9}] {data/rw_mix.csv};
         \addlegendentry{demand, $T=9$}
-        \addplot+[mark=o, dashed] table[x=reads10, y=traffic_gib_s_median, only if={threads}{9}] {data/rw_mix.csv};
+        \addplot+[blue, mark=o, dashed] table[x=reads10, y=traffic_gib_s_median, only if={threads}{9}] {data/rw_mix.csv};
         \addlegendentry{est.\ traffic, $T=9$}
-        \addplot+[only marks, mark=x, mark size=3pt, black] table[x=reads10, y expr=\thisrow{imc_rd_gib_s_median}+\thisrow{imc_wr_gib_s_median}, only if={threads}{9}] {data/rw_mix.csv};
+        \addplot+[blue!50!black, only marks, mark=x, mark size=3pt] table[x=reads10, y expr=\thisrow{imc_rd_gib_s_median}+\thisrow{imc_wr_gib_s_median}, only if={threads}{9}] {data/rw_mix.csv};
         \addlegendentry{DRAM (IMC), $T=9$}
-        \addplot+[iqr bars] table[x=reads10, y=total_gib_s_median, iqr of=total_gib_s, only if={threads}{1}] {data/rw_mix.csv};
+        \addplot+[red, mark=square*, mark options={fill=red}, iqr bars] table[x=reads10, y=total_gib_s_median, iqr of=total_gib_s, only if={threads}{1}] {data/rw_mix.csv};
         \addlegendentry{demand, $T=1$}
+        \addplot+[red, mark=square, dashed] table[x=reads10, y=traffic_gib_s_median, only if={threads}{1}] {data/rw_mix.csv};
+        \addlegendentry{est.\ traffic, $T=1$}
+        \addplot+[red!50!black, only marks, mark=+, mark size=3pt] table[x=reads10, y expr=\thisrow{imc_rd_gib_s_median}+\thisrow{imc_wr_gib_s_median}, only if={threads}{1}] {data/rw_mix.csv};
+        \addlegendentry{DRAM (IMC), $T=1$}
       \end{axis}
     \end{tikzpicture}}
     \caption{Throughput.}
@@ -59,7 +65,9 @@ traffic measured by the memory-controller counters over the same window.
     \end{tikzpicture}}
     \caption{Loaded latency of a random read.}
   \end{subfigure}
-  \caption{Read/write mixes: throughput and concurrently measured latency. The unloaded probe latency
+  \caption{Read/write mixes: throughput and concurrently measured latency. Demand bandwidth is what the
+  program reads and writes; ``est.\ traffic'' adds one RFO line per written line; ``DRAM (IMC)'' is the
+  memory-controller read+write count over the same windows. The unloaded probe latency
   is \valqty{rw_unloaded_ns}{\nano\second}.}\label{fig:rw-mix}
 \end{figure}
 
@@ -83,8 +91,9 @@ therefore the RFO, not a loss of controller efficiency.
 
 The concurrently measured probe latency is \valqty{rw_10_t9_ns}{\nano\second},
 \valqty{rw_7_t9_ns}{\nano\second}, \valqty{rw_5_t9_ns}{\nano\second} and \valqty{rw_0_t9_ns}{\nano\second}
-for the four mixes (unloaded: \valqty{rw_unloaded_ns}{\nano\second}): at the same total traffic, write-heavy
-mixes double read latency. Write-backs and RFOs occupy the same channels and queues as the probe's reads,
+for the four mixes (unloaded: \valqty{rw_unloaded_ns}{\nano\second}). At the same total DRAM traffic, only
+pure writes double the read latency relative to pure reads (\val{rw_0_t9_ns_rel}$\times$); the 70/30 and
+50/50 mixes raise it by about a third (\val{rw_7_t9_ns_rel}$\times$ and \val{rw_5_t9_ns_rel}$\times$). Write-backs and RFOs occupy the same channels and queues as the probe's reads,
 and read/write bus turnarounds lengthen every read's wait.
 
 A single generator core ($T=1$) is not controller-bound: demand bandwidth falls only slightly from
@@ -92,11 +101,13 @@ A single generator core ($T=1$) is not controller-bound: demand bandwidth falls 
 while measured DRAM traffic grows from \valqty{rw_10_t1_imc}{\gibi\byte\per\second} to
 \valqty{rw_0_t1_imc}{\gibi\byte\per\second}. With one core the measurement is
 \val{rw_t1_imcest_min}--\val{rw_t1_imcest_max}$\times$ the RFO-counted estimate, for pure reads as well as for
-mixes. Our hypothesis, untested, is that this is mostly the estimate's own error: our throughput
-includes lines the generator touches that are still in the \qty{20}{\mebi\byte} L3 from the previous pass,
-since one core's \qty{128}{\mebi\byte} stream is not quite large enough to flush the cache completely in
-every window. With nine cores the effect vanishes. A core can keep more lines moving when part of its stream is
-stores, which retire without waiting for their RFO. The probe barely notices one core:
+mixes; with nine cores the gap vanishes. We did not resolve this gap, so it is a limitation of the $T=1$
+traffic comparison. \emph{Untested hypothesis:} it is mostly the estimate's own error, because the
+throughput counts lines the generator touches that are still in the \qty{20}{\mebi\byte} L3 from the
+previous pass (one core's \qty{128}{\mebi\byte} stream may not flush the cache completely in every window).
+A test would repeat $T=1$ with a buffer many times the L3 and check whether the ratio moves to 1. A second,
+also untested, hypothesis explains why demand bandwidth falls so little with writes at $T=1$: stores retire
+without waiting for their RFO, so a core can keep more lines moving when part of its stream is stores. The probe barely notices one core:
 \val{rw_t1_ns_min}--\valqty{rw_t1_ns_max}{\nano\second} across the four mixes. As named-kernel references on all
 ten cores, \code{copy} delivers \valqty{rw_ref_copy}{\gibi\byte\per\second} and \code{triad}
 \valqty{rw_ref_triad}{\gibi\byte\per\second} of demand bandwidth. The counters show their RFOs too: copy reads

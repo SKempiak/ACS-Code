@@ -49,8 +49,8 @@ is L1/L2 bandwidth, reported by a loop that re-reads the same cached lines. An A
 microbenchmark very easily falls into this trap, because a \qty{16}{\kibi\byte} array is a perfectly
 natural default and the resulting tens of \unit{\gibi\byte\per\second} look like a plausible
 ``memory'' number. Two cheap detectors flag it: (1) the reported bandwidth \emph{changes with buffer size}, which a
-true DRAM measurement must not once the set exceeds the LLC; and (2) the small-buffer figure exceeds what the whole
-memory system delivers to \emph{all} cores (\valqty{int_peak_gib}{\gibi\byte\per\second}, \cref{sec:intensity}). Our methodology avoids the pitfall by sizing every
+true DRAM measurement must not once the set exceeds the LLC; and (2) the small-buffer figure from \emph{one} core matches or
+exceeds what the whole memory system delivers to \emph{all} cores (\valqty{int_peak_gib}{\gibi\byte\per\second}, \cref{sec:intensity}). Our methodology avoids the pitfall by sizing every
 bandwidth and latency point explicitly against the cache capacities (\cref{sec:method}) and, for the DRAM
 claims, using working sets at least $3\times$ the LLC so the first-touch pass cannot leave the data
 cached.

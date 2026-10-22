@@ -31,27 +31,55 @@
   }
   \caption{Native speedup of elementwise multiply by data type (median; error bars: range implied
   by the two IQRs). float32 and int32 (\num{8} lanes) track each other; float64 (\num{4} lanes) is
-  about half.}\label{fig:dtype}
+  about half. SAXPY and stencil: \cref{tab:dtype}.}\label{fig:dtype}
 \end{figure}
 
-\subsection{Analysis}
-The lane-count prediction holds closely for the cache-resident multiply. At $N=\num{1024}$ the native
-speedups are float32 $5.19\times$, int32 $5.37\times$, and float64 $2.82\times$---float64 is
-$0.54\times$ of float32, within a few percent of the expected $1/2$ from halving the lanes. The
-float32/int32 pairing confirms the effect is lane count and not a floating-point quirk: int32 uses
-\code{vpmulld} over \num{8} lanes and lands right on the float32 curve. The ratio holds mid-cache too
-($N=\num{16384}$: f32 $3.31\times$ vs f64 $1.66\times$), although by $N=\num{65536}$, where both are
-L2/L3-bound, it narrows ($2.11\times$ vs $1.40\times$).
+\begin{table}[tbp]
+  \centering\small
+  \caption{Speedup over scalar by kernel and data type (\code{dtype.csv}), at $N=\num{1024}$ (L1),
+  \num{16384} (L2) and \num{16777216} (DRAM).}\label{tab:dtype}
+  \IfDataExists{dtype_summary}{%
+    \pgfplotstabletypeset[
+      col sep=comma, string type,
+      columns={kernel,dtype,autovec_1k,native_1k,native_16k,native_16m},
+      columns/kernel/.style={column name=Kernel},
+      columns/dtype/.style={column name=Type},
+      columns/autovec_1k/.style={column name={autovec, \num{1024}}, column type=r},
+      columns/native_1k/.style={column name={native, \num{1024}}, column type=r},
+      columns/native_16k/.style={column name={\num{16384}}, column type=r},
+      columns/native_16m/.style={column name={\num{16777216}}, column type=r},
+      every head row/.style={before row=\toprule, after row=\midrule},
+      every row no 2/.style={before row=\midrule}, every row no 5/.style={before row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/dtype_summary.csv}%
+  }
+\end{table}
 
-In DRAM the picture changes as predicted: at $N=\num{16777216}$ every speedup has compressed (f32
-$1.60\times$, f64 $1.17\times$). The separate baseline sweep measured $1.51\times$ for float32
-multiply at the same $N$ (\cref{sec:baseline}); the difference is mostly the native side (\num{1.72}
-here vs \qty{1.63}{\giga\flop\per\second}), a \SI{6}{\percent} run-to-run spread of DRAM-bound
-throughput, so we quote multiply's DRAM speedup as $1.5\text{--}1.6\times$. Float64's
-\emph{absolute} throughput is under half of float32's (\num{0.80} vs
-\qty{1.72}{\giga\flop\per\second}) because each element moves \qty{8}{\byte} instead of
-\num{4} and the kernel is bandwidth-bound. So data type acts through two separate mechanisms: lane
-count sets the cache-resident speedup ceiling, while bytes-per-element sets the DRAM throughput. A
-kernel that looks ``half as fast in float64'' in cache is really just running \num{4} lanes instead
-of \num{8}; the same kernel in DRAM is half as fast for the different reason that it has twice the
-traffic.
+\subsection{Analysis}
+The lane-count prediction holds for most cache-resident points (\cref{tab:dtype}). At
+$N=\num{1024}$ the native float64 speedup is \numrange{0.52}{0.59} of float32's for all three
+kernels (multiply $2.82\times$ vs $5.19\times$, SAXPY $3.28\times$ vs $5.60\times$, stencil
+$1.73\times$ vs $3.35\times$), close to the expected $1/2$. The int32 multiply, which \code{native}
+compiles to one \code{vpmulld} over \num{8} lanes, lands on the float32 curve ($5.37\times$). The
+ratio is not universal, however. At $N=\num{16384}$ the stencil keeps $3.02\times$ in float64 against
+$3.44\times$ in float32 (\num{0.88}): the float32 stencil is depressed at exactly these sizes by the
+slow cache-resident regime of \cref{sec:anomalies}, while float64 runs at
+\qty{13.2}{\giga\flop\per\second}. And by $N=\num{65536}$, where multiply is L2/L3-bound, its ratio
+narrows to $1.40\times$ vs $2.11\times$.
+
+\emph{Operation cost.} Lane count is not the only factor. \code{autovec} gains $3.53\times$ on
+float32 multiply at $N=\num{1024}$ (one \code{mulps} per \num{4} lanes) but only $1.86\times$ on
+int32: SSE2 has no packed 32-bit multiply (\code{pmulld} is SSE4.1), so the disassembly emulates it
+with two \code{pmuludq}, two shifts, two \code{pshufd} and a \code{punpckldq}---seven
+instructions per \num{4} lanes.
+
+In DRAM every speedup compresses as predicted ($N=\num{16777216}$, native: float32 $1.60$--$2.79\times$,
+float64 $1.17$--$1.68\times$), and float64 now keeps \SIrange{60}{73}{\percent} of the float32 gain
+rather than half. The separate baseline sweep measured $1.51\times$ for float32 multiply at the
+same $N$ (\cref{sec:baseline}); the difference is mostly the native side (\num{1.72} here vs
+\qty{1.63}{\giga\flop\per\second}), a \SI{6}{\percent} run-to-run spread of DRAM-bound throughput,
+so we quote multiply's DRAM speedup as $1.5\text{--}1.6\times$. Float64's \emph{absolute}
+multiply throughput is under half of float32's (\num{0.80} vs \qty{1.72}{\giga\flop\per\second})
+because each element moves \qty{8}{\byte} instead of \num{4}. So data type acts through three
+mechanisms: lane count and the cost of the vector operation set the cache-resident speedup, while
+bytes per element set the DRAM throughput.

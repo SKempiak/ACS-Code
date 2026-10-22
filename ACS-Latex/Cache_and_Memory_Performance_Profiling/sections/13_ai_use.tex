@@ -9,7 +9,7 @@ Summarized from \code{AI_USE_LOG.md} in the code repository.
         next day; on 2026-09-15 it produced the project scaffold (templates, Makefiles, report skeletons),
         which was kept. The first Project~2 benchmarks and report followed on 2026-10-20, after a build
         check of the scaffold on 2026-10-17. With Claude Opus~5.5, the 2026-10-21 rework produced every
-        measurement in this report. GCC~\sysGCC{} was used for the builds. The AI wrote the code and the
+        measurement in this report. The builds used \sysGCC{}. The AI wrote the code and the
         prose. Claude Code also ran the timed experiments, on the user's machine (\cref{tab:environment})
         and with the user's approval, after the user had made the root-only settings: performance governor, turbo
         off, SMT siblings offline, the ACPI event source masked, \code{perf_event_paranoid}=0, 1024
@@ -50,8 +50,8 @@ Summarized from \code{AI_USE_LOG.md} in the code repository.
           \item A hand-copied table disagreed with its CSV. All tables and quoted numbers are now
                 generated from the data (\code{derive.py}, \code{summary.csv}).
           \item Cycle counts were first converted with the in-process add-chain frequency probe, which
-                misread the clock in about a third of runs. An independent review caught this, and the AI's
-                diagnostic traced it to wall time lost to an ACPI event storm, which the user then masked
+                misread the clock in about a third of runs. An independent AI regrade session (Claude Code), run at
+                the student's request, flagged this, and the AI's diagnostic traced it to wall time lost to an ACPI event storm, which the user then masked
                 (\cref{sec:anomalies}). Conversion now uses the fixed \qty{2.8}{\giga\hertz} clock,
                 confirmed with the cycle counter.
         \end{enumerate}

@@ -3,25 +3,37 @@
 
 Before trusting any number, we confirm that the benchmark describes the SSD and not an artifact.
 \code{make -C SSD_Performance_Profiling test} (\code{scripts/validate.sh}) runs the automated checks; it
-writes about \qty{70}{\mebi\byte} and deletes it.
+writes one \qty{64}{\mebi\byte} scratch file (everything else only reads) and deletes it.
 \begin{itemize}
   \item \textbf{Safety gate.} \code{safety.sh} refuses both block devices on the host
         (\code{/dev/nvme0n1}, the SSD; \code{/dev/sda}, the HDD), a symlink to \code{/dev/sda} placed
         inside the scratch directory, a directory, a path outside the scratch directory
-        (\code{/etc/passwd}) and a mountpoint (\code{/}). It accepts only a disposable file inside the
-        scratch directory. \code{blkbench} independently refuses a directory and a symlink before opening
-        them. None of these checks opens a device.
+        (\code{/etc/passwd}) and a mountpoint (\code{/}). It also refuses a scratch directory that
+        resolves to \code{/}, to \code{\$HOME}, to the root of a mounted filesystem
+        (\code{/dev/shm}) or to a directory the user does not own (\code{/usr/share}); each of these
+        tests sets \code{ACS_SCRATCH} accordingly and checks that the refusal names the intended rule, so
+        no rule is masked by an earlier one. It accepts only a disposable file inside the scratch
+        directory. \code{blkbench} independently refuses a directory and a symlink before opening them.
+        None of these checks opens a device.
   \item \textbf{Incompressible data.} The preconditioned file does not shrink under \code{gzip -1}
         (output $\geq 99\%$ of input), so the drive cannot gain from compression or zero detection.
   \item \textbf{Physical orderings.} On a preconditioned file, \qty{128}{\kibi\byte} sequential
         throughput exceeds \qty{4}{\kibi\byte} random throughput. Raising QD from 1 to 8 raises the
         measured concurrency $L=\lambda W$, and $L$ never exceeds the configured QD (a hard invariant of
         a closed loop with QD slots; \cref{sec:queue-depth}).
-  \item \textbf{Direct I/O is real.} With \code{O_DIRECT} the QD=1 \qty{4}{\kibi\byte} reads take tens of
-        microseconds. The \code{--buffered} path reaches about two million IOPS at sub-microsecond
-        latency because the page cache serves it from RAM (\cref{sec:pitfall}). A gap of two orders of
-        magnitude shows that the real runs bypass the cache. \code{make test} asserts that buffered
-        re-reads are more than $5\times$ faster than direct ones.
+  \item \textbf{Direct I/O is real.} With \code{O_DIRECT} the QD=1 \qty{4}{\kibi\byte} reads take
+        \csvq[0]{pitfall}{mode=read}{lat_mean_us_median}\,\si{\micro\second} (sequential) to
+        \csvq[0]{zero_queue}{mode=read,pattern=rand}{lat_mean_us_median}\,\si{\micro\second} (random). The
+        \code{--buffered} path reaches \csvq{pitfall}{mode=read-buffered}{iops_median} IOPS at
+        \csvq[2]{pitfall}{mode=read-buffered}{lat_mean_us_median}\,\si{\micro\second} mean latency because
+        the page cache serves it from RAM (\cref{tab:pitfall}).
+        \csvget\ssdVb{pitfall}{mode=read-buffered}{iops_median}\csvget\ssdVd{pitfall}{mode=read}{iops_median}%
+        \csvget\ssdVr{zero_queue}{mode=read,pattern=rand}{iops_median}%
+        That is \ssdratio[0]{\ssdVb}{\ssdVd}$\times$ the IOPS of the same sequential workload with
+        \code{O_DIRECT} and \ssdratio[0]{\ssdVb}{\ssdVr}$\times$ those of QD=1 random reads, more than
+        an order of magnitude either way, which shows that the real runs bypass the cache.
+        \code{make test} asserts that buffered re-reads are more than $5\times$ faster than direct
+        ones.
   \item \textbf{Interface ceiling known, not assumed.} sysfs reports the link at
         \qty{8}{GT/s}~$\times$4, so no measurement may exceed \qty{3756}{\mebi\byte\per\second}
         (\cref{sec:method}). The highest sequential read we measure,
@@ -55,9 +67,15 @@ error), so small p99 differences are expected.
       \ssdstr{mode}\ssdM\ssdstr{pattern}\ssdP\ssdstr{bs}\ssdBS\ssdstr{qd}\ssdQD
       \ssdget{blk_iops}\ssdA\ssdget{fio_iops}\ssdB\ssdget[3]{iops_ratio}\ssdC
       \ssdget[1]{blk_p50_us}\ssdD\ssdget[1]{fio_p50_us}\ssdE\ssdget[1]{blk_p99_us}\ssdF\ssdget[1]{fio_p99_us}\ssdG
-      \eappto\ssdRows{\expandonce\ssdP\space\expandonce\ssdM & \noexpand\ssdbs{\ssdBS} & \ssdQD &
-        \expandonce\ssdA & \expandonce\ssdB & \expandonce\ssdC & \expandonce\ssdD & \expandonce\ssdE &
-        \expandonce\ssdF & \expandonce\ssdG \noexpand\\}}%
+      % grey + dagger: the sequential-read rows measured the fragmented layout (see text)
+      \def\ssdSty{}\def\ssdMk{}\def\ssdRd{read}\def\ssdSq{seq}%
+      \ifx\ssdM\ssdRd\ifx\ssdP\ssdSq\def\ssdSty{\color{black!45}}\def\ssdMk{$^\dagger$}\fi\fi
+      \eappto\ssdRows{\expandonce\ssdSty\expandonce\ssdP\space\expandonce\ssdM\expandonce\ssdMk &
+        \expandonce\ssdSty\noexpand\ssdbs{\ssdBS} & \expandonce\ssdSty\ssdQD &
+        \expandonce\ssdSty\expandonce\ssdA & \expandonce\ssdSty\expandonce\ssdB &
+        \expandonce\ssdSty\expandonce\ssdC & \expandonce\ssdSty\expandonce\ssdD &
+        \expandonce\ssdSty\expandonce\ssdE & \expandonce\ssdSty\expandonce\ssdF &
+        \expandonce\ssdSty\expandonce\ssdG \noexpand\\}}%
     \begin{tabular}{@{}llrrrrrrrr@{}}
       \toprule
       Pattern & Block & QD & \multicolumn{2}{c}{IOPS} & FIO/blk & \multicolumn{2}{c}{p50} & \multicolumn{2}{c}{p99} \\
@@ -66,7 +84,10 @@ error), so small p99 differences are expected.
       \midrule
       \ssdRows
       \bottomrule
-    \end{tabular}}{\acsmissing{data/fio_compare.csv}}
+    \end{tabular}\par\smallskip
+    {\footnotesize $^\dagger$\,Grey rows: fragmented layout, not representative of sequential-read
+    performance (the file had just been randomly overwritten; see text). They still compare the
+    engines.\par}}{\acsmissing{data/fio_compare.csv}}
 \end{table}
 
 \textbf{Reads agree.} On all four read points, FIO/\code{blkbench} IOPS ratios are 0.983--1.006 and p50

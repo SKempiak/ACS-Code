@@ -11,21 +11,16 @@
         disassembly shows \code{vmulps} on \code{ymm} followed by a chain of scalar \code{vaddss}
         (\cref{sec:vectorization}), confirming the hypothesis. We chose not to enable
         \code{-ffast-math} so that all variants remain bit-reproducible against the reference.
-  \item \textbf{Native SAXPY speedup varies within L1.} Over the L1-resident sizes the native
-        speedup is $5.6\text{--}5.9\times$ at $N=\num{1024}$, \num{2048} and \num{3072}, but
-        $6.86\times$ at $N=\num{1536}$ (locality sweep) and $6.32\times$ at $N=512$ (baseline). It
-        falls only slightly, to $5.77\times$, at $N=\num{4096}$, where the two arrays exactly fill
-        the \qty{32}{\kibi\byte} L1 and L1D misses first appear (\num{0.014} per element native,
-        \num{0.023} scalar, versus at most \num{0.0011} at smaller $N$). We first attributed the peaks
-        to per-call overhead, but the tail study (\cref{sec:alignment}) shows that fixed overhead
-        \emph{lowers} the native speedup at small $N$. Cache misses do not explain them either: the
-        scalar time is flat across these sizes, and the peak comes from native needing only
-        \num{0.22}~cycles per element at $N=\num{1536}$ against \numrange{0.26}{0.28} at the others.
-        Untested hypothesis: the relative placement of \code{x} and \code{y} (4K aliasing, as for
-        the stencil below) differs between these allocation sizes. The same distance sweep would
-        test it.
+  \item \textbf{Native SAXPY speedup varies within L1.} It is $5.6\text{--}5.9\times$ at
+        $N=\num{1024}$, \num{2048}, \num{3072} and \num{4096}, but $6.86\times$ at $N=\num{1536}$
+        (locality sweep) and $6.32\times$ at $N=512$ (baseline). Scalar time is flat across these
+        sizes and L1D misses stay below \num{0.0011} per element below $N=\num{4096}$; the peak is
+        native needing \num{0.22} instead of \numrange{0.26}{0.28}~cycles per element. Per-call
+        overhead cannot explain it, since it \emph{lowers} small-$N$ speedups
+        (\cref{sec:alignment}). Untested hypothesis: the relative placement of \code{x} and
+        \code{y} (4K aliasing, as for the stencil below), testable with the same distance sweep.
   \item \textbf{Stencil keeps a $2.6\text{--}2.8\times$ advantage in DRAM} while SAXPY and
-        multiply fall to $1.88\text{--}1.99\times$ and $1.5\text{--}1.6\times$. Its native build is
+        multiply fall to $1.88\text{--}2.02\times$ and $1.5\text{--}1.6\times$. Its native build is
         just as bandwidth-bound as theirs: it runs at \SI{101}{\percent} of the DRAM roof
         (\cref{sec:roofline}). Its scalar build, however, needs
         \num{5}~FLOP per element of serial \code{mulss}/\code{addss} work and reaches only
@@ -44,31 +39,23 @@
         sweep of the \code{x}--\code{y} distance modulo \qty{4}{\kibi\byte} at fixed $N$, showing
         the slow rate only at small distances, together with the core's 4K-alias counter
         (\code{ld_blocks_partial.address_alias}). We ran neither.
-  \item \textbf{Scalar and SIMD SAXPY do not converge in DRAM.} We expected both to reach the same
-        bandwidth plateau; native stays $1.88\text{--}1.99\times$ ahead. Our first hypothesis was that
-        the scalar loop keeps fewer misses in flight. The counters (\cref{sec:locality}) show
-        instead that scalar SAXPY is still largely \emph{instruction}-bound in DRAM
-        (\num{2.34}~cycles per element at an IPC of \num{3.0}, versus \num{1.53} in L1), while native
-        sits at the bandwidth roof (IPC \num{0.6}). The ratio of the two, $1.88$, matches the
-        measured speedup, and it
-        depends on the clock: the earlier turbo-clock sweep measured only $1.3\text{--}1.4\times$.
-  \item \textbf{Two-state scalar SAXPY (not reproduced).} In storm-affected sessions earlier the same
-        day, scalar SAXPY with L2/L3-resident data ran at either $\approx1.6$ or $\approx1.8$ cycles
-        per element, chosen per process. The cycle counter excludes stolen time, so this was a core
-        effect, not lost wall time. In the clean run it did not recur: across all \num{13} locality
-        sizes from $N=\num{65536}$ to \num{1048576}, scalar takes \qtyrange{0.650}{0.653}{\nano\second}
-        (\num{1.81} cycles) per element. Only at $N=\num{32768}$, where the two arrays exactly fill
-        the \qty{256}{\kibi\byte} L2, do two measurements of the same machine code still differ, by
-        \SI{1}{\percent} (scalar) and \SI{14}{\percent} (native). For that residual we have only the
-        untested page-placement hypothesis and the test stated in \cref{sec:stride}. The earlier
-        fast state's cause remains unidentified.
+  \item \textbf{Scalar and SIMD SAXPY do not converge in DRAM.} We expected one shared bandwidth
+        plateau; native stays $1.88\text{--}2.02\times$ ahead because scalar SAXPY is still largely
+        instruction-bound there (\num{2.34}~cycles per element at IPC \num{3.0}) while native sits on
+        the roof (IPC \num{0.6}); the cycle ratio, $1.88$, is the measured speedup
+        (\cref{sec:locality}).
+  \item \textbf{Same code, different process, $N=\num{32768}$.} Scalar SAXPY is stable across
+        processes elsewhere (\qtyrange{0.650}{0.653}{\nano\second} per element at all \num{9}
+        locality sizes from $N=\num{65536}$ to \num{1048576}), but where the two arrays exactly fill
+        the \qty{256}{\kibi\byte} L2 two measurements of the same machine code differ by
+        \SI{1}{\percent} (scalar) and \SI{14}{\percent} (native); page placement is the untested
+        hypothesis (\cref{sec:stride}).
   \item \textbf{Hardware gather loses to scalar.} The explicit \code{vgatherdps} kernel takes
         \qty{3.23}{\nano\second} per element at $N=\num{32768}$ versus \num{2.16} (native scalar
         loop) and \qty{2.02}{\nano\second} (scalar build), i.e.\ $1.5\text{--}1.6\times$
         \emph{slower}, and it is \SI{7}{\percent} slower in DRAM. Hypothesis: the Gather Data
-        Sampling microcode mitigation, which this CPU runs
-        (\code{/sys/devices/system/cpu/vulnerabilities/gather_data_sampling}: \enquote{Mitigation:
-        Microcode}) and which is known to make \code{vgatherdps} much slower, plus the eight scalar
+        Sampling microcode mitigation, which this CPU runs (\cref{sec:stride}) and which is known
+        to make \code{vgatherdps} much slower, plus the eight scalar
         stores that AVX2 cannot vectorize. Confirming it would need a boot without the mitigation,
         which requires root.
 \end{itemize}
@@ -89,26 +76,22 @@
         \sysGovernor{}, turbo \sysTurbo{} and SMT off; the cycle counter confirms
         \qtyrange{2.78}{2.79}{\giga\hertz} for every locality and ceilings configuration
         (\cref{sec:method}). The fixed clock makes the results reproducible, but it is not how the
-        CPU normally runs. With turbo (up to \qty{5.2}{\giga\hertz}) the compute-bound numbers (peak
-        FLOP rate, cache-resident kernels, scalar builds, the dot product) scale up by roughly the
-        clock ratio while DRAM bandwidth does not. So the DRAM-resident speedups reported here
-        ($1.88\text{--}1.99\times$ for SAXPY) are larger than a turbo-clocked run gives ($\approx1.4\times$
-        in our earlier sweep).
+        CPU normally runs. With turbo the compute-bound numbers scale up by roughly the clock ratio
+        ($1.72\text{--}1.75\times$ in our turbo sweep) while DRAM bandwidth does not, so the
+        DRAM-resident SAXPY speedups reported here ($1.88\text{--}2.02\times$) are larger than at turbo
+        ($1.32\text{--}1.44\times$, \cref{sec:method}).
   \item \textbf{One machine, one compiler.} All results are from a single i9-10900F with GCC
         \sysGCC{}. Clang was used only to confirm the build compiles. No AVX-512 part was available,
         so the \qty{512}{bit} regime is out of scope.
   \item \textbf{THP always-on; no core isolation.} Transparent huge pages are \code{always}, and
         the pinned core is not isolated from the scheduler (no \code{isolcpus}). Neither is controlled
-        for. The reported session ran on an idle machine with the ACPI interrupt storm masked
-        (\cref{sec:method}), and every alignment configuration has an IQR of at most
-        \SI{2.9}{\percent}. A first clean session was nevertheless discarded because another
-        agent's short smoke tests briefly shared CPU~2 with it (\cref{sec:method}). Since the
-        lock file only serializes cooperating jobs, the shared-core check (no configuration varies
-        by more than $1.34\times$ between repetitions, apparent clock \qtyrange{2.78}{2.79}{\giga\hertz})
-        is what guards the reported data.
-  \item \textbf{Report build backend.} The build host has \code{bibtex} but not \code{biber}, so
-        \code{biblatex} uses \code{backend=bibtex}. With that backend, the \code{ieee} style's
-        citation-order sorting made every run request another BibTeX pass (``There were undefined
-        references'', although the citation resolved). This report therefore sorts its single
-        reference by name/year, and it compiles in final mode without that warning.
+        for; the lock file only serializes cooperating jobs, so the shared-core checks of
+        \cref{sec:method} (repetition spread $\le1.36\times$, apparent clock
+        \qtyrange{2.78}{2.79}{\giga\hertz}) are what guard the reported data.
+  \item \textbf{Discarded sessions.} Earlier sessions the same day were discarded: those before the
+        GPE storm was masked (\cref{sec:method}), and a first clean session during which another
+        agent's unlocked smoke tests briefly shared CPU~2 ($\approx2\times$ slowdowns in some
+        repetitions).
+  \item \textbf{Report build backend.} Without \code{biber}, \code{biblatex} uses the BibTeX
+        backend, so the single reference is sorted by name/year to avoid a spurious rerun warning.
 \end{itemize}

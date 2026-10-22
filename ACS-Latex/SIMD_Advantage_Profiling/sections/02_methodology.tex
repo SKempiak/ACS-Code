@@ -62,38 +62,22 @@ non-fused order and stays a trustworthy oracle. We deliberately do \emph{not} pa
 dot-product reduction---an effect we wanted to measure rather than hide.
 
 \subsection{Data collection and hypotheses}
-All measurements in this report were collected on \textbf{2026-10-21} on an idle machine, with
-the settings checked before each run (governor \code{performance}, turbo off, SMT off, pinned to
-CPU~2) and runs serialized with other benchmark jobs through a lock file. The reported data comes
-from \code{baseline} at 20:38 (\code{baseline/20261021-203854}) and from the other six experiments
-run back to back from 20:47 to 20:54 (raw directories
-\code{20261021-204708} to \code{20261021-205359}, listed in \cref{tab:raw-data}). A first full session at 20:13 was discarded. While it ran, the companion
-project's agent briefly ran short, unlocked smoke tests pinned to the same CPU. Two baseline
-configurations showed the resulting $\approx2\times$ slowdown in some of their repetitions, which
-is the signature of a shared core. Because the overlap window could not be pinned down for the
-other experiments, all of them were re-run. In the reported data no configuration varies by more
-than $1.34\times$ between its fastest and slowest repetition. The user-space cycle counter, which
-would show a shared core as a lower apparent clock, reads \qtyrange{2.78}{2.79}{\giga\hertz} for
-every counted configuration. The vectorization evidence was generated the same day.
+All measurements were collected on \textbf{2026-10-21} on an idle machine, with the settings
+checked before each run (governor \code{performance}, turbo off, SMT off, pinned to CPU~2) and
+runs serialized with other benchmark jobs through a lock file: \code{baseline} at 20:38 and the
+other six experiments back to back from 20:47 to 20:54 (raw directories in \cref{tab:raw-data}).
+Before this session the user masked an ACPI general-purpose-event storm (GPE~0x42) that the
+companion Cache \& Memory project's wall-clock check had found stealing $\approx\SI{13}{\percent}$
+of wall time; this root-only setting does not survive a reboot (\cref{app:repro}). Two shared-core
+checks guard the reported data: no configuration varies by more than $1.36\times$ between its
+fastest and slowest repetition (a single DRAM-resident alignment configuration; all others
+$\le1.32\times$), and the user-space cycle counter, which would show a shared core as a lower
+apparent clock, reads \qtyrange{2.78}{2.79}{\giga\hertz} for every counted configuration.
 
-\emph{Interference found and removed.} Earlier sessions the same day were noisier, with
-upper-quartile outliers and scattered DRAM-resident alignment results. The cause turned out to be
-an ACPI general-purpose-event storm (GPE~0x42). A wall-clock check written for the companion Cache
-\& Memory project (\code{clock_check}) found $\approx\SI{13}{\percent}$ of wall time lost in
-$\approx\SI{39}{\percent}$ of \qty{330}{\milli\second} windows. Before the reported session the user
-masked that GPE (\code{/sys/firmware/acpi/interrupts/gpe42} set to \code{disable}; its count
-then stayed frozen). This is a root-only setting that does not survive a reboot, so reproducing
-these numbers requires repeating it (\cref{app:repro}). All data from the storm-affected sessions
-was discarded.
-
-Each experiment section
-opens with a hypothesis derived from first principles (lane counts, cache sizes, port counts). The
-hypotheses for the experiments added on 2026-10-21 (ceilings, extended alignment/tail, AVX2 gather,
-counters) were drafted before that session. The others date from an earlier, superseded
-turbo-clock sweep and may have been influenced by it. The repository history cannot prove either
-ordering. We therefore
-present them only as predictions that we compare against the data, and we report explicitly where
-the data contradicted them.
+Each experiment section opens with a hypothesis derived from first principles (lane counts, cache
+sizes, port counts). Some were drafted after an earlier, superseded turbo-clock sweep and may have
+been influenced by it, so we present them only as predictions compared against the data, and we
+state where the data contradicted them.
 
 \subsection{Timing and statistics}
 \begin{itemize}
@@ -113,12 +97,15 @@ the data contradicted them.
         (\cref{sec:ceilings-method}) gives a per-configuration median of \qtyrange{2.78}{2.79}{\giga\hertz}
         for all \num{96} locality and \num{123} ceilings configurations. The clock is user-mode
         cycles over wall time, so stolen time would show up as a lower value.
-  \item Effect of the fixed clock: an earlier sweep (2026-10-12) ran with turbo enabled. Its dot
-        product, which is latency-bound at exactly $0.5$~FLOP/cycle (\cref{sec:roofline}), reached
-        \qty{2.2}{\giga\flop\per\second}, implying $\approx\qty{4.4}{\giga\hertz}$. Every number in this
-        report comes from the fixed-clock runs. Compute-bound rates are $\approx2.8/4.4$ of the turbo
-        values; DRAM bandwidth is not, so DRAM-resident speedups over scalar are \emph{larger} at the
-        fixed clock (\cref{sec:locality}).
+  \item Effect of the fixed clock: an earlier sweep (2026-10-12, governor \code{powersave}, turbo
+        on) is not used for any result; its data is no longer in the working tree but remains in the
+        repository history (commit \code{73f8fb8}, raw directory \code{20261012-182813}). There, every
+        cache-resident rate at $N=\num{1024}$ was $1.72\text{--}1.75\times$ the fixed-clock value
+        (dot product: \qtyrange{2.43}{2.49}{\giga\flop\per\second} in cache at its latency bound of
+        $0.5$~FLOP/cycle, i.e.\ $\approx\qty{4.9}{\giga\hertz}$), while DRAM bandwidth does not scale
+        with the clock. Its DRAM-resident SAXPY speedups were therefore smaller,
+        $1.32\text{--}1.44\times$ ($N\ge2^{24}$, baseline, locality and negative-case sweeps); this is
+        the single turbo figure we quote (\cref{sec:locality}).
   \item Every kernel result is written through a \code{volatile} sink (\code{acs_consume_*}) and the
         kernels live in their own translation unit, so no loop is eliminated as dead code.
   \item Configuration order: the sweep is run as nested loops over size and variant
@@ -143,8 +130,13 @@ The roofline (\cref{sec:roofline}) needs a peak FLOP rate and memory bandwidths 
         L3 \qty{8}{\mebi\byte}, DRAM \qty{512}{\mebi\byte}) and over a fine footprint sweep from
         \qty{4}{\kibi\byte} to \qty{512}{\mebi\byte}. Bytes are counted STREAM-style
         (explicit loads + stores) and, separately, including the write-allocate read that a store to
-        an unread line costs; the roofline uses the latter, \emph{actual} traffic, and counts the
-        kernels' bytes the same way (\cref{tab:roofline-inputs}).
+        a line not in L1 costs. The roofline uses the \emph{actual} traffic of each level: explicit
+        bytes in L1, where every store hits an already-cached line, and bytes including
+        write-allocate in L2, L3 and DRAM; kernel intensities are counted the same way
+        (\cref{tab:roofline-inputs}). The read stream keeps only \num{4} accumulators, so its
+        \num{4}-cycle add chain caps it at one \qty{32}{\byte} load per cycle
+        (\qty{89}{\gibi\byte\per\second}): in L1 and L2 it measures that latency, not the cache, and
+        we never use it as a roof.
 \end{itemize}
 \emph{Hardware counters.} The AI agent that ran the benchmarks had no root. The user applied
 the root-only settings: governor, turbo, SMT, the GPE mask, and \code{perf_event_paranoid}, which

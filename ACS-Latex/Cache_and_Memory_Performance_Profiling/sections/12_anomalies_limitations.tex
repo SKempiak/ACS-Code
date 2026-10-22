@@ -4,10 +4,11 @@
 
 \subsection{Unexpected results and how they were resolved}
 \begin{itemize}
-  \item \textbf{An ACPI event storm stole wall time from every core.} In a first complete run, the
+  \item \textbf{An ACPI event storm stole wall time from every core.} In a first complete run (its
+        benchmark data were discarded and not retained), the
         in-process add-chain frequency probe read either \qty{2.79}{\giga\hertz} or about
         \qty{2.41}{\giga\hertz} with turbo off, which would have understated DRAM latency by about 14\% in
-        cycles. Hypothesis: the clock does not change, but the thread loses wall time. Test:
+        cycles. The diagnostic \code{clock_check} run below is retained. Hypothesis: the clock does not change, but the thread loses wall time. Test:
         \code{clock_check} compared core cycles, reference cycles and wall time in \val{cc_acpi_windows}
         windows of \valqty{cc_acpi_window_ms}{\milli\second} on CPUs 2 and 6. The core clock was
         \valqty{cc_acpi_core_ghz}{\giga\hertz} in every window. In \val{cc_acpi_gpe_pct}\% of the windows a
@@ -37,16 +38,18 @@
   \item \textbf{A single-core chase outlier.} With one generator core, $k=12$ chains deliver less bandwidth
         than $k=10$ or $k=16$ at the same memory latency. The probe is unaffected, so the cause is in the
         generator loop, not in memory. Unresolved; only the envelope is used. (In the run disturbed by the
-        ACPI storm, $k=8$ and $k=20$ were also low; they are not in the final data.)
-  \item \textbf{The two unloaded DRAM latencies agree once the interference is gone.} In the disturbed run,
-        the \code{mem_loaded} probe and \code{mem_latency} differed by 6\% at \qty{256}{\mebi\byte}. In the
-        final run they give \valqty{int_w0_ns}{\nano\second} and \valqty{zq_DRAM256_ns}{\nano\second}, so the gap
-        was run-to-run noise from the stolen wall time, not a property of the two rings.
+        ACPI storm, $k=8$ and $k=20$ were also low; data not retained, so this cannot be checked from the
+        repository.)
+  \item \textbf{The two unloaded DRAM latencies agree once the interference is gone.} In the disturbed run
+        (data not retained), the \code{mem_loaded} probe and \code{mem_latency} differed by 6\% at
+        \qty{256}{\mebi\byte}. In the
+        final run they give \valqty{int_w0_ns}{\nano\second} and \valqty{zq_DRAM256_ns}{\nano\second}, consistent with the gap
+        having been run-to-run noise from the stolen wall time rather than a property of the two rings.
   \item \textbf{Element-level read/write mixes measure the wrong thing.} Mixing \qty{8}{\byte} elements
         reads every source line and writes every destination line, so a nominal 70/30 mix moves about three
         lines per useful line; mixes must be defined on lines (\cref{sec:rw-mix}).
-  \item \textbf{Requested huge pages are not necessarily granted---and vice versa.} An early TLB run
-        requested THP and received \code{AnonHugePages: 0 kB}, so its ``huge'' curve was really
+  \item \textbf{Requested huge pages are not necessarily granted---and vice versa.} An early TLB run (data not
+        retained) requested THP and received \code{AnonHugePages: 0 kB}, so its ``huge'' curve was really
         \qty{4}{\kibi\byte} pages. Conversely, with THP set to \sysHugePages{} a
         \qty{2}{\mebi\byte}-aligned ``\qty{4}{\kibi\byte}'' buffer is backed by huge pages unless the program
         opts out. Both page policies are therefore set explicitly before first touch and verified per run
@@ -62,6 +65,9 @@
         the measuring thread only; generic LLC events map to offcore-response events on this core and may
         undercount prefetch-driven fills. Core counters are multiplexed when more events are requested
         than free hardware counters; counts are scaled and the running fraction is recorded.
+  \item \textbf{Single-core traffic model not closed.} With one generator core the memory-controller
+        counters read \val{rw_t1_imcest_min}--\val{rw_t1_imcest_max}$\times$ the RFO-counted traffic
+        estimate (\cref{sec:rw-mix}); the cause is an untested hypothesis.
   \item \textbf{MLC ran with prefetchers enabled.} Without root, MLC cannot switch the hardware
         prefetchers off, so its latencies use random access (\code{-r}) with prefetchers on, like ours.
   \item \textbf{Loaded latency is measured with a probe that is itself load.} The probe adds one line in
@@ -69,7 +75,8 @@
         may see a different latency, so $L=\lambda W$ for the streaming sweep assumes the probe's latency
         is representative. The known-concurrency chase sweep does not need that assumption.
   \item \textbf{One machine and one memory configuration.} All numbers come from a single i9-10900F on one
-        NUMA node; DIMM population and speed could not be read without root. Frequency policy for the
+        NUMA node; DIMM population and speed could not be read without root, so no theoretical DRAM peak
+        is quoted (\cref{sec:intensity}). Frequency policy for the
         runs: governor \sysGovernor{}, turbo \sysTurbo{}, SMT \sysSMT{}.
   \item \textbf{Report build backend.} The host has \code{bibtex} but not \code{biber}, so
         \code{biblatex} uses \code{backend=bibtex}.

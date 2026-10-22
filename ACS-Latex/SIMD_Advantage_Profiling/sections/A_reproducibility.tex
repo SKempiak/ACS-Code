@@ -5,8 +5,12 @@
 Code, scripts, raw data and this report live in one repository: \code{ACS-Code/} holds the code and
 data (this project in \code{ACS-Code/SIMD_Advantage_Profiling/}, shared helpers in
 \code{ACS-Code/common/} and \code{ACS-Code/tools/}), \code{ACS-Latex/} the reports (this one in
-\code{ACS-Latex/SIMD_Advantage_Profiling/}). Every result in this report was produced from commit
-\texttt{\acscommit}. From the repository root:
+\code{ACS-Latex/SIMD_Advantage_Profiling/}). The timed runs (2026-10-21, 20:38--20:54) predate
+their commit; they were measured with the tree committed as \texttt{b00db66}, and the measurement
+code (kernels, timing harness, ceilings, \code{run.sh}) is unchanged since, except an opt-in
+error print in the validation path of \code{main.c} that is inactive in timed runs. Later commits
+changed only post-processing scripts, the correctness log and this text. This report corresponds to
+commit \texttt{\acscommit}. From the repository root:
 
 \begin{lstlisting}[language=bash]
 gh repo clone SKempiak/ACS-Code ACS && cd ACS
@@ -14,7 +18,7 @@ git checkout f5bfe7005a41
 cd ACS-Code
 make tools                                # tools/summarize
 make -C SIMD_Advantage_Profiling          # scalar/autovec/native simd_bench + ceilings
-make -C SIMD_Advantage_Profiling test     # 578 correctness cases
+make -C SIMD_Advantage_Profiling test     # 578 correctness cases (max error logged)
 make -C SIMD_Advantage_Profiling report   # vectorization evidence
 scripts/collect_env.sh --tex > ../ACS-Latex/common/system_info.tex
 SIMD_Advantage_Profiling/scripts/run.sh all     # ceilings, baseline, locality, alignment,
@@ -29,7 +33,7 @@ a reboot (\cref{sec:method}). The SIMD hardware counters (core-PMU, user-space e
 \code{perf_event_paranoid}~$\le 2$; with
 \code{COUNTERS=0}, or where they cannot be opened, \code{run.sh} skips the counter outputs.
 \code{run.sh derive} recomputes the derived tables (roofline points and roofs, per-level bandwidth,
-stride summary) from the processed CSVs without measuring.
+stride, data-type and GFLOP/s summaries) from the processed CSVs without measuring.
 
 \begin{table}[h]
   \centering\small
@@ -43,7 +47,9 @@ stride summary) from the processed CSVs without measuring.
     \Cref{fig:locality,fig:locality-bw,fig:locality-counters}, \cref{tab:locality-bw} & \code{locality/20261021-204801} \\
     \Cref{fig:alignment,fig:tail} & \code{alignment/20261021-204858} (\code{raw.csv}, \code{raw_tail.csv}) \\
     \Cref{fig:stride}, \cref{tab:stride} & \code{stride/20261021-205143} \\
-    \Cref{fig:dtype} & \code{dtype/20261021-205209} \\
+    \Cref{fig:dtype}, \cref{tab:dtype} & \code{dtype/20261021-205209} \\
+    \Cref{tab:baseline-gflops} & \code{baseline/20261021-203854} \\
+    Correctness result (\cref{sec:correctness}) & \code{validation/20261021-231629} (\code{make_test.txt}) \\
     \Cref{fig:roofline}, \cref{tab:ceilings} & \code{ceilings/20261021-204708}, \code{baseline/20261021-203854} \\
     Negative-case table (\cref{sec:negative}) & \code{negative/20261021-205359} \\
     \Cref{tab:vec-summary} & \code{vectorization/20261021-001032} \\
@@ -51,9 +57,9 @@ stride summary) from the processed CSVs without measuring.
   \end{tabularx}
 \end{table}
 
-Each raw directory holds \code{raw.csv} (one row per repetition, with full configuration metadata)
+Each timed-run raw directory holds \code{raw.csv} (one row per repetition, with full configuration metadata)
 and \code{env.txt} (a snapshot of \code{collect_env.sh}); the processed CSVs plotted above are
 produced from them by \code{tools/summarize} plus this project's post-processing scripts
 (\code{speedup_iqr.awk}, \code{roofline.sh}, \code{tables.sh}) and copied into this report's
-\code{data/} by \code{scripts/sync_data.sh}. Every number quoted in the report traces to one of these
-files.
+\code{data/} by \code{scripts/sync_data.sh}. Every number from the 2026-10-21 runs traces to a
+committed file; the turbo-clock comparison figures trace to commit \code{73f8fb8} (\cref{sec:method}).

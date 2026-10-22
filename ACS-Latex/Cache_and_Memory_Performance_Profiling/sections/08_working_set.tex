@@ -68,13 +68,36 @@
 \subsection{Analysis}
 The latency staircase and the counters line up level by level (\cref{fig:working-set}). L1D misses per
 access jump from \ensuremath{\approx}0 to 1 between \qty{32}{\kibi\byte} and \qty{48}{\kibi\byte}, exactly at
-the L1 capacity. LLC references (L2 misses) already appear at \qtyrange{64}{192}{\kibi\byte}, well before the
-\qty{256}{\kibi\byte} capacity (0.08--0.2 per access, depending on the size; see below), and approach one
-per access only by \qtyrange{1}{2}{\mebi\byte}. LLC misses
-appear from \qtyrange{12}{16}{\mebi\byte}, also before the nominal \qty{20}{\mebi\byte}, since the L3 is
-shared and page-table lines compete for it, and reach one per access by \qty{64}{\mebi\byte}. Page walks
-start at \qty{8}{\mebi\byte}, just past the \ensuremath{\approx}\qty{6}{\mebi\byte} STLB reach, and explain why
-latency already climbs inside the L3 region. In DRAM the
+the L1 capacity. With \qty{4}{\kibi\byte} pages, LLC references (L2 misses) already appear inside the L2 window, well
+before the \qty{256}{\kibi\byte} capacity, but not monotonically: \val{ws_64k_4k_llcref} per access at
+\qty{64}{\kibi\byte}, \val{ws_96k_4k_llcref} (essentially none) at \qty{96}{\kibi\byte},
+\val{ws_128k_4k_llcref} at \qty{128}{\kibi\byte} and \val{ws_192k_4k_llcref} at \qty{192}{\kibi\byte}; they
+approach one per access only by \qtyrange{1}{2}{\mebi\byte}. Page walks start at \qty{8}{\mebi\byte}, just
+past the \ensuremath{\approx}\qty{6}{\mebi\byte} STLB reach, and explain why the \qty{4}{\kibi\byte} latency
+already climbs inside the L3 region (\valqty{ws_8m_4k_ns}{\nano\second} vs.\
+\valqty{ws_8m_huge_ns}{\nano\second} with \qty{2}{\mebi\byte} pages at \qty{8}{\mebi\byte}). LLC misses
+appear from \qtyrange{12}{16}{\mebi\byte}, before the nominal \qty{20}{\mebi\byte}, and reach one per access
+by \qty{64}{\mebi\byte}.
+
+\paragraph{A page-size crossover at the L3 edge.} Near the L3 capacity the two page sizes swap order.
+At \qty{12}{\mebi\byte} and \qty{16}{\mebi\byte} the \qty{2}{\mebi\byte}-page chase is \emph{slower} than the
+\qty{4}{\kibi\byte}-page chase (\valqty{ws_12m_huge_ns}{\nano\second} vs.\ \valqty{ws_12m_4k_ns}{\nano\second},
+and \valqty{ws_16m_huge_ns}{\nano\second} vs.\ \valqty{ws_16m_4k_ns}{\nano\second}), with more LLC misses per
+access (\val{ws_12m_huge_llcmiss} vs.\ \val{ws_12m_4k_llcmiss}, and \val{ws_16m_huge_llcmiss} vs.\
+\val{ws_16m_4k_llcmiss}) and no page walks at all. From \qty{24}{\mebi\byte} on, the order reverts
+(\valqty{ws_24m_huge_ns}{\nano\second} vs.\ \valqty{ws_24m_4k_ns}{\nano\second}), and the
+\qty{2}{\mebi\byte} curve is not even monotonic (\qty{16}{\mebi\byte} is slower than \qty{24}{\mebi\byte}). Page-table lines competing for
+the L3 therefore cannot explain the early LLC misses: the configuration with the most early misses
+has no page tables to walk. \emph{Untested hypothesis:} the cause is physical placement in the L3. The L3
+is split into slices selected by a hash of the physical address, and sets are indexed by lower address bits.
+A \qtyrange{12}{16}{\mebi\byte} buffer of \qty{2}{\mebi\byte} pages occupies only 6--8 physically contiguous
+frames, so any unevenness in how those few frames map to slices and sets is shared by every line in them;
+\qty{4}{\kibi\byte} pages scatter the buffer over thousands of random frames (page colours), which averages
+the occupancy out. A test would repeat the \qtyrange{12}{16}{\mebi\byte} points over several fresh huge-page
+allocations (and with \code{hugetlbfs} pages) and check whether the LLC-miss rate varies from allocation to
+allocation.
+
+In DRAM the
 random 4\,KiB-page chase incurs \val{ws_dram_rand4k_dtlb} completed page walks and
 \val{ws_dram_rand4k_l1d} L1D misses per access (versus \val{ws_dram_randhuge_l1d} with 2\,MiB pages): the
 page walker's own page-table reads miss the L1 too, which is why the 4\,KiB curve sits above the 2\,MiB curve
@@ -89,6 +112,14 @@ access, while the 2\,MiB-page chase stays at \valqty{ws_l2edge_huge_ns}{\nano\se
 (\val{ws_l2edge_huge_llcref}): almost no L2 misses. The likely explanation is page placement:
 \qty{4}{\kibi\byte} pages scatter the buffer over arbitrary physical
 frames, so some L2 sets receive more lines than their associativity allows (conflict misses), whereas a
-physically contiguous \qty{2}{\mebi\byte} page spreads lines evenly over the sets. This staircase is the
+physically contiguous \qty{2}{\mebi\byte} page spreads lines evenly over the sets. The placement is
+decided per allocation, which explains why the \qty{4}{\kibi\byte} L2 window is not monotonic: each size
+is a fresh buffer with its own set of frames (page colours), and at \qty{96}{\kibi\byte} the frames
+happened to cover the sets evenly (\valqty{ws_96k_4k_ns}{\nano\second}, the L2 hit latency, against
+\valqty{ws_64k_4k_ns}{\nano\second} at \qty{64}{\kibi\byte}). Each size runs in its own process, whose
+8 repetitions reuse one buffer and agree closely. A different allocation of the same size can differ even
+with the identical ring (same seed): the zero-queue run of \cref{sec:zero-queue} measured \valqty{zq_64k_ns}{\nano\second} at \qty{64}{\kibi\byte} and
+\valqty{zq_128k_ns}{\nano\second} at \qty{128}{\kibi\byte}, the reverse of this sweep's
+\valqty{ws_64k_4k_ns}{\nano\second} and \valqty{ws_128k_4k_ns}{\nano\second}. This staircase is the
 input to the AMAT model in \cref{sec:cache-miss}. Counter multiplexing was in effect for some events
 (minimum running fraction \val{ws_ctr_cover_min}); counts are scaled accordingly.

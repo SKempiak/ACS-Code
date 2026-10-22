@@ -19,7 +19,7 @@ Summarized from \code{AI_USE_LOG.md} in the code repository.
         governor to \code{performance}, disabled turbo and SMT, and masked the ACPI GPE~0x42
         interrupt storm. Claude Code checked these settings before each run and serialized its runs with
         other benchmark jobs through a lock file. All measurements come from these real runs on
-        the machine in \cref{tab:environment}, and every quoted number traces to their CSVs.
+        the machine in \cref{tab:environment}.
   \item[What they helped generate] The four kernels and their references; the build-variant
         Makefile; the benchmark driver and the shared timer/allocation/pinning helpers; the
         experiment scripts (\code{run.sh}), the summarizer (\code{summarize.c}) and the
@@ -27,7 +27,7 @@ Summarized from \code{AI_USE_LOG.md} in the code repository.
         (\code{ceilings.c}), the \code{perf_event_open} counter helper (\code{perfctr.c}), the
         explicit AVX2 gather kernel and the post-processing scripts (\code{speedup_iqr.awk},
         \code{roofline.sh}, \code{tables.sh}); and the first drafts of these sections.
-  \item[Who verified what] The AI ran the checks: \code{make test} (578 cases), \code{make report},
+  \item[Who verified what] The AI ran the checks: \code{make test} (\num{578} cases in total), \code{make report},
         the disassembly comparisons, the per-run settings and shared-core checks, and the
         CSV-to-text spot checks of every quoted number. The user approved each timed session, applied
         the root-only system settings, and reviewed the report through returned grading feedback,
@@ -49,22 +49,17 @@ Summarized from \code{AI_USE_LOG.md} in the code repository.
         easy way to make the dot product vectorize, because it would break bit-reproducibility
         against the reference---and because the non-reassociated reduction is itself a result
         worth reporting (\cref{sec:vectorization,sec:negative}).
-  \item[Validation] Correctness: \num{578} reference and known-answer cases pass for every
-        variant (\cref{sec:correctness}). Vectorization: confirmed by compiler report and
-        disassembly, not assumed (\cref{sec:vectorization}). Numbers: every figure traces to a
-        committed raw/processed file (\cref{app:repro}); the memory-bound claims are
+  \item[Validation] Correctness: \num{578} reference and known-answer cases in total
+        (\num{190} scalar, \num{190} autovec, \num{198} native) pass (\cref{sec:correctness}).
+        Vectorization: confirmed by compiler report and disassembly, not assumed
+        (\cref{sec:vectorization}). Numbers: every number from the 2026-10-21 runs traces to a
+        committed file (\cref{app:repro}); the memory-bound claims are
         cross-checked against bandwidth and peak FLOP rate measured by separate microbenchmarks
         (\code{src/ceilings.c}), not derived from the kernels themselves (\cref{sec:roofline}).
-        An earlier draft had derived the roofline bandwidth from SAXPY and then cited SAXPY
-        landing on that line as confirmation---a circular argument that review caught and that
-        the independent ceilings now replace. The re-run at a fixed
-        clock also overturned two claims in the AI-drafted text, which we corrected rather than kept:
-        that scalar and SIMD ``converge'' in DRAM (they stay $\approx1.9\times$ apart, and the counters show
-        why), and that small-$N$ speedups are inflated by per-call overhead (the tail study shows the
-        opposite). A regrade also found that the alignment sweep had silently skipped offsets
-        \qtyrange{40}{56}{\byte} (an incomplete list in \code{run.sh}). The list was fixed and the
-        sweep re-run. Noisy repeats were traced, with the companion project's wall-clock check, to
-        an ACPI interrupt storm. After the user masked it, every SIMD experiment was re-run. The first
-        clean session was then also re-run, because another agent's unlocked smoke tests had briefly
-        shared the benchmark core, and all earlier data was discarded (\cref{sec:method}).
+        Review corrections that changed results: an early roofline bandwidth was derived from
+        SAXPY itself (circular; replaced by the independent ceilings); the AI-drafted claims that
+        scalar and SIMD ``converge'' in DRAM and that small-$N$ speedups are inflated by per-call
+        overhead were both contradicted by the fixed-clock data and removed; the alignment sweep had
+        silently skipped offsets \qtyrange{40}{56}{\byte} and was re-run; and the L1 roof first
+        included a write-allocate read that L1-resident stores do not incur.
 \end{description}

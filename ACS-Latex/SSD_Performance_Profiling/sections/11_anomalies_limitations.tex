@@ -51,11 +51,15 @@
   \item \textbf{The lean fill is short.} The cliff came early, so the fill wrote only
         \csvval[1]{sustained_summary}{fill_gib}\,GiB. The post-cliff rate rests on \qty{11}{\second},
         the random phase on \qty{8.7}{\second} (its average is skewed by a final SLC-speed burst), and
-        the recovery probe was capped at \qty{1}{\gibi\byte}. The cache size was measured in one drive
+        the recovery probe was capped at \qty{1}{\gibi\byte}. Hypothesis~(ii) is therefore only partly
+        tested: the post-cliff \emph{steady state} was not reached in the lean run, and the original
+        run's twenty-minute fill alternated between \ensuremath{\sim}\num{60} and
+        \qtyrange{10}{20}{\mebi\byte\per\second} rather than settling. The cache size was measured in one drive
         state only, and the free-space explanation for it is untested.
   \item \textbf{Working set only up to \qty{4}{\gibi\byte} on a clean drive.} The lean re-run found no
         span effect from 1 to \qty{4}{\gibi\byte}; the original 1--\qty{60}{\gibi\byte} sweep is
-        confounded by the fold backlog, so larger spans remain untested.
+        confounded by the fold backlog, so larger spans remain untested and hypothesis~(iv) is only
+        partly tested.
   \item \textbf{Primary engine is not FIO.} The sweeps use \code{blkbench}. FIO cross-checks it on seven
         points (\cref{sec:fio-check}): reads agree within \qty{2}{\percent}, writes within
         \qty{12}{\percent}, with drive state the main source of the difference.

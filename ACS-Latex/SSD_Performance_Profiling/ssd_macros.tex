@@ -35,6 +35,8 @@
     \fi}{}}
 \makeatother
 \newcommand{\csvq}[4][0]{\csvget\ssdQ{#2}{#3}{#4}\ssdnum[#1]{\ssdQ}}
+% \csviqr[prec]{file}{k=v,...}{metric}: "median [q25, q75]" from <metric>_median/_q25/_q75
+\newcommand{\csviqr}[4][0]{\csvq[#1]{#2}{#3}{#4_median}\,{\scriptsize[\csvq[#1]{#2}{#3}{#4_q25},\,\csvq[#1]{#2}{#3}{#4_q75}]}}
 
 % \csvval[prec]{file}{column}: row 0 of a one-row summary file (e.g. sustained_summary)
 \newcommand{\csvval}[3][0]{%

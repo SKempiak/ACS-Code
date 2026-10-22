@@ -23,7 +23,8 @@ This report answers:
 \paragraph{Summary of findings.} Every number below is generated from the processed data
 (\code{data/summary.csv}, \cref{app:repro}). Zero-queue latency is \valqty{zq_L1_ns}{\nano\second}
 (\valnum{zq_L1_cyc}~cycles) in L1, \valqty{zq_L2_ns}{\nano\second} (\valnum{zq_L2_cyc}~cycles) on the
-L2 plateau, \valqty{zq_L3_ns}{\nano\second} in L3 and \valqty{zq_DRAM_ns}{\nano\second}
+L2 plateau with \qty{4}{\kibi\byte} pages, which includes conflict misses (L2 hit latency with
+\qty{2}{\mebi\byte} pages: \valqty{zq_L2_hugens}{\nano\second}), \valqty{zq_L3_ns}{\nano\second} in L3 and \valqty{zq_DRAM_ns}{\nano\second}
 (\valnum{zq_DRAM_cyc}~cycles) in DRAM. Intel MLC agrees on L2 and measures lower L1, L3 and DRAM
 latency (\valqty{zq_DRAM_mlcns}{\nano\second}), because its random walk stays within \qty{4}{\kibi\byte}
 windows. Under load, bandwidth reaches 95\% of its \valqty{int_peak_gib}{\gibi\byte\per\second} ceiling

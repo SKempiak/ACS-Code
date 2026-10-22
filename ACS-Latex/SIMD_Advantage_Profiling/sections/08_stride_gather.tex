@@ -39,7 +39,8 @@
     \begin{subfigure}[t]{0.49\linewidth}
       \begin{tikzpicture}
         \begin{axis}[acs, height=0.85\linewidth, xmode=log, log basis x=2, ymode=log, xlabel={Stride (elements)},
-                     ylabel={Time per processed element (ns)}, legend pos=north west, legend style={font=\scriptsize}]
+                     ylabel={Time per processed element (ns)}, legend pos=north west, legend style={font=\scriptsize},
+                     ytick={0.1,0.2,0.5,1,2,5,10}, yticklabels={0.1,0.2,0.5,1,2,5,10}]
           \acsvariantlegend
           \addplot+[var scalar, forget plot, iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{scalar}, only if={n}{32768}] {data/stride.csv};
           \addplot+[var autovec, forget plot, iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{autovec}, only if={n}{32768}] {data/stride.csv};
@@ -51,7 +52,8 @@
     \begin{subfigure}[t]{0.49\linewidth}
       \begin{tikzpicture}
         \begin{axis}[acs, height=0.85\linewidth, xmode=log, log basis x=2, ymode=log, xlabel={Stride (elements)},
-                     ylabel={Time per processed element (ns)}]
+                     ylabel={Time per processed element (ns)},
+                     ytick={0.1,0.2,0.5,1,2,5,10}, yticklabels={0.1,0.2,0.5,1,2,5,10}]
           \addplot+[var scalar, forget plot, iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{scalar}, only if={n}{4194304}] {data/stride.csv};
           \addplot+[var autovec, forget plot, iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{autovec}, only if={n}{4194304}] {data/stride.csv};
           \addplot+[var native, forget plot, iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{native}, only if={n}{4194304}] {data/stride.csv};
@@ -106,12 +108,19 @@ builds agree within \numrange{0.98}{1.03}$\times$ (native vs.\ scalar) at both s
 is within \SI{10}{\percent} of them everywhere, as expected since its strided loop is equally
 scalar. Two things happen at once. First, the effective bandwidth collapses. In DRAM the time per
 processed element grows from stride~2 to~4 to~8 to~16 as \num{1.13} $\to$ \num{1.85} $\to$
-\num{3.61} $\to$ \qty{7.34}{\nano\second} (native), approaching a doubling per step. Once the
-stride reaches \num{16} elements, each access pulls a fresh \qty{64}{\byte} line and $15/16$ of
-every line is wasted. With $N=\num{32768}$ the span stays in L2/L3 and the progression is milder
-(\num{0.78} $\to$ \num{1.06} $\to$ \num{1.85} $\to$ \qty{3.54}{\nano\second}), but the
-near-doubling from stride~8 to~16 is the same: the cost per element is set by the cache lines
-touched, not by arithmetic. Second, the SIMD advantage disappears. The vectorized body exists only
+\num{3.61} $\to$ \qty{7.34}{\nano\second} (native), approaching a doubling per step. Converted to
+bandwidth (\code{stride_bw.csv}; useful $=\qty{12}{\byte}$ per processed element, fetched $=3\times
+\min(4s,64)$~\unit{\byte}: a line of $x$ and of $y$ read and the dirty $y$ line written back), the
+useful bandwidth falls from \num{9.9} to \num{6.0}, \num{3.1} and \qty{1.5}{\gibi\byte\per\second},
+while the fetched line traffic is \num{19.8}, \num{24.1}, \num{24.8} and
+\qty{24.4}{\gibi\byte\per\second}---from stride~4 on, exactly the DRAM triad roof
+(\qty{24.3}{\gibi\byte\per\second}). The memory system is saturated, but with lines of which only
+$4s/64$ is used ($1/16$ at stride~16). With $N=\num{32768}$ the span stays in L2/L3 and the
+progression is milder (\num{0.78} $\to$ \num{1.06} $\to$ \num{1.85} $\to$
+\qty{3.54}{\nano\second}): useful \num{14.3} $\to$ \qty{3.2}{\gibi\byte\per\second}, fetched
+\num{28.5} $\to$ \num{42.1} $\to$ \num{48.3} $\to$ \qty{50.5}{\gibi\byte\per\second}, reaching the
+L3 roof (\qty{48.6}{\gibi\byte\per\second}) at stride~8. The cost per element is set by the cache
+lines touched, not by arithmetic. Second, the SIMD advantage disappears. The vectorized body exists only
 for $s=1$ (GCC's run-time loop versioning, \cref{sec:vectorization}); every $s>1$ runs the scalar
 copy of the loop, so no build has vector lanes to offer. Gather is the worst pattern:
 \qty{10.2}{\nano\second} per element in DRAM (native), $31\times$ slower than unit stride, because

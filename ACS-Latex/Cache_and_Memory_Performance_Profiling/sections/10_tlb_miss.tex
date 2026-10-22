@@ -80,12 +80,39 @@ as the page tables outgrow the caches: \valqty{tlb_gap_16384_ns}{\nano\second} a
 \valqty{tlb_huge_65536_ns}{\nano\second}, \val{tlb_ratio_65536}$\times$). With \qty{2}{\mebi\byte} pages the
 walk counter stays at \val{tlb_huge_65536_dtlb} even at 65536 pages.
 
-For random SAXPY at $N=2^{24}$, \qty{2}{\mebi\byte} pages cut page walks from \val{tlbs_4k_dtlb} to
+\begin{table}[tbp]
+  \centering\small
+  \caption{Random-order SAXPY with \qty{4}{\kibi\byte} vs.\ \qty{2}{\mebi\byte} pages (\code{tlb} experiment;
+  median of 8 repetitions). Footprint $=20N$ bytes ($x$, $y$ and the 4-byte index array). $t$: ns per
+  element; $w$: completed page walks per element; $m$: LLC misses per element; subscripts give the page
+  size; speedup $=t_{4\text{K}}/t_{2\text{M}}$. Generated from
+  \code{data/tlb_saxpy_table.csv} (derived from \code{data/tlb_saxpy.csv}).}\label{tab:tlb-saxpy}
+  \IfDataExists{tlb_saxpy_table}{%
+  \pgfplotstabletypeset[col sep=comma,
+    columns={n_tex,mib,ns_4k,ns_huge,walks_4k,walks_huge,llcmiss_4k,llcmiss_huge,speedup},
+    columns/n_tex/.style={column name=$N$, string type, column type=r},
+    columns/mib/.style={column name={MiB}, fixed, precision=0},
+    columns/ns_4k/.style={column name={$t_{4\text{K}}$}, fixed, precision=2},
+    columns/ns_huge/.style={column name={$t_{2\text{M}}$}, fixed, precision=2},
+    columns/walks_4k/.style={column name={$w_{4\text{K}}$}, fixed, fixed zerofill, precision=2},
+    columns/walks_huge/.style={column name={$w_{2\text{M}}$}, fixed, fixed zerofill, precision=2},
+    columns/llcmiss_4k/.style={column name={$m_{4\text{K}}$}, fixed, fixed zerofill, precision=2},
+    columns/llcmiss_huge/.style={column name={$m_{2\text{M}}$}, fixed, fixed zerofill, precision=2},
+    columns/speedup/.style={column name={speedup}, fixed, fixed zerofill, precision=2},
+    every head row/.style={before row=\toprule, after row=\midrule},
+    every last row/.style={after row=\bottomrule},
+  ]{data/tlb_saxpy_table.csv}}
+\end{table}
+
+For random SAXPY (\cref{tab:tlb-saxpy}) at $N=2^{24}$, \qty{2}{\mebi\byte} pages cut page walks from \val{tlbs_4k_dtlb} to
 \val{tlbs_huge_dtlb} per element and runtime from \valqty{tlbs_4k_ns}{\nano\second} (this run; the separate
 \code{cache_miss} run of \cref{sec:cache-miss} measured \valqty{cm_rand_max_ns}{\nano\second}) to
 \valqty{tlbs_huge_ns}{\nano\second} per element, a \val{tlbs_speedup}$\times$ speedup, a little below the
 \val{tlb_ratio_65536}$\times$ of the dependent chase. Overlapping independent misses hides only a small part
-of the walks: each walk adds dependent page-table reads in front of its data miss.
+of the walks: each walk adds dependent page-table reads in front of its data miss. The largest speedup in
+the sweep is at $N=2^{20}$, where the footprint equals the L3: the \qty{2}{\mebi\byte}-page data still mostly
+hit in the L3, while the \qty{4}{\kibi\byte} pages already need about one walk per element
+(\cref{sec:cache-miss}).
 
 \paragraph{Two huge-page mechanisms agree.} Reserved \code{hugetlbfs} pages (\code{MAP_HUGETLB}, from the
 1024 pages the user set aside) give the same chase latency as transparent huge pages at every size

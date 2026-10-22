@@ -80,7 +80,7 @@ against latency.}
   \ifx\ssdHasQD\empty\acsmissing{data/block_size.csv (QD=32 rows)}\else
     \begin{tikzpicture}
       \begin{axis}[xmode=log, log basis x=2, bsplot, width=0.62\linewidth, height=0.42\linewidth, ylabel={Throughput (MiB/s)},
-                   ymin=0, ymax=4200, legend pos=north west]
+                   ymin=0, ymax=4200, legend pos=outer north east]
         \addplot+[iqr bars] table[x=bs, y=mibps_median, iqr of=mibps, only if={pattern}{seq}, only if={mode}{read}, only if={qd}{32}] {data/block_size.csv};
         \addlegendentry{seq read, QD=32}
         \ifx\ssdHasW\empty\else
@@ -146,7 +146,10 @@ reads flatten at \csvq{block_size}{bs=16384,pattern=seq,mode=read,qd=32}{mibps_m
 upward. They reach \csvq{block_size}{bs=1048576,pattern=seq,mode=read,qd=32}{mibps_median}\,MiB/s at
 \qty{1}{\mebi\byte}, about \qty{56}{\percent} of the raw link rate and well below the
 \qtyrange{85}{90}{\percent} that TLP/DLLP overhead would allow. The binding limit is the drive's
-NAND/controller back end, not PCIe. Sequential writes at QD=32 are flat at
+NAND/controller back end, not PCIe. It also matches the drive's rating: Micron specifies the
+\qty{512}{\giga\byte} 2210 at \qty{2200}{MB/s} sequential read and \qty{1070}{MB/s} sequential write
+(\qty{128}{\kibi\byte} transfers, fresh out of box, queue depth not stated) \cite{micron2210brief},
+that is about \num{2098} and \qty{1020}{\mebi\byte\per\second}. Sequential writes at QD=32 are flat at
 \csvq{block_size}{bs=65536,pattern=seq,mode=write,qd=32}{mibps_median}\,MiB/s for every block from
 \qty{16}{\kibi\byte} up. That is the SLC-cache ingest rate: the same \ensuremath{\sim}\qty{1.06}{\gibi\byte\per\second}
 appears in the preconditioning passes and in the first seconds of the sustained fill

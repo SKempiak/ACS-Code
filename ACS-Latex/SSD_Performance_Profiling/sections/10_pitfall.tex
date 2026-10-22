@@ -19,18 +19,18 @@ analysis (with \cref{sec:ai-use}).}
 
 \begin{table}[tbp]
   \centering\small
-  \caption{Same \qty{4}{\kibi\byte} sequential-read workload, direct vs.\ buffered: medians with the IQR
-  in brackets. Only the \code{O_DIRECT} flag differs.}\label{tab:pitfall}
-  \begin{tabularx}{\linewidth}{@{}Xrrrr@{}}
+  \caption{Same \qty{4}{\kibi\byte} sequential-read workload, direct vs.\ buffered: medians of 5
+  repetitions with the IQR in brackets. Only the \code{O_DIRECT} flag differs.}\label{tab:pitfall}
+  \begin{tabular}{@{}lrr@{}}
     \toprule
-    Setup & IOPS & MiB/s & Mean (\si{\micro\second}) & p99 (\si{\micro\second}) \\
+    Metric & \code{O_DIRECT} (correct) & buffered (page cache) \\
     \midrule
-    \code{O_DIRECT} (correct) & \csvq{pitfall}{mode=read}{iops_median} & \csvq{pitfall}{mode=read}{mibps_median}
-      & \csvq[2]{pitfall}{mode=read}{lat_mean_us_median} & \csvq[1]{pitfall}{mode=read}{lat_p99_us_median} \\
-    buffered (page cache)     & \csvq{pitfall}{mode=read-buffered}{iops_median} & \csvq{pitfall}{mode=read-buffered}{mibps_median}
-      & \csvq[2]{pitfall}{mode=read-buffered}{lat_mean_us_median} & \csvq[2]{pitfall}{mode=read-buffered}{lat_p99_us_median} \\
+    IOPS                         & \csviqr{pitfall}{mode=read}{iops}            & \csviqr{pitfall}{mode=read-buffered}{iops} \\
+    MiB/s                        & \csviqr{pitfall}{mode=read}{mibps}           & \csviqr{pitfall}{mode=read-buffered}{mibps} \\
+    Mean latency (\si{\micro\second}) & \csviqr[2]{pitfall}{mode=read}{lat_mean_us} & \csviqr[2]{pitfall}{mode=read-buffered}{lat_mean_us} \\
+    p99 latency (\si{\micro\second})  & \csviqr[1]{pitfall}{mode=read}{lat_p99_us}  & \csviqr[2]{pitfall}{mode=read-buffered}{lat_p99_us} \\
     \bottomrule
-  \end{tabularx}
+  \end{tabular}
 \end{table}
 
 \subsection{Explanation}
@@ -44,14 +44,16 @@ the \qty{64}{\mebi\byte} region lives entirely in the page cache, so every later
 NVMe access.
 
 This is the easiest way to publish an impossibly fast SSD number, and an AI-generated benchmark falls
-into it readily because omitting \code{O_DIRECT} is the \emph{default} behaviour of \code{open()}. Three
-cheap detectors flag it:
+into it readily because omitting \code{O_DIRECT} is the \emph{default} behaviour of \code{open()}. Two
+cheap detectors flag it in our data, and a third is expected to:
 \begin{enumerate}
   \item The throughput exceeds the \qty{3756}{\mebi\byte\per\second} PCIe~3.0~$\times$4 link ceiling
         measured from sysfs (\cref{sec:method}). No device result can do that.
   \item Sub-microsecond \enquote{storage} latency is physically impossible for NAND flash.
-  \item The number depends on the \emph{region size}: it collapses once the region exceeds free RAM,
-        which a true device result must not.
+  \item \emph{Proposed, not demonstrated here:} the number should depend on the \emph{region size},
+        collapsing towards device speed once the region no longer fits in free RAM, which a true device
+        result would not do. We ran the buffered path only on a \qty{64}{\mebi\byte} region, far below
+        the host's \qty{63}{\gibi\byte} of RAM, so this detector is an expectation that we did not test.
 \end{enumerate}
 
 The methodology avoids the trap by construction. \code{O_DIRECT} is the default for every real run, and

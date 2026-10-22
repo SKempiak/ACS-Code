@@ -11,7 +11,7 @@
 
 \begin{knobs}
   Kernel      & $y_i = a\,x_i + y_i$ (float64), two arrays, \qty{4}{\kibi\byte} pages \\
-  Varied      & $N = 2^{8} \ldots 2^{24}$ (footprint $16N$ bytes); order (sequential, random permutation) \\
+  Varied      & $N = 2^{8} \ldots 2^{24}$ (footprint $16N$ bytes sequential; $20N$ random, which adds a 4-byte index per element); order (sequential, random permutation) \\
   Counters    & L1D read misses, LLC read references/misses, dTLB walks, cycles, instructions (user space, per element) \\
   Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh cache_miss} \\
 \end{knobs}
@@ -21,7 +21,7 @@
   \begin{subfigure}[t]{0.49\linewidth}
   \IfDataExists{cache_miss_ctr}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, height=0.85\linewidth,
+      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, width=0.97\linewidth, height=0.85\linewidth,
                    xlabel={$N$ (elements)}, ylabel={Time per element (ns)}, legend pos=north west,
                    legend style={font=\scriptsize}]
         \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={pattern}{sequential}] {data/cache_miss_ctr.csv};
@@ -62,7 +62,8 @@
     \caption{Counters per element.}
   \end{subfigure}
   \caption{SAXPY time per element and counters vs.\ footprint and traversal order (two \code{double}
-  arrays, $16N$ bytes; lines mark where $16N$ crosses L1/L2/L3). Open circles: AMAT model fitted to the
+  arrays, $16N$ bytes; lines mark where $16N$ crosses L1/L2/L3; random order also reads a $4N$-byte index
+  array, so its $20N$-byte footprint crosses each capacity at $0.8\times$ the marked $N$). Open circles: AMAT model fitted to the
   counters (\cref{eq:amat-fit}).}\label{fig:cache-miss}
 \end{figure}
 
@@ -96,11 +97,23 @@ SAXPY. For random order the same reading holds at every level: the zero-queue L2
 \val{amat_rand_ovlL2}$\times$ and \val{amat_rand_ovlL3}$\times$ the fitted $a_2$ and $a_3$. All three overlap
 factors (\val{amat_rand_mlp}--\val{amat_rand_ovlL2}) are close to the \valnum{mlp_t1_Lmem_max} demand misses one core keeps in flight in
 \cref{sec:intensity}: independent SAXPY iterations fill the same fill buffers that the chase experiment
-measured, and AMAT with serialised misses would overpredict the DRAM-resident runtime about
-\val{amat_rand_mlp}-fold. Sequential order overlaps more (\val{amat_seq_mlp} for DRAM) because the misses
+measured. Classic AMAT with serialised misses makes the same point at $N=2^{24}$: with the
+\cref{tab:zero-queue} latencies (L2 \valqty{zq_L2_ns}{\nano\second}, L3 \valqty{zq_L3_ns}{\nano\second},
+DRAM \valqty{zq_DRAM_ns}{\nano\second}), the measured $h_{L2}=\val{amat_rand_hl2_last}$,
+$h_{L3}=\val{amat_rand_hl3_last}$ and $m_D=\val{amat_rand_md_last}$ per element, and the fitted $t_0$, it
+predicts \valqty{amat_rand_serial_ns}{\nano\second} per element (\valqty{amat_rand_serial_dram_ns}{\nano\second}
+of it DRAM) against the measured \valqty{cm_rand_max_ns}{\nano\second}, a \val{amat_rand_serial_ratio}-fold
+overprediction, close to the \val{amat_rand_mlp}-fold DRAM overlap factor. Sequential order overlaps more (\val{amat_seq_mlp} for DRAM) because the misses
 that remain after prefetching arrive in long, predictable runs. Caveats: all coefficients came out positive,
 but the fit is a four-parameter regression on 17 footprints, so the individual L2/L3 terms are only roughly
-determined; the random-order fit has its largest relative error, \val{amat_rand_maxrelerr}\%, at the smallest
-and mid-size footprints, where one shared $t_0$ cannot describe the index-load and loop overhead (sequential:
-\val{amat_seq_maxrelerr}\%). The page-walk cost is folded into $a_D$ because walks and DRAM misses grow
-together in this sweep (\cref{sec:tlb} separates them).
+determined. The random-order fit has its largest relative errors (up to \val{amat_rand_maxrelerr}\%;
+sequential: \val{amat_seq_maxrelerr}\%) at two footprints, for different reasons. At the smallest,
+$N=2^{8}$ (\val{amat_rand_256_relerr}\%), one shared $t_0$ cannot describe the index-load and loop overhead.
+At $N=2^{20}$ (\val{amat_rand_1048576_relerr}\%: \valqty{amat_rand_1048576_meas}{\nano\second} measured,
+\valqty{amat_rand_1048576_pred}{\nano\second} predicted) the error comes from the L3$\to$DRAM transition,
+not from $t_0$. There the random footprint, $20N$ bytes, equals the \qty{20}{\mebi\byte} L3, so only
+\val{cm_rand_1m_llc_miss} LLC misses occur per element, but the \qty{4}{\kibi\byte} pages already need
+\val{cm_rand_1m_dtlb_miss} page walks per element. The page-walk cost is folded into $a_D$ because walks and
+DRAM misses grow together over most of the sweep, so the model has no term for walks without DRAM misses.
+With \qty{2}{\mebi\byte} pages the same $N$ runs at \valqty{tlbs_huge_1m_ns}{\nano\second} per element
+(\cref{tab:tlb-saxpy}), which shows that the missing time is the walks (\cref{sec:tlb} separates them).

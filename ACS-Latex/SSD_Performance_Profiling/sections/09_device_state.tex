@@ -110,7 +110,8 @@
   written before it (\ssdfromall). Steady is the median of all seconds after the cliff. The lean re-run
   stops the fill 10 seconds after the cliff; without a cliff the fill volume would be a lower bound on the
   cache size. The random phase mixes two states, so the table gives its byte-weighted average and the
-  per-second quartiles. The recovery probe reached its \qty{1}{\gibi\byte} cap within its first
+  per-second quartiles and median p99 over all 9 samples, including the final partial
+  (\qty{0.7}{\second}) one; the text quotes the eight full seconds. The recovery probe reached its \qty{1}{\gibi\byte} cap within its first
   second, so its first and last \qty{5}{\second} are the same sample.}\label{tab:sustained}
   \begin{tabular}{@{}lr@{}}
     \toprule
@@ -138,10 +139,18 @@
 \csvval{sustained_summary}{fill_avg_mibps}\,MiB/s). The median of all post-cliff seconds is
 \csvval{sustained_summary}{steady_mibps}\,MiB/s, \csvval[3]{sustained_summary}{steady_over_burst} of
 the burst. A burst \ssdburstratio$\times$ the steady rate is far more than the \enquote{several times}
-of hypothesis~(i). The steady value rests on only \qty{11}{\second} of data. It matches, however, the
-original run, whose \qty{60}{\gibi\byte} fill ran mostly at \qtyrange{60}{64}{\mebi\byte\per\second}
-(with dips to \qtyrange{28}{46}{\mebi\byte\per\second}) for twenty minutes after its cliff (\code{sustained/20261021-105439}). We therefore take it as the rate at
-which this QLC drive writes when it must program QLC directly while also folding cached data.
+of hypothesis~(i). The steady value rests on only \qty{11}{\second} of data. Its median matches,
+however, that of the original run, whose \qty{60}{\gibi\byte} fill wrote for \num{1226}\,s (about
+twenty minutes) after its cliff (\code{sustained/20261021-105439}): the median of those seconds is
+\qty{62}{\mebi\byte\per\second}. That run was far from steady, though. It alternated between two
+levels: \qty{55}{\percent} of its post-cliff seconds ran at \qtyrange{60}{70}{\mebi\byte\per\second}
+and \qty{32}{\percent} at only \qtyrange{10}{20}{\mebi\byte\per\second}, so its mean was
+\qty{47}{\mebi\byte\per\second} and its per-minute means ranged from \qtyrange{37}{78}{\mebi\byte\per\second}
+(median \qty{44}{\mebi\byte\per\second}), drifting downwards over the twenty minutes. We therefore take
+\ensuremath{\sim}\qty{60}{\mebi\byte\per\second} as the rate at which this QLC drive writes when it
+must program QLC directly while also folding cached data, and expect long fills to average less
+because of the slow phases. The lean run's \qty{11}{\second} cannot show such phases, so the
+post-cliff \emph{steady state} is only partly tested.
 
 \textbf{How large is the cache?} Hypothesis~(i) assumed a fill \enquote{far larger than the SLC cache},
 and the lean plan sized the fill on the assumption that a fresh cache would hold
@@ -153,7 +162,8 @@ and it falls well short of the expectation. The original run had found a similar
 followed \ensuremath{\sim}\qty{60}{\gibi\byte} of writes with no idle and no TRIM. The lean re-run removes
 those confounds and adds only \qty{0.7}{\gibi\byte}, so the run order was not the main reason. A
 plausible explanation, which we did not test, is a dynamic SLC cache sized by free space, a common
-design in QLC client drives. Such a controller can only borrow blocks it believes are unused. The
+design in QLC client drives, whose cache shrinks as the drive fills \cite{tallis2018intel660p}. Micron
+describes the 2210's cache only as \enquote{dynamic write acceleration} \cite{micron2210brief}. Such a controller can only borrow blocks it believes are unused. The
 scratch filesystem had \qty{77}{\gibi\byte} free and was trimmed, but the rest of the drive, including a
 \qty{351}{\gibi\byte} partition this study never touches, was not, so the drive-wide free space that
 such a cache would scale with is unknown and may be small. Two other explanations remain open. Thirty
@@ -164,17 +174,22 @@ Under the free-space explanation the cache size is state dependent, and
 \csvval[1]{sustained_summary}{cliff_gib}\,GiB describes this drive at its current fill level.
 
 The random-write phase wrote \qty{4}{\kibi\byte} blocks at QD32 over the
-\csvval[1]{sustained_summary}{fill_gib}\,GiB just written. For eight seconds the per-second rate
-stayed at \numrange{12500}{16500} IOPS (median \num{14924}; quartiles
-\csvval{sustained_summary}{rand_iops_q25}--\csvval{sustained_summary}{rand_iops_q75}), with a median
-per-second p99 of \qty{35.7}{\milli\second}. That is about $16\times$ below the in-cache random-write
+\csvval[1]{sustained_summary}{fill_gib}\,GiB just written. For eight full seconds the per-second rate
+stayed at \numrange{12471}{16548} IOPS (median \num{14666}; quartiles \numrange{13958}{15042}), with a
+median per-second p99 of \qty{36.0}{\milli\second}; these values exclude the final partial sample
+described next. (Over all 9 samples, as in \cref{tab:sustained}, the median is \num{14924}, the
+quartiles \csvval{sustained_summary}{rand_iops_q25}--\csvval{sustained_summary}{rand_iops_q75} and the
+median p99 \qty{35.7}{\milli\second}.) That is about $16\times$ below the in-cache random-write
 rate at the same depth (\csvq{queue_depth}{qd=32,mode=write}{iops_median} IOPS,
-\cref{sec:queue-depth}), and it supports hypothesis~(ii). In the final \qty{0.7}{\second} the rate
+\cref{sec:queue-depth}), and it supports hypothesis~(ii) only in part: the rate is lower and the tails
+heavier, but eight seconds directly after an \qty{11}{\second} post-cliff fill cannot establish a
+steady state, so that part of hypothesis~(ii) remains untested. In the final \qty{0.7}{\second} the rate
 jumped to \ensuremath{\sim}\num{205}k IOPS with a p99 of \qty{149}{\micro\second}, as if the controller
 had just freed SLC blocks in the background. That burst wrote \qty{56}{\percent} of the phase's
 \qty{1}{\gibi\byte} cap, which ended the phase after \qty{8.7}{\second}. The byte-weighted phase average
 in \cref{tab:sustained}, \csvval{sustained_summary}{rand_steady_iops} IOPS, therefore mixes two states
-and should not be read as a steady state. The per-second median is the better summary.
+and should not be read as a steady state. The per-second median of the eight full seconds is the
+better summary.
 
 After the \qty{60}{\second} idle, the recovery probe wrote its whole \qty{1}{\gibi\byte} at
 \csvval{sustained_summary}{recovery_mibps}\,MiB/s, the full burst rate, in under a second. At least
@@ -187,8 +202,8 @@ backlog, not on the idle time alone.
 Two caveats. First, because the cliff came early, the lean fill wrote only
 \csvval[1]{sustained_summary}{fill_gib}\,GiB of a \qty{512}{\giga\byte} drive, and its post-cliff and
 random phases last seconds rather than minutes. This is the short-term behaviour after the cache fills,
-not the SNIA full-drive steady state, which would need the raw device (ruled out by the data-safety
-rule). Second, a TRIM only marks blocks free; it does not make the drive fresh, and the state of the
+not the full-drive steady state of the SNIA Performance Test Specification \cite{snia_pts}, which
+would need the raw device (ruled out by the data-safety rule). Second, a TRIM only marks blocks free; it does not make the drive fresh, and the state of the
 untrimmed rest of the drive is unknown.
 
 \paragraph{Temperature.} The composite temperature ranged from
@@ -261,7 +276,8 @@ much, and says nothing about larger spans. The original run did sweep 1 to \qty{
 read IOPS fell by \qty{25}{\percent}. That sweep ran right after the \qty{60}{\gibi\byte} fill, with
 tens of gigabytes still being folded, in increasing span order only, and even its \qty{1}{\gibi\byte}
 point reached only \num{12100} QD=1 IOPS against \num{20000} here. Its trend cannot be separated from
-the fold backlog and elapsed time, so hypothesis~(iv) remains untested beyond \qty{4}{\gibi\byte}. We
+the fold backlog and elapsed time. Hypothesis~(iv) is therefore only partly tested: no effect from 1
+to \qty{4}{\gibi\byte}, and untested beyond \qty{4}{\gibi\byte}, where it predicted the effect. We
 could not tell whether the drive uses a host memory buffer (no allocation message in the kernel log).
 
 \subsection{Data layout: why preconditioning order matters}\label{sec:layout}

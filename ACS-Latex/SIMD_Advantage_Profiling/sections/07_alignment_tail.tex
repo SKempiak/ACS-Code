@@ -64,12 +64,12 @@ effects with a convincing explanation (with \cref{sec:stride}).}
       \begin{axis}[acs, height=0.85\linewidth, xlabel={$N$ (elements)}, ylabel={Time per call (ns)},
                    restrict x to domain=0:100, xmin=6, xmax=74, xtick={8,16,...,72}, legend style={font=\scriptsize}, legend pos=north west]
         \acsvariantlegend
-        \addplot+[mark size=1pt, var scalar, forget plot] table[x=n, y expr=\thisrow{ns_per_elem_median}*\thisrow{n}, only if={variant}{scalar}] {data/alignment_tail.csv};
-        \addplot+[mark size=1pt, var autovec, forget plot] table[x=n, y expr=\thisrow{ns_per_elem_median}*\thisrow{n}, only if={variant}{autovec}] {data/alignment_tail.csv};
-        \addplot+[mark size=1pt, var native, forget plot] table[x=n, y expr=\thisrow{ns_per_elem_median}*\thisrow{n}, only if={variant}{native}] {data/alignment_tail.csv};
+        \addplot+[mark size=1pt, var scalar, forget plot, iqr bars] table[x=n, y expr=\thisrow{ns_per_elem_median}*\thisrow{n}, y error plus expr=(\thisrow{ns_per_elem_q75}-\thisrow{ns_per_elem_median})*\thisrow{n}, y error minus expr=(\thisrow{ns_per_elem_median}-\thisrow{ns_per_elem_q25})*\thisrow{n}, only if={variant}{scalar}] {data/alignment_tail.csv};
+        \addplot+[mark size=1pt, var autovec, forget plot, iqr bars] table[x=n, y expr=\thisrow{ns_per_elem_median}*\thisrow{n}, y error plus expr=(\thisrow{ns_per_elem_q75}-\thisrow{ns_per_elem_median})*\thisrow{n}, y error minus expr=(\thisrow{ns_per_elem_median}-\thisrow{ns_per_elem_q25})*\thisrow{n}, only if={variant}{autovec}] {data/alignment_tail.csv};
+        \addplot+[mark size=1pt, var native, forget plot, iqr bars] table[x=n, y expr=\thisrow{ns_per_elem_median}*\thisrow{n}, y error plus expr=(\thisrow{ns_per_elem_q75}-\thisrow{ns_per_elem_median})*\thisrow{n}, y error minus expr=(\thisrow{ns_per_elem_median}-\thisrow{ns_per_elem_q25})*\thisrow{n}, only if={variant}{native}] {data/alignment_tail.csv};
       \end{axis}
     \end{tikzpicture}
-    \caption{Short loops: time per call, $N=8\ldots72$.}
+    \caption{Short loops: time per call, $N=8\ldots72$ (IQR bars, mostly hidden by the marks).}
   \end{subfigure}\hfill
   \begin{subfigure}[t]{0.49\linewidth}
     \begin{tikzpicture}
@@ -117,9 +117,7 @@ The spread across offsets is \SI{6.1}{\percent} for native (\qtyrange{0.413}{0.4
 split-load pattern of L1 does not carry over. Native is equally fast at offset \num{24}, and
 autovec's multiples of \num{16} are not consistently faster: offset \num{32} is among its slower
 points. So the split-load cost hides under DRAM misses, and what remains is a few percent at most,
-comparable to process-to-process variation. An earlier, storm-affected pass of this sweep had
-spreads of up to \SI{34}{\percent} (\cref{sec:method}); the clean run shows that scatter was
-interference, not alignment.
+comparable to process-to-process variation.
 
 \emph{Tails} (\cref{fig:tail}). Near $N=\num{4096}$ the time per element is flat across the
 \num{8}-lane boundary (native \qtyrange{0.098}{0.103}{\nano\second}, autovec
@@ -127,14 +125,19 @@ interference, not alignment.
 \numrange{1}{7} leftover elements out of \num{4096}, the remainder is invisible. Short loops expose
 it. For $N=8\ldots72$, native's time per call is lowest at multiples of \num{8}
 (\qty{13.7}{\nano\second} at $N=16$ rising steadily to \qty{16.7}{\nano\second} at $N=72$, only
-$\approx\qty{0.05}{\nano\second}$ per element) and highest at $N\equiv7 \pmod 8$, typically
-\qtyrange{2}{3}{\nano\second} more. That sawtooth is the remainder path from the disassembly
-(\cref{sec:vectorization}): a \qty{128}{bit} epilogue for \num{4} elements and then up to three
-scalar iterations. \code{autovec} grows at $\approx\qty{0.15}{\nano\second}$ per element and
-\code{scalar} linearly at $\approx\qty{0.63}{\nano\second}$ per element, both with occasional
-single-$N$ outliers (reproducible within a run, IQR below \SI{1}{\percent}). Every call also pays a fixed $\approx\qtyrange{10}{13}{\nano\second}$ (call,
+$\approx\qty{0.05}{\nano\second}$ per element) and highest just below them, at $N\equiv7 \pmod 8$
+typically \qtyrange{2}{3}{\nano\second} more. That sawtooth is the remainder path from the
+disassembly (\cref{sec:vectorization}): one \qty{128}{bit} step for \num{4} elements and then up to
+three scalar iterations. Native also has isolated outliers that the remainder does not explain:
+\qty{24.8}{\nano\second} at $N=30$ (neighbours \qtyrange{15.8}{16.1}{\nano\second}),
+\num{21.6} at $N=44$, \num{21.1} at $N=52$ and \qty{19.9}{\nano\second} at $N=50$.
+\code{autovec} grows at $\approx\qty{0.15}{\nano\second}$ per element (outliers at $N=13$, \num{36}
+and \num{56}) and \code{scalar} linearly at $\approx\qty{0.63}{\nano\second}$ per element (outliers
+at, e.g., $N=11$, \num{30}, \num{44}, \num{61}). Each outlier is stable within the run (IQR below
+\SI{1}{\percent}); that $N=30$ and \num{44} are slow in two builds suggests the per-$N$ array
+placement rather than the kernel, an untested hypothesis. Every call also pays a fixed $\approx\qtyrange{10}{13}{\nano\second}$ (call,
 loop setup and the run-time aliasing check of the versioned loop) before the first element. So the
 per-element speedup of short loops is far below the $5.8\times$ at $N=\num{4096}$: native beats
-scalar by only $1.11\times$ at $N=8$ and by $3.32\times$ at $N=72$. There are no AVX-512 mask
-registers here (no AVX-512 on this CPU); a masked tail would be the AVX-512 alternative to this
-narrowing epilogue.
+scalar by only $1.11\times$ at $N=8$ and by $3.32\times$ at $N=72$. A masked tail (AVX2
+\code{vmaskmovps}; this CPU has no AVX-512 mask registers) would replace the vector step and scalar
+remainder by one masked iteration; we did not implement one.

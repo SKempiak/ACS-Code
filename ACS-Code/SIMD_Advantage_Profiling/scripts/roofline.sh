@@ -10,17 +10,22 @@
 #   roofline_points.csv  kernel,variant,level,n,ai,gflops_median,gflops_q25,gflops_q75
 #                        one point per kernel x variant at an N inside each cache level
 #   roofline_roofs.csv   roof,ai,gflops   polylines: one bandwidth roof per level
-#                        (triad, actual traffic incl. write-allocate) capped by the
-#                        measured AVX2-FMA float32 peak, plus horizontal peak lines
+#                        (triad, actual traffic at that level, see below) capped by
+#                        the measured AVX2-FMA float32 peak, plus horizontal peak lines
 #   ceilings_peak.csv    isa,gflops_median,gflops_q25,gflops_q75,flops_per_cycle,ghz
 #   ceilings_bw.csv      level,bytes,read,copy,triad,copy_total,triad_total   (GiB/s medians)
 #
-# Arithmetic intensity uses actual memory traffic per element, float32:
+# Arithmetic intensity uses actual traffic per element, float32. For L2, L3 and
+# DRAM a store to a line that is not in L1 first reads it (write-allocate):
 #   saxpy   2 FLOP / 12 B  (read x, read y, write y; y is read first, so no write-allocate)
 #   mul     1 FLOP / 16 B  (read x, read y, write z + write-allocate read of z)
 #   stencil 5 FLOP / 12 B  (read x once thanks to reuse, write y + write-allocate)
 #   dot     2 FLOP /  8 B  (read x, read y; no store)
-# The triad roof is counted the same way (12 B explicit + 4 B write-allocate).
+# and the triad roof is counted the same way (12 B explicit + 4 B write-allocate,
+# column gib_per_s_total). With an L1-resident working set every store hits a
+# line that is already in L1, so there is no write-allocate fill: the L1 roof is
+# the triad's explicit load+store traffic (gib_per_s, 12 B) and the L1 points use
+# explicit-traffic intensities (mul 1/12, stencil 5/8; saxpy and dot unchanged).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 P="data/processed"
@@ -32,12 +37,13 @@ if [ -s "$P/baseline.csv" ]; then
     BEGIN {
       lvl[1024] = "L1"; lvl[16384] = "L2"; lvl[524288] = "L3"; lvl[16777216] = "DRAM"
       ai["saxpy"] = 2/12; ai["mul"] = 1/16; ai["stencil"] = 5/12; ai["dot"] = 2/8
+      ai1["saxpy"] = 2/12; ai1["mul"] = 1/12; ai1["stencil"] = 5/8; ai1["dot"] = 2/8   # L1: no write-allocate
       print "kernel,variant,level,n,ai,gflops_median,gflops_q25,gflops_q75"
     }
     NR == 1 { for (i = 1; i <= NF; i++) c[$i] = i; next }
     ($(c["n"]) in lvl) && ($(c["kernel"]) in ai) {
       print $(c["kernel"]), $(c["variant"]), lvl[$(c["n"])], $(c["n"]),
-            sprintf("%.6f", ai[$(c["kernel"])]),
+            sprintf("%.6f", (lvl[$(c["n"])] == "L1") ? ai1[$(c["kernel"])] : ai[$(c["kernel"])]),
             $(c["gflops_median"]), $(c["gflops_q25"]), $(c["gflops_q75"])
     }' "$P/baseline.csv" > "$P/roofline_points.csv"
   echo "roofline: $P/roofline_points.csv"
@@ -77,7 +83,8 @@ if [ -s "$P/ceilings.csv" ]; then
     NR == 1 { for (i = 1; i <= NF; i++) c[$i] = i; next }
     $(c["bench"]) == "peak" { peak[$(c["isa"])] = $(c["gflops_median"]) }
     $(c["bench"]) == "triad" && $(c["label"]) != "sweep" {
-      bw[$(c["label"])] = $(c["gib_per_s_total_median"]) * 1.073741824   # GiB/s -> GB/s
+      col = ($(c["label"]) == "L1") ? "gib_per_s_median" : "gib_per_s_total_median"   # no WA in L1
+      bw[$(c["label"])] = $(c[col]) * 1.073741824   # GiB/s -> GB/s
     }
     END {
       print "roof,ai,gflops"

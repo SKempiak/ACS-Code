@@ -1,0 +1,32 @@
+# make test (scripts/validate.sh) on a tmpfs scratch dir: Little's-Law host-gap control
+# command: ACS_SCRATCH=/dev/shm/acs_tmpfs_control make test
+# date: 2026-10-21T23:14:33-04:00  kernel: 7.2.9-arch1-1  scratch fs: tmpfs /dev/shm
+# git: 352e01a (working tree with uncommitted safety.sh/validate.sh changes)
+./scripts/validate.sh
+safety.sh refusals (scratch: /dev/shm/acs_tmpfs_control):
+  OK: refused /dev/nvme0n1 (block device)
+  OK: refused /dev/sda (block device)
+  OK: refused /dev/shm/acs_tmpfs_control/vtest.d/link_to_dev (symlink to a block device)
+  OK: refused /dev/shm/acs_tmpfs_control/vtest.d (directory)
+  OK: refused /etc/passwd (outside scratch)
+  OK: refused / (mountpoint)
+  OK: refused /acs_vtest.bin (scratch dir is /) [scratch=/]
+  OK: refused /home/samsonk/acs_vtest.bin (scratch dir is $HOME) [scratch=/home/samsonk]
+  OK: refused /dev/shm/acs_vtest.bin (scratch dir is a mount root) [scratch=/dev/shm]
+  OK: refused /usr/share/acs_vtest.bin (scratch dir not owned by user) [scratch=/usr/share]
+  OK: accepted scratch file
+blkbench refusals (checked before open):
+  OK: blkbench refused a directory
+  OK: blkbench refused a symlink
+blkbench sanity (64 MiB scratch file):
+  OK: fill is incompressible (gzip: 8389906 / 8388608 bytes)
+  seq MiB/s=6543.609  rand MiB/s=2936.900  L=IOPS*W: QD1=0.953694 QD8=4.55552
+  OK: sequential throughput > random
+  OK: concurrency grows with QD
+  OK: Little's Law: L=4.55552 <= QD=8
+  WARN: L=4.55552 < 0.95*QD: host-side gap; expected only on a non-device fs such as tmpfs (tmpfs)
+  skip: direct-vs-buffered check (scratch is tmpfs)
+fio_to_csv.sh fixture:
+  OK: fio JSON -> CSV row
+  note: fio present (fio-3.42); run 'scripts/run.sh fio_check'
+all P3 safety/sanity checks passed

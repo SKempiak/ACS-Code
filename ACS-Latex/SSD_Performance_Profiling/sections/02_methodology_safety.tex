@@ -9,11 +9,12 @@ environment documentation.}
 \newcommand{\acspinning}{a single I/O-issuing thread, not CPU-pinned (storage I/O is device-bound, not
 CPU-bound, below the host-saturation queue depths of \cref{sec:queue-depth})}
 \newcommand{\acsenvextra}{%
-  SSD       & Micron 2210 \code{MTFDHBA512QFD}, \qty{512}{\giga\byte} QLC NVMe, firmware \code{P6MA001}
-              (from \code{/sys/class/nvme/nvme0}; SMART logs need root) \\
+  SSD       & Micron 2210 \code{MTFDHBA512QFD}, \qty{512}{\giga\byte} QLC NVMe \cite{micron2210brief},
+              firmware \code{P6MA001} (from \code{/sys/class/nvme/nvme0}; SMART logs need root) \\
   Interface & PCIe link \qty{8.0}{GT/s} $\times$4 (Gen3), both current and maximum, read from
               \code{current_link_speed}/\code{current_link_width} in sysfs. Raw ceiling
               $8\,\text{GT/s}\times4\times\tfrac{128}{130}=\qty{3.94}{\giga\byte\per\second}$
+              (128b/130b line coding \cite{pcisig_pcie3})
               (\qty{3756}{\mebi\byte\per\second}), roughly \qtyrange{3.2}{3.5}{\giga\byte\per\second}
               after TLP/DLLP overhead \\
   Block layer & scheduler \code{none}, \code{nr_requests} 1023, 16 I/O queues, volatile write cache
@@ -42,10 +43,11 @@ firmware, PCIe link and temperature, so a run can never be silently mislabelled
         when \code{run.sh} exits, including on interrupt.
   \item \textbf{Gate.} \code{scripts/safety.sh} runs before every experiment. It hard-refuses a block or
         character device (including through a symlink), a mountpoint, a directory, any path outside the
-        scratch directory, and a target without enough free space. \code{scripts/validate.sh}
-        (\code{make test}) verifies that it refuses \code{/dev/nvme0n1} and \code{/dev/sda}, a symlink
-        to \code{/dev/sda}, \code{/etc/passwd} and \code{/}. These checks only \code{stat} the paths and
-        never open them.
+        scratch directory, and a target without enough free space. It also refuses a scratch directory
+        that resolves to \code{/}, to \code{\$HOME} or to the root of a mounted filesystem, or that the
+        user does not own. \code{scripts/validate.sh} (\code{make test}) exercises the block-device,
+        symlink, directory, outside-scratch, mountpoint and all four scratch-directory rules
+        (\cref{sec:validation}). These checks only \code{stat} the paths and never open them.
   \item \textbf{Benchmark.} \code{blkbench} \code{lstat}s its target \emph{before} opening it, refuses
         anything that is not a regular file, and opens with \code{O_NOFOLLOW}. No raw device or
         partition is ever opened.
@@ -75,7 +77,10 @@ FIO instead.
                     figures and tables show the median with inter-quartile-range (IQR) bars \\
   Data pattern    & incompressible: every write buffer is filled once, before timing, from an
                     xorshift64* generator seeded per queue slot; the preconditioning pass uses the same
-                    generator. \code{make test} checks that \code{gzip} cannot compress the result \\
+                    generator. \code{make test} checks that \code{gzip} cannot compress the result.
+                    The buffers are fixed per queue slot, so the content is incompressible but not unique
+                    per I/O: the same QD distinct blocks are written over and over, which a deduplicating
+                    controller could exploit; we did not test whether the 2210 does \\
   Latency metric  & per-I/O submit$\to$completion latency; p50/p95/p99/p99.9 from the full sorted
                     sample, with no reservoir truncation \\
   Preconditioning & one sequential O\_DIRECT write pass over the \code{fallocate}d test file,

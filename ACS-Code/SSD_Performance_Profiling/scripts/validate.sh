@@ -3,9 +3,12 @@
 #
 # 1. safety.sh must REFUSE both block devices on the test host (/dev/nvme0n1, the
 #    SSD; /dev/sda, the HDD), a symlink in the scratch dir that points at a device,
-#    a directory, a path outside the scratch dir and a mountpoint, and must ACCEPT
-#    a disposable file inside the scratch dir. These checks only stat()/readlink()
-#    the paths; nothing here opens a device, let alone for writing.
+#    a directory, a path outside the scratch dir and a mountpoint, and a scratch dir
+#    that resolves to /, to $HOME, to the root of a mounted filesystem or to a
+#    directory the user does not own; and must ACCEPT a disposable file inside the
+#    scratch dir. Each refusal is checked against the rule's own message, so no rule
+#    is shadowed by an earlier one. These checks only stat()/readlink() the paths;
+#    nothing here opens a device, let alone for writing.
 # 2. blkbench must refuse a non-regular target (directory, symlink) before opening it.
 # 3. On a small (64 MiB) preconditioned scratch file, blkbench must produce physically
 #    sane numbers: the fill is incompressible; sequential 128 KiB throughput beats
@@ -14,7 +17,8 @@
 #    closed-loop harness keeps exactly QD requests outstanding, so a mismatch would
 #    expose a timing or bookkeeping bug.
 # 4. fio_to_csv.sh converts a fixture fio JSON correctly (no fio needed).
-# Total writes: ~70 MiB, deleted at the end. Honors ACS_SCRATCH like run.sh.
+# Total writes: one 64 MiB scratch file, deleted at the end (everything else reads).
+# Honors ACS_SCRATCH like run.sh.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
@@ -25,7 +29,15 @@ SCRATCH="${ACS_SCRATCH:-$ROOT/data/scratch}"
 fail=0
 ok()   { echo "  OK: $1"; }
 bad()  { echo "  FAIL: $1" >&2; fail=1; }
-refuses() { if "$SAFE" "$1" >/dev/null 2>&1; then bad "accepted $1 ($2!)"; else ok "refused $1 ($2)"; fi; }
+# refuses <target> <description> <expected message regex> [ACS_SCRATCH override]
+refuses() {
+  local out rc
+  if [ -n "${4:-}" ]; then out=$(ACS_SCRATCH="$4" "$SAFE" "$1" 2>&1); rc=$?
+  else out=$("$SAFE" "$1" 2>&1); rc=$?; fi
+  if [ "$rc" -eq 0 ]; then bad "accepted $1 ($2!)"
+  elif echo "$out" | grep -Eq -- "$3"; then ok "refused $1 ($2)${4:+ [scratch=$4]}"
+  else bad "refused $1 for the wrong reason (wanted: $2): $out"; fi
+}
 
 mkdir -p "$SCRATCH"
 V="$SCRATCH/vtest.d"; rm -rf "$V"; mkdir -p "$V"
@@ -34,13 +46,29 @@ trap 'rm -rf "$V" "$F"' EXIT
 
 echo "safety.sh refusals (scratch: $SCRATCH):"
 for dev in /dev/nvme0n1 /dev/sda; do
-  if [ -b "$dev" ]; then refuses "$dev" "block device"; else echo "  skip: $dev not present on this host"; fi
+  if [ -b "$dev" ]; then refuses "$dev" "block device" "BLOCK device"; else echo "  skip: $dev not present on this host"; fi
 done
 ln -s /dev/sda "$V/link_to_dev"
-refuses "$V/link_to_dev" "symlink to a block device"
-refuses "$V" "directory"
-refuses /etc/passwd "outside scratch"
-refuses / "mountpoint"
+if [ -b /dev/sda ]; then refuses "$V/link_to_dev" "symlink to a block device" "BLOCK device"
+else refuses "$V/link_to_dev" "dangling symlink (no /dev/sda here)" "outside|not a regular file"; fi
+refuses "$V" "directory" "not a regular file"
+refuses /etc/passwd "outside scratch" "outside the dedicated scratch dir"
+refuses / "mountpoint" "is a mountpoint"
+# Scratch-directory rules: point ACS_SCRATCH at a bad directory and ask for a file inside it.
+refuses /acs_vtest.bin "scratch dir is /" "resolves to /\$" /
+refuses "$HOME/acs_vtest.bin" "scratch dir is \$HOME" "resolves to \\\$HOME" "$HOME"
+mnt=""
+for m in /dev/shm /boot /tmp /run; do
+  if mountpoint -q "$m" 2>/dev/null && [ "$m" != "$(readlink -f "$HOME")" ]; then mnt="$m"; break; fi
+done
+if [ -n "$mnt" ]; then refuses "$mnt/acs_vtest.bin" "scratch dir is a mount root" "root of a mounted filesystem" "$mnt"
+else echo "  skip: no mountpoint other than / found for the mount-root rule"; fi
+notmine=""
+for d in /usr/share /usr/lib /etc /var; do
+  if [ -d "$d" ] && [ ! -O "$d" ] && ! mountpoint -q "$d" 2>/dev/null; then notmine="$d"; break; fi
+done
+if [ -n "$notmine" ]; then refuses "$notmine/acs_vtest.bin" "scratch dir not owned by user" "not owned by" "$notmine"
+else echo "  skip: no foreign-owned directory found (running as root?)"; fi
 if "$SAFE" "$F" >/dev/null 2>&1; then ok "accepted scratch file"; else bad "rejected a valid scratch file"; fi
 
 echo "blkbench refusals (checked before open):"

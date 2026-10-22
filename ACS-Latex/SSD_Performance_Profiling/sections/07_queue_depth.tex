@@ -31,6 +31,13 @@
     x error minus expr=\thisrow{iops_median}-\thisrow{iops_q25},
     y error plus expr=\thisrow{#2_q75}-\thisrow{#2_median},
     y error minus expr=\thisrow{#2_median}-\thisrow{#2_q25}] {data/queue_depth.csv};}
+% write points re-measured in the lean re-run (QD 4--32, see lean_info.csv): drawn again with a distinct marker
+\pgfplotsset{/pgfplots/table/lean qd/.style={/pgfplots/x filter/.append code={%
+  \edef\ssdLq{\thisrow{qd}}% integer column; do not touch \pgfmathresult (the x value)
+  \ifnum\ssdLq<4 \def\pgfmathresult{inf}\fi\ifnum\ssdLq>32 \def\pgfmathresult{inf}\fi}}}
+\newcommand{\qdlean}[1]{% {latency metric}
+  \addplot[only marks, mark=diamond*, mark size=3pt, draw=black, fill=yellow!85!black, nodes near coords={}]
+    table[x=iops_median, y=#1_median, meta=qd, only if={mode}{write}, lean qd] {data/queue_depth.csv};}
 \begin{figure}[tbp]
   \centering
   \IfDataExists{queue_depth}{%
@@ -50,6 +57,8 @@
         \begin{axis}[ymode=log, qdplot]
           \qdcurve{write}{lat_mean_us}\addlegendentry{mean}
           \qdcurve{write}{lat_p99_us}\addlegendentry{p99}
+          \qdlean{lat_mean_us}\addlegendentry{lean re-run}
+          \qdlean{lat_p99_us}
         \end{axis}
       \end{tikzpicture}\fi
       \caption{4 KiB random write.}
@@ -59,7 +68,8 @@
   the IQR across repetitions in both IOPS and latency. Read IOPS reach
   \csvq{queue_depth_knee}{mode=read}{knee_iops} at the knee (QD~\csvq{queue_depth_knee}{mode=read}{knee_qd})
   and at most \csvq{queue_depth_knee}{mode=read}{max_iops} at QD=256; deeper queues then add only latency.
-  \ssdfrom{the write points at QD 4--32}}\label{fig:queue-depth}
+  In (b), diamonds mark the write points at QD 4--32, which come from the lean re-run; the other write
+  points (QD 1, 2, 64--256) come from the original run. \ssdfrom{the write points at QD 4--32}}\label{fig:queue-depth}
 \end{figure}
 
 \subsection{Knee}
@@ -94,7 +104,10 @@ point is the least stable (IQR
 In the original run the QD=8 write point caught a buffer-flush stall (\num{16884} IOPS, p99
 \qty{27.9}{\milli\second}). The knee rule then returned QD=4, and the text had to override it. After the
 pauses of the lean re-run, the stall did not recur, and the rule's answer agrees with the shape of the
-curve. The write plateau of \ensuremath{\sim}\num{250}k IOPS $\times$ \qty{4}{\kibi\byte}
+curve. The write knee is nonetheless \emph{indicative only}. The QD=16 and QD=32 IQRs overlap, so the
+step that the rule turns on is not resolved by five repetitions, and the curve joins two runs: QD 4--32
+from the rested lean re-run (diamonds in \cref{fig:queue-depth}b) and QD 1, 2 and 64--256 from the
+original run, taken on a drive in a different state. The write plateau of \ensuremath{\sim}\num{250}k IOPS $\times$ \qty{4}{\kibi\byte}
 $\approx$ \qty{0.97}{\gibi\byte\per\second} matches the SLC ingest rate measured in
 \cref{sec:block-size}. Writes saturate the buffer's intake, not the NAND parallelism that limits reads.
 
@@ -107,7 +120,10 @@ completion and resubmitting it. Matching QD therefore does not show that the dev
 particular way. It shows that the timers are consistent, that no slot is lost, and that the host keeps
 up ($g\ll W$). A ratio $L/\text{QD}$ clearly below 1 would mean the issuing thread, not the device, is
 the bottleneck. On a tmpfs control, where I/O completes synchronously inside \code{io_submit},
-\code{make test} measures $L/\text{QD}\approx0.57$ at QD=8. Note also that $W$ is measured from
+\code{make test} (run with \code{ACS_SCRATCH} on \code{/dev/shm}, so the SSD is not touched) measured
+$L=4.56$, i.e.\ $L/\text{QD}\approx0.57$, at QD=8 in a single \qty{1.5}{\second} run
+(\code{data/raw/validate_tmpfs/20261021-231433.txt}); the harness itself flags this as a host-side
+gap. Note also that $W$ is measured from
 submission, so $L$ counts requests in the kernel block layer and driver as well as in the device; the
 true device-queue occupancy can only be lower.
 
@@ -167,11 +183,14 @@ so every added request simply waits.
 
 For reads, $L/\text{QD}$ stays between 0.987 and 0.998 at every depth up to 256
 (\cref{tab:littles-law}). The single \code{libaio} thread keeps the queue full, and the saturation
-belongs to the device. For writes the ratio is 0.95--0.997. The lowest value, 0.95 at QD=128, coincides
-with the widest p99.9 there
-(\csvq[0]{queue_depth}{qd=128,mode=write}{lat_p999_us_median}\,\si{\micro\second}). We read it as
-completions bunching around a flush stall rather than a host limit, but with five repetitions we cannot
-separate the two.
+belongs to the device. For writes the ratio is 0.95--0.997. The lowest value, 0.95 at QD=128, comes
+with a p99.9 of \csvq[0]{queue_depth}{qd=128,mode=write}{lat_p999_us_median}\,\si{\micro\second},
+a flush-stall-sized tail. That tail is not unique to QD=128, though: QD=256 has a slightly larger p99.9
+(\csvq[0]{queue_depth}{qd=256,mode=write}{lat_p999_us_median}\,\si{\micro\second}) and still keeps
+$L/\text{QD}=0.995$. A stall alone therefore does not explain the dip. With five repetitions, and an
+$L$ IQR at QD=128 that reaches 0.996 of QD
+(\csvq[1]{queue_depth}{qd=128,mode=write}{littles_l_q25}--\csvq[1]{queue_depth}{qd=128,mode=write}{littles_l_q75}),
+we cannot say whether the low median reflects stalled completions, a host-side gap or noise.
 
 The practical reading for reads: QD\,$\approx$\,32--64 extracts nearly all the throughput at a quarter
 to half a millisecond, and deeper queues only buy latency. Writes need only QD\,$\approx$\,16, as long as
