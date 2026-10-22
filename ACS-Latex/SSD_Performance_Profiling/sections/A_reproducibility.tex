@@ -1,11 +1,11 @@
 % !TeX root = ../main.tex
 \section{Reproducibility}\label{app:repro}
 
-Code and data live in \code{ACS-Code/}, the reports in \code{ACS-Latex/}, at commit \code{e33345f7874f}.
+Code and data live in \code{ACS-Code/}, the reports in \code{ACS-Latex/}, at commit \code{c4f53e5adfc1}.
 
 \begin{lstlisting}[language=bash]
 gh repo clone SKempiak/ACS-Code ACS && cd ACS
-git checkout e33345f7874f
+git checkout c4f53e5adfc1
 cd ACS-Code
 make tools                                    # build/tools/summarize
 make -C SSD_Performance_Profiling             # build/blkbench (O_DIRECT, libaio)
