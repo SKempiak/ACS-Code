@@ -14,6 +14,7 @@ analysis (with \cref{sec:ai-use}).}
   Wrong setup & \qty{4}{\kibi\byte} sequential reads over a \qty{64}{\mebi\byte} region, \emph{no} \code{O_DIRECT} \\
   Right setup & Identical workload \emph{with} \code{O_DIRECT} (page cache bypassed) \\
   Fixed       & QD=1, 5 repetitions of \qty{4}{\second}; test file rewritten sequentially just before \\
+  Run         & first run (\code{20261021-103201}); read-only apart from the re-fill, so not repeated \\
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh pitfall} \\
 \end{knobs}
 

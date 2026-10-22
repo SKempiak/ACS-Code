@@ -1,0 +1,80 @@
+1792654243,blkbench, --experiment block_size --bs 4096 --qd 1 --pattern rand --rwmix 10 --runtime 4 --reps 5 --header
+1792654263,blkbench, --experiment block_size --bs 16384 --qd 1 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792654283,blkbench, --experiment block_size --bs 32768 --qd 1 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792654303,blkbench, --experiment block_size --bs 65536 --qd 1 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792654323,blkbench, --experiment block_size --bs 131072 --qd 1 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792654344,blkbench, --experiment block_size --bs 262144 --qd 1 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792654364,blkbench, --experiment block_size --bs 524288 --qd 1 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792654384,blkbench, --experiment block_size --bs 1048576 --qd 1 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792654404,gap,15
+1792654419,blkbench, --experiment block_size --bs 4096 --qd 1 --pattern rand --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654422,gap,15
+1792654437,blkbench, --experiment block_size --bs 16384 --qd 1 --pattern rand --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654439,gap,15
+1792654454,blkbench, --experiment block_size --bs 32768 --qd 1 --pattern rand --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654455,gap,15
+1792654470,blkbench, --experiment block_size --bs 65536 --qd 1 --pattern rand --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654470,gap,15
+1792654485,blkbench, --experiment block_size --bs 131072 --qd 1 --pattern rand --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654491,gap,15
+1792654506,blkbench, --experiment block_size --bs 262144 --qd 1 --pattern rand --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654518,gap,15
+1792654533,blkbench, --experiment block_size --bs 524288 --qd 1 --pattern rand --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654534,gap,15
+1792654549,blkbench, --experiment block_size --bs 1048576 --qd 1 --pattern rand --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654552,blkbench, --experiment block_size --bs 4096 --qd 1 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792654572,blkbench, --experiment block_size --bs 16384 --qd 1 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792654592,blkbench, --experiment block_size --bs 32768 --qd 1 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792654613,blkbench, --experiment block_size --bs 65536 --qd 1 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792654633,blkbench, --experiment block_size --bs 131072 --qd 1 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792654653,blkbench, --experiment block_size --bs 262144 --qd 1 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792654673,blkbench, --experiment block_size --bs 524288 --qd 1 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792654693,blkbench, --experiment block_size --bs 1048576 --qd 1 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792654713,gap,15
+1792654728,blkbench, --experiment block_size --bs 4096 --qd 1 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654731,gap,15
+1792654746,blkbench, --experiment block_size --bs 16384 --qd 1 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654748,gap,15
+1792654763,blkbench, --experiment block_size --bs 32768 --qd 1 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654764,gap,15
+1792654779,blkbench, --experiment block_size --bs 65536 --qd 1 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654780,gap,15
+1792654795,blkbench, --experiment block_size --bs 131072 --qd 1 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654796,gap,15
+1792654811,blkbench, --experiment block_size --bs 262144 --qd 1 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654812,gap,15
+1792654827,blkbench, --experiment block_size --bs 524288 --qd 1 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654828,gap,15
+1792654843,blkbench, --experiment block_size --bs 1048576 --qd 1 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792654844,blkbench, --experiment block_size --bs 4096 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792654864,blkbench, --experiment block_size --bs 16384 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792654884,blkbench, --experiment block_size --bs 32768 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792654905,blkbench, --experiment block_size --bs 65536 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792654925,blkbench, --experiment block_size --bs 131072 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792654945,blkbench, --experiment block_size --bs 262144 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792654965,blkbench, --experiment block_size --bs 524288 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792654985,blkbench, --experiment block_size --bs 1048576 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792655007,blkbench, --experiment block_size --bs 4096 --qd 32 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792655028,blkbench, --experiment block_size --bs 16384 --qd 32 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792655048,blkbench, --experiment block_size --bs 32768 --qd 32 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792655069,blkbench, --experiment block_size --bs 65536 --qd 32 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792655089,blkbench, --experiment block_size --bs 131072 --qd 32 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792655109,blkbench, --experiment block_size --bs 262144 --qd 32 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792655129,blkbench, --experiment block_size --bs 524288 --qd 32 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792655149,blkbench, --experiment block_size --bs 1048576 --qd 32 --pattern seq --rwmix 10 --runtime 4 --reps 5
+1792655170,gap,15
+1792655185,blkbench, --experiment block_size --bs 4096 --qd 32 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792655185,gap,15
+1792655200,blkbench, --experiment block_size --bs 16384 --qd 32 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792655201,gap,15
+1792655216,blkbench, --experiment block_size --bs 32768 --qd 32 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792655217,gap,15
+1792655232,blkbench, --experiment block_size --bs 65536 --qd 32 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792655233,gap,15
+1792655248,blkbench, --experiment block_size --bs 131072 --qd 32 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792655249,gap,15
+1792655264,blkbench, --experiment block_size --bs 262144 --qd 32 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792655265,gap,15
+1792655280,blkbench, --experiment block_size --bs 524288 --qd 32 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456
+1792655281,gap,15
+1792655296,blkbench, --experiment block_size --bs 1048576 --qd 32 --pattern seq --rwmix 0 --runtime 4 --reps 3 --max-bytes 268435456

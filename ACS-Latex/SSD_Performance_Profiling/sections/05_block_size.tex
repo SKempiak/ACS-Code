@@ -12,10 +12,11 @@ against latency.}
 
 \begin{knobs}
   Fixed       & one job; \code{O_DIRECT}; 5 repetitions of \qty{4}{\second} for reads; 3 repetitions
-                capped at \qty{256}{\mebi\byte} each for writes \\
+                capped at \qty{256}{\mebi\byte} each for writes, each write point after a \qty{15}{\second}
+                pause \\
   Varied      & block size \qty{4}{\kibi\byte}--\qty{1}{\mebi\byte} (8 sizes); random vs.\ sequential;
                 100\% read vs.\ 100\% write; QD=1 (all four combinations) and QD=32 (sequential read and
-                write) \\
+                write, random read) \\
   Ceiling     & PCIe~3.0~$\times$4: \qty{3756}{\mebi\byte\per\second} raw (\cref{sec:method}) \\
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh block_size} \\
 \end{knobs}
@@ -64,12 +65,12 @@ against latency.}
   }
   \caption{QD=1 block-size sweep, reads (solid) and writes (dashed); medians with IQR bars. Random-read
   throughput rises with block size because latency grows more slowly than the transfer size. Sequential
-  reads stay near \qty{1.4}{\gibi\byte\per\second} from 64 to \qty{256}{\kibi\byte} and reach
+  reads stay near \qty{1.45}{\gibi\byte\per\second} from 64 to \qty{256}{\kibi\byte} and reach
   \qty{1.8}{\gibi\byte\per\second} at \qty{1}{\mebi\byte}, a single-request limit well below the
-  \qty{3756}{\mebi\byte\per\second} link. Random and sequential writes both stay at the
-  \ensuremath{\sim}\qty{1.05}{\gibi\byte\per\second} SLC ingest rate from \qty{64}{\kibi\byte} up; the
-  original run's collapse of the $\geq$\qty{256}{\kibi\byte} random writes did not recur after an
-  idle period (see text). \ssdfrom{the random writes $\geq$\qty{256}{\kibi\byte}}}\label{fig:block-size}
+  \qty{3756}{\mebi\byte\per\second} link. Writes stay at the
+  \ensuremath{\sim}\qty{1.05}{\gibi\byte\per\second} SLC ingest rate from \qty{64}{\kibi\byte} up, except
+  at \qty{128}{\kibi\byte} and \qty{256}{\kibi\byte}, where the random writes (and, less, the sequential
+  ones) met a cache-exhaustion episode (see text).}\label{fig:block-size}
 \end{figure}
 
 \begin{figure}[!htbp]
@@ -99,7 +100,7 @@ against latency.}
     \end{tikzpicture}\fi
   \caption{Sequential throughput at QD=32 against the measured-link ceiling (red), with the QD=1 read
   curve for reference. Deep queues remove the per-request latency limit, so the remaining gap to the line
-  is the device's internal bandwidth plus protocol overhead. \ssdfrom{the QD=32 random reads}}\label{fig:block-size-qd}
+  is the device's internal bandwidth plus protocol overhead.}\label{fig:block-size-qd}
 \end{figure}
 
 \subsection{Analysis}
@@ -123,9 +124,9 @@ sequential read to \csvq[1]{block_size}{bs=4096,pattern=seq,mode=read,qd=1}{lat_
 (random: \csvq[1]{block_size}{bs=4096,pattern=rand,mode=read,qd=1}{lat_mean_us_median}). From 64 to
 \qty{256}{\kibi\byte} throughput is flat at
 \csvq{block_size}{bs=65536,pattern=seq,mode=read,qd=1}{mibps_median}--%
-\csvq{block_size}{bs=131072,pattern=seq,mode=read,qd=1}{mibps_median}\,MiB/s, reaching
+\csvq{block_size}{bs=262144,pattern=seq,mode=read,qd=1}{mibps_median}\,MiB/s, reaching
 \csvq{block_size}{bs=1048576,pattern=seq,mode=read,qd=1}{mibps_median}\,MiB/s at \qty{1}{\mebi\byte},
-only \qty{48}{\percent} of the link: the limit is how fast the controller streams one command.
+only \qty{49}{\percent} of the link: the limit is how fast the controller streams one command.
 
 \textbf{Deep queues do not reach the link ceiling} (\cref{fig:block-size-qd}). At QD=32 sequential reads
 flatten at \csvq{block_size}{bs=16384,pattern=seq,mode=read,qd=32}{mibps_median}--%
@@ -138,15 +139,15 @@ allows. The NAND/controller back end is the limit, consistent with Micron's \qty
 \csvq{block_size}{bs=65536,pattern=seq,mode=write,qd=32}{mibps_median}\,MiB/s, the SLC ingest rate
 (\cref{sec:device-state}).
 
-\csvget\ssdHasRR{block_size}{pattern=rand,mode=read,qd=32}{mibps_median}%
-\ifx\ssdHasRR\empty\else
-\textbf{Random reads at QD=32} (lean re-run) reach
-\csvq{block_size}{bs=4096,pattern=rand,mode=read,qd=32}{iops_median} IOPS at \qty{4}{\kibi\byte}, peak at
-\csvq{block_size}{bs=262144,pattern=rand,mode=read,qd=32}{mibps_median}\,MiB/s and give
+\textbf{Random reads at QD=32} reach
+\csvq{block_size}{bs=4096,pattern=rand,mode=read,qd=32}{iops_median} IOPS at \qty{4}{\kibi\byte}, about
+the sequential rate at that size
+(\csvq{block_size}{bs=4096,pattern=seq,mode=read,qd=32}{iops_median}), plateau at
+\csvq{block_size}{bs=262144,pattern=rand,mode=read,qd=32}{mibps_median}\,MiB/s from
+\qty{128}{\kibi\byte} up and give
 \csvq{block_size}{bs=1048576,pattern=rand,mode=read,qd=32}{mibps_median}\,MiB/s at \qty{1}{\mebi\byte},
 against \csvq{block_size}{bs=1048576,pattern=seq,mode=read,qd=32}{mibps_median} for sequential: random
-placement costs more than half the bandwidth even with 32 large requests in flight.
-\fi
+placement costs about a quarter of the bandwidth even with 32 large requests in flight.
 
 \textbf{Writes at QD=1} post \csvq{block_size}{bs=4096,pattern=rand,mode=write,qd=1}{iops_median} IOPS at
 \qty{4}{\kibi\byte} (reads: \csvq{block_size}{bs=4096,pattern=rand,mode=read,qd=1}{iops_median}), and
@@ -156,12 +157,17 @@ random and sequential curves coincide
 flattening at the same \ensuremath{\sim}\qty{1.05}{\gibi\byte\per\second} ingest rate as at QD=32: the
 buffer acknowledges before the NAND program, so writes reach their ceiling with one request in flight.
 
-\textbf{A drive-state episode, not a block-size effect.} In the original run, after about
-\qty{10}{\gibi\byte} of writes, the random writes at \qty{256}{\kibi\byte}, \qty{512}{\kibi\byte} and
-\qty{1}{\mebi\byte} fell to the direct-to-QLC rate (\qtyrange{64}{66}{\mebi\byte\per\second}, p99
-\qtyrange{33}{45}{\milli\second}). Re-measured after a \qty{5}{\minute} idle period with
-\qty{15}{\second} pauses, they ran at
-\csvq{block_size}{bs=262144,pattern=rand,mode=write,qd=1}{mibps_median},
+\textbf{A drive-state episode, not a block-size effect.} The QD=1 random writes ran from small to large
+blocks. During the \qty{128}{\kibi\byte} point, after about \qty{3.3}{\gibi\byte} of random writes in
+this step (plus its \qty{2}{\gibi\byte} preconditioning pass), the rate fell from
+\qty{1087}{} to \qty{132}{} and then \qty{66}{\mebi\byte\per\second}, and all three \qty{256}{\kibi\byte}
+repetitions ran at \qtyrange{61}{66}{\mebi\byte\per\second} with p99 of \qtyrange{34}{40}{\milli\second}:
+the direct-to-QLC rate of \cref{sec:device-state}. After the next \qty{15}{\second} pause the
+\qty{512}{\kibi\byte} and \qty{1}{\mebi\byte} points were back at
 \csvq{block_size}{bs=524288,pattern=rand,mode=write,qd=1}{mibps_median} and
-\csvq{block_size}{bs=1048576,pattern=rand,mode=write,qd=1}{mibps_median}\,MiB/s, on the sequential-write
-curve: the collapse was cache exhaustion.
+\csvq{block_size}{bs=1048576,pattern=rand,mode=write,qd=1}{mibps_median}\,MiB/s. The sequential writes,
+measured later, dipped less (\csvq{block_size}{bs=262144,pattern=seq,mode=write,qd=1}{mibps_median}\,MiB/s
+at \qty{256}{\kibi\byte}). Because larger blocks recovered, we read the collapse as the SLC cache running
+out of free blocks, which the \qty{60}{\gibi\byte} fill at the start of the run had left with little
+headroom (\cref{sec:device-state}), not as an effect of block size. Our first run showed the same collapse
+from \qty{256}{\kibi\byte} to \qty{1}{\mebi\byte}.

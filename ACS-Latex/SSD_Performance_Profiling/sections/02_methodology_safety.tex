@@ -19,9 +19,7 @@ CPU-bound, below the host-saturation queue depths of \cref{sec:queue-depth})}
               \enquote{write back} \\
   Target    & disposable files on the SSD's ext4 \code{/} partition (\code{nvme0n1p3}, \code{relatime},
               no online discard) via \code{ACS_SCRATCH}: a \qty{2}{\gibi\byte} test file for the sweeps
-              and a \qty{60}{\gibi\byte} file for the original device-state runs; the lean re-run used a
-              \qty{4}{\gibi\byte} test file (random offsets over its first \qty{2}{\gibi\byte}) and a
-              fill file capped at \qty{40}{\gibi\byte} \\
+              and a \qty{60}{\gibi\byte} file for the device-state runs \\
   Temperature & NVMe composite sensor (\code{hwmon*/temp1_input}), logged per repetition and every
               second in the sustained runs \\
 }
@@ -55,75 +53,66 @@ I/O's submit-to-completion latency. FIO 3.42 runs the same points through \code{
   Engine          & \code{libaio}; \code{O_DIRECT}; 4\,KiB-aligned buffers and offsets; 64-bit uniform
                     random offsets (splitmix64) \\
   Timing          & \qty{4}{\second} per repetition (\qty{6}{\second} for tail); write points also stop after
-                    \qty{256}{\mebi\byte} (\qty{128}{\mebi\byte} and a \qty{15}{\second} pause in the lean
-                    re-run); preconditioning absorbs warm-up \\
-  Repetitions     & 5 per point (3 for block-size writes, 4 per engine or span in parts of the lean
-                    re-run); median with inter-quartile-range (IQR) bars \\
+                    \qty{256}{\mebi\byte}; preconditioning absorbs warm-up \\
+  Repetitions     & 5 per point (3 for block-size writes; 3 per pass, 6 in total, for the working set);
+                    median with inter-quartile-range (IQR) bars \\
   Data pattern    & incompressible xorshift64* buffers, fixed per queue slot (we did not test whether the
                     2210 deduplicates) \\
   Latency metric  & per-I/O submit$\to$completion; p50/p95/p99/p99.9 from the full sorted sample \\
-  Preconditioning & sequential O\_DIRECT write over the test file before every sequential-read group
-                    (\cref{sec:layout}). In the reported \code{all} run the file was otherwise
-                    preconditioned only before \code{zero_queue} (the current \code{run.sh} does it before
-                    every experiment); the lean re-run did it once, before \code{tail} \\
+  Preconditioning & sequential O\_DIRECT write over the test file at the start of every experiment and
+                    before every sequential-read group (\cref{sec:layout}) \\
   Driver          & \code{SSD_Performance_Profiling/scripts/run.sh}; \code{src/blkbench.c} \\
 \end{knobs}
 
 \subsection{Execution, run order and idle periods}
-The author ran all timed runs in a terminal (governor \code{performance}, turbo and SMT off).
-\code{run.sh all} ran in the order of \cref{tab:budget} on 2026-10-21, 10:32--10:54, followed directly by
-\code{SUSTAIN_GIB=60 run.sh device_state} until 11:23 (run \code{20261021-103201}); an earlier pilot was
-discarded. Nothing in between trimmed or idled the drive, so each experiment inherited the SLC-cache
-fill and background work of the previous one, which shaped the write collapses in
-\cref{sec:block-size,sec:queue-depth}, the tails in \cref{sec:tail} and \cref{sec:device-state}.
+All results except \code{pitfall} and \code{layout} come from one scripted run,
+\code{scripts/rerun_clean.sh} (run \code{20261022-021116}, 2026-10-22, 02:11--04:08 EDT;
+\cref{tab:budget}), started by the author in a terminal. Beforehand we set the governor to
+\code{performance}, disabled turbo, SMT and ACPI GPE~0x42, ran \code{sudo fstrim -v /}
+(\qty{42.8}{\gibi\byte} trimmed, about 01:41) and left the machine idle for \qty{30}{\minute}. The script
+then checked free space (\qty{77}{\gibi\byte}), the TRIM in the system journal and the drive itself:
+\qty{0}{\mebi\byte} read or written and \qty{0}{\percent} busy over \qty{10}{\second}.
+
+The run puts the large sequential fill first, on the clean drive, and gives every later experiment an
+idle period: \qty{20}{\minute} before \code{working_set}, \qty{10}{\minute} before \code{tail} and
+\qty{5}{\minute} before each other step. Write points also wait before they start: \qty{120}{\second} in
+\code{zero_queue} and \code{rw_mix}, \qty{15}{\second} in \code{block_size} and \code{queue_depth}.
+\code{pitfall} and \code{layout} were not repeated; they come from our first run
+(\code{20261021-103201}).
 
 \textbf{Idle period.} An \emph{idle period} means that the drive received no I/O from our scripts for a
 stated time (\qtyrange{5}{30}{\minute}), so that the controller could finish background SLC-to-QLC folding
 and garbage collection; an \emph{idle drive} is one measured after such a period.
 
-\paragraph{Lean re-run.} The confounded experiments were re-measured that evening with
-\code{rerun_clean.sh lean} (run \code{20261021-220614}, 22:06--22:32 EDT; \cref{tab:lean}) after
-\code{sudo fstrim -v /} at 21:34:54 and an idle period of at least \qty{30}{\minute}, with the sustained
-fill first and stopped soon after the cliff. Lean points replace only the matching configurations of the
-original run; captions name each point's run.
+\paragraph{Superseded runs.} Two earlier runs are not used for the results. The first
+(\code{run.sh all}, then \code{SUSTAIN_GIB=60 run.sh device_state}; runs \code{20261021-103201} and
+\code{20261021-105439}, 2026-10-21) ran all experiments back to back without TRIM or idle periods, so each
+inherited the SLC-cache fill and background work of the one before. A partial \enquote{lean} re-run that
+evening (\code{20261021-220614}) re-measured only the most affected points, with a short fill, and could
+only be merged with the first. Because of these run-order confounds both were replaced by the run above;
+their raw data stay in the repository, and we cite them only where they show how drive state changes a
+result.
 
 \begin{table}[!htbp]
   \centering\small
-  \caption{Measured wall-clock time of each experiment in the original 2026-10-21 runs, in execution
-  order, and the maximum bytes it can write with the default knobs (byte caps plus
-  preconditioning).}\label{tab:budget}
+  \caption{The reported run (\code{rerun_clean.sh}, 2026-10-22) in execution order: wall-clock time of
+  each step from the run log, including its idle period, and the most it could write (byte caps plus
+  preconditioning). \code{pitfall} and \code{layout} are from the first run.}\label{tab:budget}
   \begin{tabularx}{\linewidth}{@{}lrrX@{}}
     \toprule
-    Experiment & Time & Max written & Notes \\
+    Step & Time & Max written & Notes \\
     \midrule
-    \code{zero_queue}   & \qty{1.1}{\minute} & \qty{7}{\gibi\byte}  & includes the initial preconditioning \\
-    \code{block_size}   & \qty{9.1}{\minute} & \qty{22}{\gibi\byte} & 48 points; write points 3 reps, \qty{256}{\mebi\byte} cap \\
-    \code{rw_mix}       & \qty{0.5}{\minute} & \qty{4}{\gibi\byte}  & \\
-    \code{queue_depth}  & \qty{3.7}{\minute} & \qty{11}{\gibi\byte} & read and write, QD 1--256 \\
-    \code{tail}         & \qty{2.0}{\minute} & --                   & reads only \\
-    \code{pitfall}      & \qty{0.8}{\minute} & \qty{2}{\gibi\byte}  & reads only (plus re-fill) \\
-    \code{layout}       & \qty{2.2}{\minute} & \qty{6}{\gibi\byte}  & includes a \qty{4}{\gibi\byte} random overwrite \\
-    \code{fio_check}    & \qty{3.3}{\minute} & \qty{8}{\gibi\byte}  & both engines, interleaved \\
-    \code{sustained}    & \qty{24.9}{\minute}& \qty{72}{\gibi\byte} & \qty{60}{\gibi\byte} fill $+$ $\le$\qty{8}{\gibi\byte} random $+$ $\le$\qty{4}{\gibi\byte} recovery \\
-    \code{working_set}  & \qty{4.0}{\minute} & \qty{5}{\gibi\byte}  & on the \qty{60}{\gibi\byte} file left by \code{sustained} \\
-    \bottomrule
-  \end{tabularx}
-\end{table}
-
-\begin{table}[!htbp]
-  \centering\small
-  \caption{The lean re-run (\code{rerun_clean.sh lean}, 2026-10-21, 22:06--22:32 EDT) in execution order:
-  wall-clock time from the run log, including idle periods, and the most each step could write.}\label{tab:lean}
-  \begin{tabularx}{\linewidth}{@{}lrrX@{}}
-    \toprule
-    Step & Time & Max written & What it re-measured \\
+    \code{sustained}   & \qty{16.2}{\minute} & \qty{72}{\gibi\byte} & \qty{60}{\gibi\byte} fill $+$ $\le$\qty{8}{\gibi\byte} random $+$ \qty{60}{\second} idle $+$ $\le$\qty{4}{\gibi\byte} recovery \\
+    \code{working_set} & \qty{24.1}{\minute} & \qty{6}{\gibi\byte}  & \qty{20}{\minute} idle; on the \qty{60}{\gibi\byte} file, which it then deletes \\
+    \code{tail}        & \qty{12.6}{\minute} & \qty{2}{\gibi\byte}  & \qty{10}{\minute} idle; fresh \qty{2}{\gibi\byte} precondition; reads only \\
+    \code{zero_queue}  & \qty{9.9}{\minute}  & \qty{7}{\gibi\byte}  & \qty{5}{\minute} idle; \qty{120}{\second} before each write point \\
+    \code{rw_mix}      & \qty{11.6}{\minute} & \qty{4}{\gibi\byte}  & \qty{5}{\minute} idle; \qty{120}{\second} before each mix with writes \\
+    \code{block_size}  & \qty{22.6}{\minute} & \qty{24}{\gibi\byte} & \qty{5}{\minute} idle; 56 points; \qty{15}{\second} before each write point \\
+    \code{queue_depth} & \qty{11.0}{\minute} & \qty{14}{\gibi\byte} & \qty{5}{\minute} idle; reads and writes, QD 1--256 \\
+    \code{fio_check}   & \qty{9.0}{\minute}  & \qty{10}{\gibi\byte} & \qty{5}{\minute} idle; 7 points, both engines, order alternating \\
     \midrule
-    \code{sustained}   & \qty{1.6}{\minute}  & \qty{6.3}{\gibi\byte} & fill (stopped at \qty{4.3}{\gibi\byte}), \qty{1}{\gibi\byte} random, \qty{60}{\second} idle, \qty{1}{\gibi\byte} recovery \\
-    \code{tail}        & \qty{12.1}{\minute} & \qty{4}{\gibi\byte}   & \qty{10}{\minute} idle, fresh \qty{4}{\gibi\byte} precondition, QD 8/32/64/128 reads \\
-    \code{working_set} & \qty{1.6}{\minute}  & \qty{0.75}{\gibi\byte} & spans 1, 2, \qty{4}{\gibi\byte}, forward then reverse \\
-    \code{block_size}  & \qty{8.5}{\minute}  & \qty{1.1}{\gibi\byte} & QD=32 random reads (8 sizes), \qty{5}{\minute} idle, QD=1 random writes $\geq$\qty{256}{\kibi\byte} \\
-    \code{queue_depth} & \qty{1.1}{\minute}  & \qty{2.5}{\gibi\byte} & random writes at QD 4--32 \\
-    \code{fio_check}   & \qty{1.0}{\minute}  & \qty{3}{\gibi\byte}   & the three write points, engine order alternating \\
+    \code{pitfall}     & \qty{0.8}{\minute}  & \qty{2}{\gibi\byte}  & first run; reads only (plus re-fill) \\
+    \code{layout}      & \qty{2.2}{\minute}  & \qty{6}{\gibi\byte}  & first run; includes a \qty{4}{\gibi\byte} random overwrite \\
     \bottomrule
   \end{tabularx}
 \end{table}

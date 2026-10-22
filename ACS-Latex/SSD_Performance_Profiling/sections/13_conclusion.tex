@@ -3,17 +3,20 @@
 
 At QD=1 the Micron 2210's write buffer makes \qty{4}{\kibi\byte} random writes faster than reads. Block size moves the
 bottleneck from per-request latency to bandwidth, but even at QD=32 sequential reads reach only
-\qty{57}{\percent} of the PCIe link, so the NAND back end is the ceiling, and writes saturate the
-\ensuremath{\sim}\qty{1.06}{\gibi\byte\per\second} SLC ingest rate even at QD=1. Mixing reads and writes
+\qty{56}{\percent} of the PCIe link, so the NAND back end is the ceiling, and writes saturate the
+\ensuremath{\sim}\qty{1.05}{\gibi\byte\per\second} SLC ingest rate even at QD=1. Mixing reads and writes
 is worse than either pure workload. The read knee lies at QD~\csvq{queue_depth_knee}{mode=read}{knee_qd}
 under an explicit \qty{10}{\percent}-per-doubling rule; beyond it latency doubles per doubling of QD, and
-$L/\text{QD}$ of 0.987--0.998 confirms that the saturation is the device's, not the harness's.
+$L/\text{QD}$ of 0.987--0.999 confirms that the saturation is the device's, not the harness's.
 
-Device state matters as much as configuration. Even on a trimmed, idle drive the SLC cache held only
-\csvval[1]{sustained_summary}{cliff_gib}\,GiB, plausibly because it scales with free space, and past it
-writes fell $\ssdburstratio\times$. Recent writes halved read IOPS and stretched p99.9/p50 from
-\ssdtailratio{128}{p999}$\times$ to $24\times$, and the write history of the data made
-\enquote{sequential} reads 6--9$\times$ slower. Temperature stayed far below the warning threshold.
+Device state matters as much as configuration. On a freshly trimmed, idle drive the SLC cache held
+\csvval[1]{sustained_summary}{cliff_gib}\,GiB, against \qty{3.8}{} and \qty{3.1}{\gibi\byte} in earlier
+runs, plausibly because it scales with free blocks; past it writes fell $\ssdburstratio\times$ and did
+not recover after a minute of idle time. The same exhaustion briefly cut writes to the QLC rate in the
+block-size and queue-depth sweeps, and it made the write knee rule return a meaningless QD=2. Reads did
+not slow with span beyond \qty{4}{\gibi\byte}, but the write history of the data made
+\enquote{sequential} reads 6--9$\times$ slower, and in our first run recent heavy writes stretched p99.9/p50 from
+\ssdtailratio{128}{p999}$\times$ to $24\times$. Temperature stayed far below the warning threshold.
 
 The sharpest lessons are methodological. Without \code{O_DIRECT} the same workload reported page-cache
 fiction, and the first dataset was taken on the HDD until the \code{rotational} flag gave it away. A

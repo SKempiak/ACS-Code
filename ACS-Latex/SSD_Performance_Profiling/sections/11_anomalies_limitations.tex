@@ -4,33 +4,34 @@
 
 \subsection{Unexpected results}
 \begin{itemize}
-  \item \textbf{The SLC cache is small} (\csvval[1]{sustained_summary}{cliff_gib}\,GiB on a trimmed, idle
-        drive, not \ensuremath{\sim}\qty{20}{\gibi\byte}), and its recovery after an idle gap depends on
-        the fold backlog (\cref{sec:device-state}).
+  \item \textbf{The SLC cache size depends on drive state}
+        (\csvval[1]{sustained_summary}{cliff_gib}\,GiB here, \qty{3.8}{} and \qty{3.1}{\gibi\byte} in
+        earlier runs), and after a full fill neither \qty{60}{\second} nor \qty{20}{\minute} of idle time
+        restored much of it (\cref{sec:device-state}).
   \item \textbf{Random writes beat random reads until the cache fills}
         (\csvq{rw_mix}{rwmix=0}{iops_median} vs.\ \csvq{rw_mix}{rwmix=10}{iops_median} IOPS at QD=16), and
-        the write collapses in the original sweeps were drive state (\cref{sec:block-size,sec:queue-depth}).
-  \item \textbf{Deep queues did not hide fragmentation} ($9.2\times$ at QD=32; \cref{sec:layout}), and
-        \textbf{recent writes} halved read IOPS and raised p99.9/p50 to $24\times$ (\cref{sec:tail}).
+        the write collapses inside the sweeps were drive state, not block size or queue depth
+        (\cref{sec:block-size,sec:queue-depth}).
+  \item \textbf{Span did not matter beyond \qty{4}{\gibi\byte}}, contrary to hypothesis~(iv)
+        (\cref{sec:ws}).
+  \item \textbf{Deep queues did not hide fragmentation} ($9.2\times$ at QD=32; \cref{sec:layout}), and in
+        the first run \textbf{recent writes} halved read IOPS and raised p99.9/p50 to $24\times$
+        (\cref{sec:tail}).
 \end{itemize}
 
 \subsection{Limitations}
 \begin{itemize}
-  \item \textbf{Two runs are combined.} Only the confounded experiments were re-measured on an idle drive;
-        everything else comes from \code{20261021-103201}, where the idle drive was about
-        \qty{5}{\percent} (QD=32) to \qty{22}{\percent} (QD=8) faster for \qty{4}{\kibi\byte} reads, so
-        original-run read numbers may be slightly pessimistic.
-  \item \textbf{Short lean fill.} \csvval[1]{sustained_summary}{fill_gib}\,GiB, with \qty{11}{\second}
-        post-cliff, \qty{8.7}{\second} of random writes and a \qty{1}{\gibi\byte} recovery cap, so the
-        steady state of hypothesis~(ii) was not reached and the cache size was measured in one drive
-        state.
-  \item \textbf{Working set only to \qty{4}{\gibi\byte}} on a clean drive; \textbf{closed-loop load only}
-        (an open-loop generator would show delay against offered load).
-  \item \textbf{No \code{iostat}/\code{perf};} $L/\text{QD}$ bounds device-queue occupancy from above.
-  \item \textbf{SMART only after the run} (root needed): zero thermal events, media errors and
-        over-temperature time, \qty{100}{\percent} spare, but \qty{28}{\percent} of rated life used,
-        \qty{72.61}{TB} written, \num{20028} power-on hours and \num{2105} uninspected error-log entries.
-        Wear may affect the cache size and tails.
+  \item \textbf{Run order still matters.} The \qty{60}{\gibi\byte} fill comes first, so later write points
+        had less cache headroom despite the idle periods (\cref{sec:block-size,sec:queue-depth});
+        \code{pitfall} and \code{layout} come from the superseded first run.
+  \item \textbf{Short-term steady state.} One \qty{60}{\gibi\byte} fill and \qty{153}{\second} of random
+        writes, not the full-drive SNIA procedure; the cache size was measured once per drive state.
+  \item \textbf{Closed-loop load only} (an open-loop generator would show delay against offered load).
+  \item \textbf{No \code{iostat}/\code{perf} data;} $L/\text{QD}$ bounds device-queue occupancy from above.
+  \item \textbf{SMART only once} (root needed), after the 2026-10-21 runs: zero thermal events, media
+        errors and over-temperature time, \qty{100}{\percent} spare, but \qty{28}{\percent} of rated life
+        used, \qty{72.61}{TB} written, \num{20028} power-on hours and \num{2105} uninspected error-log
+        entries. Wear may affect the cache size and tails.
   \item \textbf{Files on ext4, not the raw device} (at most \qty{60}{\gibi\byte}, about
         \qty{13}{\percent} of the drive); one drive, firmware and incompressible pattern.
   \item \textbf{Write points} use byte caps and 3--5 repetitions (\ensuremath{\sim}\qty{15}{\percent}

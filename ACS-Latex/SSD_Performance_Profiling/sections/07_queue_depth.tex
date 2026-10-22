@@ -10,11 +10,11 @@
 
 \begin{knobs}
   Fixed       & \qty{4}{\kibi\byte} random; one job; \code{O_DIRECT}; 5 repetitions of \qty{4}{\second}
-                (writes also stop at \qty{256}{\mebi\byte}) \\
+                (writes also stop at \qty{256}{\mebi\byte} and start after a \qty{15}{\second} pause) \\
   Varied      & iodepth 1, 2, 4, \dots, 256; 100\% read and 100\% write \\
   Knee rule   & the smallest QD whose doubling raises median IOPS by less than \qty{10}{\percent}
                 (computed by \code{run.sh} into \code{queue_depth_knee.csv}) \\
-  Effective QD & checked in-band with Little's Law (\cref{tab:littles-law}); no \code{iostat} available \\
+  Effective QD & checked in-band with Little's Law (\cref{tab:littles-law}); no \code{iostat} data \\
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh queue_depth} \\
 \end{knobs}
 
@@ -31,13 +31,6 @@
     x error minus expr=\thisrow{iops_median}-\thisrow{iops_q25},
     y error plus expr=\thisrow{#2_q75}-\thisrow{#2_median},
     y error minus expr=\thisrow{#2_median}-\thisrow{#2_q25}] {data/queue_depth.csv};}
-% write points re-measured in the lean re-run (QD 4--32, see lean_info.csv): drawn again with a distinct marker
-\pgfplotsset{/pgfplots/table/lean qd/.style={/pgfplots/x filter/.append code={%
-  \edef\ssdLq{\thisrow{qd}}% integer column; do not touch \pgfmathresult (the x value)
-  \ifnum\ssdLq<4 \def\pgfmathresult{inf}\fi\ifnum\ssdLq>32 \def\pgfmathresult{inf}\fi}}}
-\newcommand{\qdlean}[1]{% {latency metric}
-  \addplot[only marks, mark=diamond*, mark size=3pt, draw=black, fill=yellow!85!black, nodes near coords={}]
-    table[x=iops_median, y=#1_median, meta=qd, only if={mode}{write}, lean qd] {data/queue_depth.csv};}
 \begin{figure}[!htbp]
   \centering
   \IfDataExists{queue_depth}{%
@@ -57,8 +50,6 @@
         \begin{axis}[ymode=log, qdplot]
           \qdcurve{write}{lat_mean_us}\addlegendentry{mean}
           \qdcurve{write}{lat_p99_us}\addlegendentry{p99}
-          \qdlean{lat_mean_us}\addlegendentry{lean re-run}
-          \qdlean{lat_p99_us}
         \end{axis}
       \end{tikzpicture}\fi
       \caption{4 KiB random write.}
@@ -68,8 +59,8 @@
   the IQR across repetitions in both IOPS and latency. Read IOPS reach
   \csvq{queue_depth_knee}{mode=read}{knee_iops} at the knee (QD~\csvq{queue_depth_knee}{mode=read}{knee_qd})
   and at most \csvq{queue_depth_knee}{mode=read}{max_iops} at QD=256; deeper queues then add only latency.
-  In (b), diamonds mark the write points at QD 4--32, which come from the lean re-run; the other write
-  points (QD 1, 2, 64--256) come from the original run. \ssdfrom{the write points at QD 4--32}}\label{fig:queue-depth}
+  In (b), the QD=4 point at \csvq{queue_depth}{qd=4,mode=write}{iops_median} IOPS is a cache-exhaustion
+  stall (see text).}\label{fig:queue-depth}
 \end{figure}
 
 \subsection{Knee}
@@ -81,24 +72,29 @@ We define the knee as \emph{the smallest QD whose doubling raises median IOPS by
 \csvq[0]{queue_depth_knee}{mode=read}{knee_lat_us}\,\si{\micro\second} mean). Doubling to
 QD~\csvq{queue_depth_knee}{mode=read}{next_qd} adds only
 \csvq[1]{queue_depth_knee}{mode=read}{gain_pct}\,\% IOPS, while QD 32$\to$64 still gained
-\qty{15}{\percent}, so the knee lies between 32 and 64.
+\qty{12}{\percent}, so the knee lies between 32 and 64.
 
-\textbf{Writes.} QD 4--32 come from the lean re-run (diamonds in \cref{fig:queue-depth}b), the rest
-from the original run. The rule gives QD~\csvq{queue_depth_knee}{mode=write}{knee_qd}
-(\csvq{queue_depth_knee}{mode=write}{knee_iops} IOPS,
-\csvq[1]{queue_depth_knee}{mode=write}{knee_lat_us}\,\si{\micro\second} mean); doubling to
-QD~\csvq{queue_depth_knee}{mode=write}{next_qd} changes IOPS by
-\csvq[1]{queue_depth_knee}{mode=write}{gain_pct}\,\%. IOPS rise from
-\csvq{queue_depth}{qd=1,mode=write}{iops_median} at QD=1 to the QD=16 peak and stay at
-\csvq{queue_depth}{qd=32,mode=write}{iops_median}--\csvq{queue_depth}{qd=256,mode=write}{iops_median}
-beyond; the QD=32 dip is within the overlapping IQRs
-(\csvq{queue_depth}{qd=32,mode=write}{iops_q25}--\csvq{queue_depth}{qd=32,mode=write}{iops_q75} vs.\
-\csvq{queue_depth}{qd=16,mode=write}{iops_q25}--\csvq{queue_depth}{qd=16,mode=write}{iops_q75}). In the
-original run a flush stall at QD=8 (\num{16884} IOPS, p99 \qty{27.9}{\milli\second}) made the rule
-return QD=4; it did not recur after the lean pauses. The write knee is only indicative, since the curve
-joins two drive states. The plateau of \ensuremath{\sim}\num{250}k IOPS $\times$ \qty{4}{\kibi\byte}
-$\approx$ \qty{0.97}{\gibi\byte\per\second} is the SLC ingest rate: writes saturate the buffer's intake,
-not the NAND parallelism that limits reads.
+\textbf{Writes.} The rule returns QD~\csvq{queue_depth_knee}{mode=write}{knee_qd}
+(\csvq{queue_depth_knee}{mode=write}{knee_iops} IOPS), because the next point collapsed: at QD=4 IOPS
+change by \csvq[1]{queue_depth_knee}{mode=write}{gain_pct}\,\%, to
+\csvq{queue_depth}{qd=4,mode=write}{iops_median}. All five QD=4 repetitions ran at
+\qtyrange{61}{67}{\mebi\byte\per\second}, the post-cliff QLC rate of \cref{sec:device-state}. Their median
+latency stayed at \csvq[1]{queue_depth}{qd=4,mode=write}{lat_p50_us_median}\,\si{\micro\second} and p99
+at \csvq[0]{queue_depth}{qd=4,mode=write}{lat_p99_us_median}\,\si{\micro\second}, but under
+\qty{1}{\percent} of writes waited \ensuremath{\sim}\qty{33}{\milli\second} (p99.9) for the buffer to drain, which sets
+the mean of \csvq[0]{queue_depth}{qd=4,mode=write}{lat_mean_us_median}\,\si{\micro\second}. $L/\text{QD}$
+stays near 1 (\cref{tab:littles-law}), so the queue was full and the drive simply accepted writes no
+faster. The point came after \qty{2.5}{\gibi\byte} of writes in this step and \qty{24}{\gibi\byte} in
+\code{block_size}, with the cache not fully recovered from the \qty{60}{\gibi\byte} fill; the first QD=8
+repetition was still slow (\num{20076} IOPS), the other four ran at \num{223}k. Ignoring the stalled
+point, IOPS rise from \csvq{queue_depth}{qd=1,mode=write}{iops_median} at QD=1 to
+\csvq{queue_depth}{qd=16,mode=write}{iops_median} at QD=16, the 10\,\% rule would place the knee at
+QD=16 (QD 8$\to$16 gains \qty{13}{\percent}, 16$\to$32 \qty{-2.5}{\percent}), and the curve stays at
+\csvq{queue_depth}{qd=32,mode=write}{iops_median}--\csvq{queue_depth}{qd=128,mode=write}{iops_median} up
+to QD=256. The rule's QD=2 is thus an artifact of the stall; in-cache writes saturate at QD\,$\approx$\,16.
+The plateau of \ensuremath{\sim}\num{250}k IOPS $\times$ \qty{4}{\kibi\byte} $\approx$
+\qty{0.95}{\gibi\byte\per\second} is the SLC ingest rate: writes saturate the buffer's intake, not the
+NAND parallelism that limits reads.
 
 \subsection{Little's Law as a consistency check}
 Little's Law \cite{little1961proof} states $L=\lambda W$ for the mean number in system $L$, throughput
@@ -153,11 +149,9 @@ Scaling is sub-linear from the start. Beyond the knee mean latency doubles with 
 \csvq[0]{queue_depth}{qd=256,mode=read}{lat_mean_us_median}\,\si{\micro\second}), the textbook
 saturation signature: with $\lambda$ flat, every added request simply waits.
 
-For reads $L/\text{QD}$ stays at 0.987--0.998 up to QD=256 (\cref{tab:littles-law}), so the single
+For reads $L/\text{QD}$ stays at 0.987--0.999 up to QD=256 (\cref{tab:littles-law}), so the single
 \code{libaio} thread keeps the queue full and the saturation is the device's. For writes it is
-0.95--0.997; the low 0.95 at QD=128 has an $L$ IQR reaching 0.996 of QD
-(\csvq[1]{queue_depth}{qd=128,mode=write}{littles_l_q25}--\csvq[1]{queue_depth}{qd=128,mode=write}{littles_l_q75}),
-so we cannot tell a stall from noise.
+0.990--0.998, including the stalled QD=4 point.
 
 In practice, reads need QD\,$\approx$\,32--64 for nearly all the throughput at a quarter to half a
 millisecond; deeper queues only add latency. Writes need only QD\,$\approx$\,16 while the SLC cache has

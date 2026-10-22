@@ -1,4 +1,4 @@
-# Prompt 12 — Feedback: is my DRAM-bandwidth benchmark actually measuring DRAM?
+# Prompt 11 — Feedback: is my DRAM-bandwidth benchmark actually measuring DRAM?
 
 Before I write up the results I want you to poke holes in my method. Here's a bandwidth
 microbenchmark I wrote earlier:

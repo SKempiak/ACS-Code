@@ -339,15 +339,6 @@ inflation over the real 86k IOPS / 337 MiB/s. Detectors: exceeds the interface c
 latency is impossible for NAND, and it scales with region size. Also addressed effective-QD mislabeling
 (verify with the Little's Law table).
 
-**Prompt 16 — feedback: which device did I actually test?** This is the key correction. The agent read the
-run's `env.txt` and found `rotational=1`, model `WL2000GSA6472E`: the default in-repo `data/scratch/` lives
-on the box's 2 TB **SATA HDD**, so the first full dataset (QD=1 random latency in *milliseconds*) described
-a hard disk, not an SSD. An earlier assumption that "the NVMe is read-only to us" was simply wrong —
-disproved by a one-line write test to `/` (the Micron NVMe, 81 GB free, writable). Fix: repoint
-`ACS_SCRATCH=$HOME/acs_ssd_scratch` (on the NVMe) and re-run; QD=1 random read dropped to ~50 µs and the
-committed dataset now characterizes the SSD. Logged as the required honest-mistake example in the AI-use
-note. The disposable scratch file was removed after the run.
-
 **P3 outcome:** `make -C SSD_Performance_Profiling test` passes (safety refusals + physical-ordering +
 Little's Law sanity); `make ssd`/`make final` build the report at 14 pages, 0 fatal, 0 undefined refs,
 **0** acs-warnings. Device under test: Micron 2210 512 GB NVMe SSD, disposable file on its ext4 `/`.

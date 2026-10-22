@@ -12,7 +12,8 @@ identification and Little's Law reasoning (with \cref{sec:queue-depth}).}
 
 \begin{knobs}
   Fixed       & \qty{4}{\kibi\byte} random; iodepth 16; one job; \code{O_DIRECT}; 5 repetitions of
-                \qty{4}{\second} (points with writes also stop at \qty{256}{\mebi\byte}) \\
+                \qty{4}{\second} (points with writes also stop at \qty{256}{\mebi\byte} and start after a
+                \qty{120}{\second} pause) \\
   Varied      & reads per 10 I/Os, deterministically interleaved: 10 (100\% R), 7 (70/30), 5 (50/50),
                 0 (100\% W) \\
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh rw_mix} \\
@@ -63,8 +64,9 @@ buffer's batching.
 
 p99 rises from \csvq{rw_mix}{rwmix=10}{lat_p99_us_median}\,\si{\micro\second} for pure reads to
 \csvq{rw_mix}{rwmix=7}{lat_p99_us_median} (70/30) and
-\csvq{rw_mix}{rwmix=5}{lat_p99_us_median}\,\si{\micro\second} (50/50), but pure writes have the lowest
-median p99 and by far the widest IQR
-(\csvq{rw_mix}{rwmix=0}{lat_p99_us_q25}--\csvq{rw_mix}{rwmix=0}{lat_p99_us_q75}\,\si{\micro\second}): a
-repetition either stays inside the buffer or meets a flush. A \enquote{70\% read} workload is thus not a
-weighted average of the pure results; mixes must be measured, not interpolated.
+\csvq{rw_mix}{rwmix=5}{lat_p99_us_median}\,\si{\micro\second} (50/50), while pure writes have the lowest
+p99, \csvq{rw_mix}{rwmix=0}{lat_p99_us_median}\,\si{\micro\second}. In the 50/50 mix the median falls to
+\csvq[0]{rw_mix}{rwmix=5}{lat_p50_us_median}\,\si{\micro\second}, because half the requests are buffered
+writes, while its p99 is more than $3\times$ that of pure reads, plausibly reads waiting behind writes. A
+\enquote{70\% read} workload is thus not a weighted average of the pure results; mixes must be measured,
+not interpolated.

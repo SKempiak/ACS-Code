@@ -1,4 +1,4 @@
-# Prompt 08 — Critique my benchmark for AI-generated-code pitfalls
+# Prompt 07 — Critique my benchmark for AI-generated-code pitfalls
 
 Before I submit, act as a skeptical reviewer and try to break my methodology — specifically
 the kinds of mistakes that AI-generated benchmark code falls into and that would make my

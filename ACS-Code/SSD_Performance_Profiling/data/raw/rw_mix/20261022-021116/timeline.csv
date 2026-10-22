@@ -1,0 +1,7 @@
+1792653549,blkbench, --experiment rw_mix --bs 4096 --qd 16 --pattern rand --rwmix 10 --runtime 4 --reps 5 --header
+1792653570,gap,120
+1792653690,blkbench, --experiment rw_mix --bs 4096 --qd 16 --pattern rand --rwmix 7 --runtime 4 --reps 5 --max-bytes 268435456
+1792653694,gap,120
+1792653814,blkbench, --experiment rw_mix --bs 4096 --qd 16 --pattern rand --rwmix 5 --runtime 4 --reps 5 --max-bytes 268435456
+1792653818,gap,120
+1792653938,blkbench, --experiment rw_mix --bs 4096 --qd 16 --pattern rand --rwmix 0 --runtime 4 --reps 5 --max-bytes 268435456

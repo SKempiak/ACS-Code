@@ -1,0 +1,156 @@
+== rerun_clean.sh run  (scratch: /home/samsonk/acs_ssd_scratch on /dev/nvme0n1p3 -> nvme0n1)
+REMINDER: run 'sudo fstrim -v /' first, then leave the machine idle >= 30 min.
+free space: 77 GiB; required: 70 GiB (large file + 10 GiB margin)
+TRIM evidence (journal, last 12 h):
+  Oct 21 21:34:54 samson-ai-desktop sudo[2316591]:  samsonk : TTY=pts/0 ; PWD=/home/samsonk ; USER=root ; COMMAND=/usr/bin/fstrim -v /
+  Oct 22 01:39:10 samson-ai-desktop sudo[2473723]:  samsonk : TTY=pts/2 ; PWD=/home/samsonk ; USER=root ; COMMAND=/usr/bin/sh -c 'for f in /sys/devices/system/cpu/cpufreq/policy*/scaling_governor; do echo performance > $f; done; echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo; echo off > /sys/devices/system/cpu/smt/control; echo disable > /sys/firmware/acpi/interrupts/gpe42; fstrim -v /'
+  Oct 22 01:41:06 samson-ai-desktop sudo[2474924]:  samsonk : TTY=pts/2 ; PWD=/data/excalidev/repos/ACS-issue3/ACS-Code ; USER=root ; COMMAND=/usr/bin/sh -c 'for f in /sys/devices/system/cpu/cpufreq/policy*/scaling_governor; do echo performance > $f; done; echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo; echo off > /sys/devices/system/cpu/smt/control; echo disable > /sys/firmware/acpi/interrupts/gpe42; fstrim -v /'
+fstrim.service last run: Mon 2026-10-19 01:10:11 EDT
+idle check on nvme0n1 over 10 s: read 0 MiB, wrote 0 MiB, busy 0%
+
+step          GiB-exp  GiB-max      min  notes
+sustained          72       72       22  60 GiB fill + <=8 GiB random + 60 s idle + <=4 GiB recovery (fill time depends on SLC size; capped at 3600s)
+working_set         6        6       25  idle 20 min, then spans fwd+rev, 3 reps/pass; deletes the large file
+tail                2        2       13  idle 10 min, precondition 2 GiB, QD 8/32/64/128 reads
+zero_queue          7        7       14  rest 5 min; precondition + QD=1 baselines; 120s gap before each write point
+rw_mix              4        4       14  rest 5 min; precondition + 4 mixes at QD=16; 120s gap before each mix with writes
+block_size         24       24       28  rest 5 min; 56 points incl. QD=32 random reads; 15s gap before each write point
+queue_depth        14       14       14  rest 5 min; reads + writes QD 1-256; 15s gap before each write point
+fio_check          10       10       11  rest 5 min; 7 points x 5 reps x 2 engines, order alternating
+TOTAL            ~139     ~139     ~141  peak space in use: 60 GiB (large file) or 2 GiB (test file), never both
+
+# TRIM evidence and knobs recorded in /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/raw/rerun_clean_20261022-021116.log; raw runs: data/raw/<exp>/20261022-021116/
+
+=== step sustained  (2026-10-22T02:11:26-04:00, temp 32.85 C)
+safety OK: disposable file '/home/samsonk/acs_ssd_scratch/bigfile.bin' (scratch fs has 82960916480 bytes free)
+[sustained] -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/raw/sustained/20261022-021116/raw.csv  (engine=blkbench, reps=5, runtime=4s, temp 32.85 C)
+  seq_fill: up to 60 GiB sequential write (time cap 3600s)…
+precondition: wrote 491520 x 131072 B (61440.0 MiB, random fill) in 733.9s (84 MiB/s)
+  rand_steady: 4 KiB random write QD32, 180s or 8 GiB…
+  idle: 60s…
+  recovery: 128 KiB sequential write QD32, 15s or 4 GiB…
+burst_mibps,burst_s,steady_mibps,steady_over_burst,cliff_gib,cliff_s,fill_gib,fill_s,fill_avg_mibps,rand_steady_iops,rand_iops_q25,rand_iops_q75,rand_steady_p99_us,recovery_mibps,recovery_late_mibps,temp_min_c,temp_max_c,cliff_found,cache_lower_bound_gib
+1061,22,63,0.059,20.8,22,60.0,734,84,13698,13236,16472,33782,68,62,31.9,56.9,1,20.8
+
+=== step working_set  (2026-10-22T02:27:40-04:00, temp 44.85 C)
+[rest] 20 min (let the fill's fold/GC backlog drain)
+  rest 1/20 min  temp 36.85 C  stat 2623953530 936674034 6396585
+  rest 2/20 min  temp 34.85 C  stat 2623953530 936773714 6396730
+  rest 3/20 min  temp 33.85 C  stat 2623953530 936775578 6396871
+  rest 4/20 min  temp 31.85 C  stat 2623953530 936823306 6396969
+  rest 5/20 min  temp 33.85 C  stat 2623953530 936824770 6397250
+  rest 6/20 min  temp 33.85 C  stat 2623953554 936826130 6397523
+  rest 7/20 min  temp 33.85 C  stat 2623953554 936925834 6397776
+  rest 8/20 min  temp 31.85 C  stat 2623953554 936927786 6397856
+  rest 9/20 min  temp 32.85 C  stat 2623953554 936970330 6398018
+  rest 10/20 min  temp 32.85 C  stat 2623953554 936971706 6398217
+  rest 11/20 min  temp 31.85 C  stat 2623953554 936973106 6398280
+  rest 12/20 min  temp 31.85 C  stat 2623953554 937040346 6398385
+  rest 13/20 min  temp 32.85 C  stat 2623953554 937041794 6398599
+  rest 14/20 min  temp 31.85 C  stat 2623953554 937097738 6398705
+  rest 15/20 min  temp 31.85 C  stat 2623953554 937099762 6398924
+  rest 16/20 min  temp 31.85 C  stat 2623953554 937101114 6399129
+  rest 17/20 min  temp 31.85 C  stat 2623953554 937169178 6399315
+  rest 18/20 min  temp 31.85 C  stat 2623953554 937171578 6399478
+  rest 19/20 min  temp 31.85 C  stat 2623953554 937213762 6399635
+  rest 20/20 min  temp 31.85 C  stat 2623953554 937215346 6399698
+safety OK: disposable file '/home/samsonk/acs_ssd_scratch/bigfile.bin' (scratch fs has 18536288256 bytes free)
+[working_set] -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/raw/working_set/20261022-021116/raw.csv  (engine=blkbench, reps=5, runtime=4s, temp 31.85 C)
+summarize: 12 groups -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/processed/working_set.csv
+
+=== step tail  (2026-10-22T02:51:43-04:00, temp 49.85 C)
+[rest] 10 min (drain before tail)
+  rest 1/10 min  temp 38.85 C  stat 2685779546 948968914 6635002
+  rest 2/10 min  temp 35.85 C  stat 2685779546 948970058 6635200
+  rest 3/10 min  temp 33.85 C  stat 2685779546 949045362 6635376
+  rest 4/10 min  temp 33.85 C  stat 2685779546 949096466 6635563
+  rest 5/10 min  temp 32.85 C  stat 2685779546 949142594 6635719
+  rest 6/10 min  temp 31.85 C  stat 2685779546 949144226 6635853
+  rest 7/10 min  temp 31.85 C  stat 2685779546 949145490 6635986
+  rest 8/10 min  temp 32.85 C  stat 2685779546 949212818 6636295
+  rest 9/10 min  temp 31.85 C  stat 2685779546 949255722 6636401
+  rest 10/10 min  temp 31.85 C  stat 2685779546 949303202 6636500
+safety OK: disposable file '/home/samsonk/acs_ssd_scratch/testfile.bin' (scratch fs has 82960752640 bytes free)
+preconditioning 2048 MiB test file (one sequential O_DIRECT pass, random fill)…
+precondition: wrote 2048 x 1048576 B (2048.0 MiB, random fill) in 29.5s (69 MiB/s)
+[tail] -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/raw/tail/20261022-021116/raw.csv  (engine=blkbench, reps=5, runtime=4s, temp 42.85 C)
+summarize: 4 groups -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/processed/tail.csv
+
+=== step zero_queue  (2026-10-22T03:04:16-04:00, temp 53.85 C)
+[rest] 5 min (drain)
+  rest 1/5 min  temp 41.85 C  stat 2811263418 953561978 6787169
+  rest 2/5 min  temp 35.85 C  stat 2811263418 953604202 6789825
+  rest 3/5 min  temp 34.85 C  stat 2811263418 953605642 6792472
+  rest 4/5 min  temp 33.85 C  stat 2811263418 953607178 6793824
+  rest 5/5 min  temp 35.85 C  stat 2811263418 953698698 6794102
+safety OK: disposable file '/home/samsonk/acs_ssd_scratch/testfile.bin' (scratch fs has 80813252608 bytes free)
+preconditioning 2048 MiB test file (one sequential O_DIRECT pass, random fill)…
+precondition: wrote 2048 x 1048576 B (2048.0 MiB, random fill) in 1.9s (1093 MiB/s)
+[zero_queue] -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/raw/zero_queue/20261022-021116/raw.csv  (engine=blkbench, reps=5, runtime=4s, temp 37.85 C)
+precondition: wrote 2048 x 1048576 B (2048.0 MiB, random fill) in 2.1s (969 MiB/s)
+summarize: 4 groups -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/processed/zero_queue.csv
+
+=== step rw_mix  (2026-10-22T03:14:07-04:00, temp 35.85 C)
+[rest] 5 min (drain)
+  rest 1/5 min  temp 32.85 C  stat 2875405354 967493898 6840788
+  rest 2/5 min  temp 31.85 C  stat 2875405354 967549042 6840968
+  rest 3/5 min  temp 31.85 C  stat 2875405354 967550114 6841024
+  rest 4/5 min  temp 31.85 C  stat 2875405354 967551754 6841153
+  rest 5/5 min  temp 31.85 C  stat 2875405354 967602770 6841372
+safety OK: disposable file '/home/samsonk/acs_ssd_scratch/testfile.bin' (scratch fs has 80813215744 bytes free)
+preconditioning 2048 MiB test file (one sequential O_DIRECT pass, random fill)…
+precondition: wrote 2048 x 1048576 B (2048.0 MiB, random fill) in 1.9s (1094 MiB/s)
+[rw_mix] -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/raw/rw_mix/20261022-021116/raw.csv  (engine=blkbench, reps=5, runtime=4s, temp 34.85 C)
+summarize: 4 groups -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/processed/rw_mix.csv
+
+=== step block_size  (2026-10-22T03:25:40-04:00, temp 33.85 C)
+[rest] 5 min (drain)
+  rest 1/5 min  temp 31.85 C  stat 2895646586 976758098 6873689
+  rest 2/5 min  temp 31.85 C  stat 2895646586 976759538 6873833
+  rest 3/5 min  temp 31.85 C  stat 2895646586 976810450 6873996
+  rest 4/5 min  temp 31.85 C  stat 2895646586 976861378 6874268
+  rest 5/5 min  temp 31.85 C  stat 2895646586 976863234 6874411
+safety OK: disposable file '/home/samsonk/acs_ssd_scratch/testfile.bin' (scratch fs has 80813187072 bytes free)
+preconditioning 2048 MiB test file (one sequential O_DIRECT pass, random fill)…
+precondition: wrote 2048 x 1048576 B (2048.0 MiB, random fill) in 2.8s (722 MiB/s)
+[block_size] -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/raw/block_size/20261022-021116/raw.csv  (engine=blkbench, reps=5, runtime=4s, temp 34.85 C)
+precondition: wrote 2048 x 1048576 B (2048.0 MiB, random fill) in 1.9s (1096 MiB/s)
+precondition: wrote 2048 x 1048576 B (2048.0 MiB, random fill) in 1.9s (1068 MiB/s)
+summarize: 56 groups -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/processed/block_size.csv
+
+=== step queue_depth  (2026-10-22T03:48:16-04:00, temp 37.85 C)
+[rest] 5 min (drain)
+  rest 1/5 min  temp 33.85 C  stat 4488598714 1027760802 7535216
+  rest 2/5 min  temp 33.85 C  stat 4488598714 1027811866 7535385
+  rest 3/5 min  temp 33.85 C  stat 4488598714 1027854090 7535606
+  rest 4/5 min  temp 32.85 C  stat 4488598714 1027856642 7535745
+  rest 5/5 min  temp 32.85 C  stat 4488598714 1027858154 7535873
+safety OK: disposable file '/home/samsonk/acs_ssd_scratch/testfile.bin' (scratch fs has 80813092864 bytes free)
+preconditioning 2048 MiB test file (one sequential O_DIRECT pass, random fill)…
+precondition: wrote 2048 x 1048576 B (2048.0 MiB, random fill) in 1.9s (1093 MiB/s)
+[queue_depth] -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/raw/queue_depth/20261022-021116/raw.csv  (engine=blkbench, reps=5, runtime=4s, temp 34.85 C)
+summarize: 18 groups -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/processed/queue_depth.csv
+
+=== step fio_check  (2026-10-22T03:59:18-04:00, temp 37.85 C)
+[rest] 5 min (drain)
+  rest 1/5 min  temp 34.85 C  stat 4633312370 1055870986 7754396
+  rest 2/5 min  temp 33.85 C  stat 4633312370 1055913042 7754608
+  rest 3/5 min  temp 32.85 C  stat 4633312370 1055914458 7754740
+  rest 4/5 min  temp 31.85 C  stat 4633312370 1055915850 7754800
+  rest 5/5 min  temp 31.85 C  stat 4633312370 1056031882 7755006
+safety OK: disposable file '/home/samsonk/acs_ssd_scratch/testfile.bin' (scratch fs has 80813080576 bytes free)
+preconditioning 2048 MiB test file (one sequential O_DIRECT pass, random fill)…
+precondition: wrote 2048 x 1048576 B (2048.0 MiB, random fill) in 1.9s (1095 MiB/s)
+[fio_check] -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/raw/fio_check/20261022-021116/raw.csv  (engine=blkbench, reps=5, runtime=4s, temp 34.85 C)
+summarize: 14 groups -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/processed/fio_check.csv
+summarize: 28 groups -> /data/excalidev/repos/ACS-issue3/ACS-Code/SSD_Performance_Profiling/data/processed/fio_order.csv
+mode,pattern,bs,qd,blk_iops,fio_iops,iops_ratio,blk_p50_us,fio_p50_us,blk_p99_us,fio_p99_us
+read,rand,4096,1,19962,19553,0.980,49.8,50.4,51.9,52.0
+read,rand,4096,32,135728,135771,1.000,212.0,216.1,547.9,544.8
+read,seq,131072,1,11912,11883,0.998,81.3,80.4,196.8,197.6
+read,seq,131072,32,16350,16349,1.000,1851.8,1859.6,3061.8,3063.8
+write,rand,4096,1,65284,60738,0.930,14.7,15.4,16.8,17.8
+write,rand,4096,32,240199,241830,1.007,120.1,119.3,147.3,154.6
+write,seq,131072,1,8606,8463,0.983,99.5,97.8,302.7,309.2
+
+done 2026-10-22T04:08:17-04:00. Next: scripts/sync_data.sh SSD_Performance_Profiling (from ACS-Code), then rebuild the paper.

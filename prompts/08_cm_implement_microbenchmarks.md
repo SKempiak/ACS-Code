@@ -1,4 +1,4 @@
-# Prompt 09 — Implement the cache & memory microbenchmarks
+# Prompt 08 — Implement the cache & memory microbenchmarks
 
 I'm doing the Cache & Memory Performance Profiling project. In
 `ACS-Code/Cache_and_Memory_Performance_Profiling/src/` there are three files that are just

@@ -1,4 +1,4 @@
-# Prompt 17 — Feedback: why are my SSD numbers impossibly good?
+# Prompt 15 — Feedback: why are my SSD numbers impossibly good?
 
 Poke holes in this before I submit it. I ran a quick 4 KiB sequential read test on my
 disposable file and got **~2 million IOPS and about 7.6 GiB/s at well under a microsecond of

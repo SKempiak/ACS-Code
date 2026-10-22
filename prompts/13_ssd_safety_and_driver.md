@@ -1,4 +1,4 @@
-# Prompt 15 — Safety guard and run driver (don't let me destroy a disk)
+# Prompt 13 — Safety guard and run driver (don't let me destroy a disk)
 
 This project has a big "Data-loss Warning": never benchmark a partition with valuable data.
 I want the scripts to make it *impossible* for me to point this at a real device by accident.

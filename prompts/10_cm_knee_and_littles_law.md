@@ -1,4 +1,4 @@
-# Prompt 11 — Intensity knee and Little's Law write-up
+# Prompt 10 — Intensity knee and Little's Law write-up
 
 I have the intensity sweep data (`data/processed/intensity.csv`: delivered bandwidth vs.
 thread count) and the zero-queue latency table. For the report's "Throughput–latency knee"

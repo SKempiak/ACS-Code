@@ -1,4 +1,4 @@
-# Prompt 16 — Queue-depth knee, Little's Law, and tail latency
+# Prompt 14 — Queue-depth knee, Little's Law, and tail latency
 
 I have the queue-depth sweep (`data/processed/queue_depth.csv`: IOPS and latency percentiles
 at iodepth 1…128, 4 KiB random reads) and a tail-latency run at a mid and a near-knee queue

@@ -1,4 +1,4 @@
-# Prompt 14 — Implement a direct-I/O storage benchmark
+# Prompt 12 — Implement a direct-I/O storage benchmark
 
 I'm doing the SSD Performance Profiling project. The project recommends FIO, but FIO isn't
 installed on my machine and I can't install it (no sudo). I still need real numbers, so I want
