@@ -25,7 +25,8 @@ cd ../ACS-Latex && make simd                    # -> SIMD_Advantage_Profiling.pd
 Before timing, as root: governor \code{performance}, turbo off
 (\code{intel_pstate/no_turbo}~$=1$), SMT off, and on this machine the ACPI event storm masked with
 \code{echo disable > /sys/firmware/acpi/interrupts/gpe42}. None of these settings persists across
-a reboot (\cref{sec:method}). Hardware counters need no root (user-space events, \code{perf_event_paranoid} $\le 2$); with
+a reboot (\cref{sec:method}). The SIMD hardware counters (core-PMU, user-space events) need no root as long as
+\code{perf_event_paranoid}~$\le 2$; with
 \code{COUNTERS=0}, or where they cannot be opened, \code{run.sh} skips the counter outputs.
 \code{run.sh derive} recomputes the derived tables (roofline points and roofs, per-level bandwidth,
 stride summary) from the processed CSVs without measuring.

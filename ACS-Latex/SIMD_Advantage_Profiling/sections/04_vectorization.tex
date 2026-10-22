@@ -37,6 +37,14 @@ not vectorized loop bodies---the compiler reports \emph{zero} vectorized loops f
 \end{table}
 
 \subsection{Compiler report}
+The evidence below (\code{data/raw/vectorization/20261021-001032}) comes from \code{make report},
+which recompiles \code{src/kernels.c} with each variant's exact flags and the same GCC as the timed
+builds. \code{kernels.c} has not changed since. We checked with \code{objdump} that every kernel
+function there has the same instruction sequence as in the linked \code{simd_bench} binaries that
+produced the measurements, differing only in absolute addresses and alignment padding.
+\code{make report} does not record an \code{env.txt}; the environment is that of the timed runs
+(\cref{tab:environment}).
+
 GCC's \code{-fopt-info-vec} confirms the widths. For SAXPY (\code{kernels.c:29}):
 \begin{lstlisting}[style=excerpt]
 # native  (-O3 -march=native):

@@ -13,7 +13,8 @@ _q25 / _q75 per configuration) and writes, next to them:
   zero_queue_table.csv  per-level plateau latency (primary method), cross-check
   littles_law.csv       intensity sweep: lambda, measured loaded W, L = lambda*W
   mlp_littles.csv       known-concurrency chase sweep: N = T*k vs L_mem = lambda*W_mem (probe)
-  knee.csv / knee_ref.csv  the knee point and the 2x-unloaded reference line
+  knee.csv / knee2x.csv / knee_ref.csv  the knee (first load reaching 95% of peak bandwidth),
+                        the 2x-unloaded-latency crossing, and the 2x reference line
   amat_fit.csv          cache_miss: measured vs AMAT-model ns/element
 
 Rules (stated in the report):
@@ -167,11 +168,15 @@ def zero_queue(proc, S):
         xns = plateau(xchk, lo, hi, "ns_per_access")
         hns = plateau(huge, lo, hi, "ns_per_access") if name == "DRAM" else math.nan
         diff = 100.0 * (xns - ns) / ns if ok(ns) and ok(xns) else math.nan
+        iqrs = [100.0 * (num(r["ns_per_access_q75"]) - num(r["ns_per_access_q25"])) / num(r["ns_per_access_median"])
+                for r in sel if num(r["ns_per_access_median"]) > 0]
+        iqr_max = max(iqrs) if iqrs else math.nan
+        S[f"zq_{name}_iqrmax"] = fmt(iqr_max, 2)
         mns = mlc_ns(name)
         mdiff = 100.0 * (mns - ns) / ns if ok(ns) and ok(mns) else math.nan
         out.append([name, label, len(sel), fmt(ns), fmt(cyc), fmt(min(vals)) if vals else "nan",
                     fmt(max(vals)) if vals else "nan", fmt(xns), fmt(diff, 2), fmt(hns),
-                    fmt(mns), fmt(mdiff, 2)])
+                    fmt(mns), fmt(mdiff, 2), fmt(iqr_max, 2)])
         for key, v, d in (("ns", ns, 3), ("cyc", cyc, 3), ("xns", xns, 3), ("xdiff", diff, 2),
                           ("hugens", hns, 3), ("mlcns", mns, 3), ("mlcdiff", mdiff, 2)):
             S[f"zq_{name}_{key}"] = fmt(v, d)
@@ -180,7 +185,7 @@ def zero_queue(proc, S):
             S[f"zq_{name}_max"] = fmt(max(vals))
     write_csv(proc, "zero_queue_table",
               ["level", "range", "nsizes", "ns", "cycles", "ns_min", "ns_max", "xcheck_ns",
-               "xcheck_diff_pct", "huge_ns", "mlc_ns", "mlc_diff_pct"], out)
+               "xcheck_diff_pct", "huge_ns", "mlc_ns", "mlc_diff_pct", "iqr_max_pct"], out)
     mh = mlc_ns("DRAM", "huge")
     if ok(mh):
         S["mlc_DRAM_huge_ns"] = fmt(mh)
@@ -255,6 +260,29 @@ def freq_check(proc, S):
         S["ws_probe_low_pct"] = fmt(100.0 * nlo / n, 2)
 
 
+def probe_range(proc, S):
+    """Add-chain probe (`ghz` column) over every raw row of the newest run of each experiment:
+    single-thread benchmarks (probe_st_*) and mem_loaded runs (probe_ld_*), where the probe runs
+    right after the generator threads have been created and are spin-waiting on other cores."""
+    import glob
+    groups = {"st": ("zero_queue", "working_set", "tlb", "cache_miss", "pattern"),
+              "ld": ("intensity", "rw_mix")}
+    for tag, exps in groups.items():
+        vals = []
+        for exp in exps:
+            dirs = sorted(glob.glob(os.path.join(proc, "..", "raw", exp, "*")))
+            if not dirs:
+                continue
+            for path in glob.glob(os.path.join(dirs[-1], "raw*.csv")):
+                for r in csv.DictReader(open(path, newline="")):
+                    g = num(r.get("ghz"))
+                    if ok(g):
+                        vals.append(g)
+        if vals:
+            S[f"probe_{tag}_min"] = fmt(min(vals)); S[f"probe_{tag}_max"] = fmt(max(vals))
+            S[f"probe_{tag}_med"] = fmt(median(vals)); S[f"probe_{tag}_n"] = str(len(vals))
+
+
 def clock_check(proc, S):
     """Diagnostic runs of build/clock_check: core clock, fraction of wall time the pinned thread
     actually executes, add-chain probe reading, ACPI GPE activity and idle DRAM traffic per window.
@@ -321,6 +349,9 @@ def mlc(proc, S):
                 S["mlc_knee_ns"] = fmt(2 * w0)
                 S["mlc_knee_frac"] = fmt(100.0 * (q["bw"] + f * (p["bw"] - q["bw"])) / peak["bw"], 2)
                 break
+        pw = max(pts, key=lambda p: p["bw"] / p["w"])
+        S["mlc_power_gib"] = fmt(pw["bw"]); S["mlc_power_ns"] = fmt(pw["w"]); S["mlc_power_delay"] = str(pw["d"])
+        S["mlc_power_frac"] = fmt(100.0 * pw["bw"] / peak["bw"], 2)
         sat = next((p for p in pts if p["bw"] >= 0.95 * peak["bw"]), None)
         if sat:
             S["mlc_sat_gib"] = fmt(sat["bw"]); S["mlc_sat_ns"] = fmt(sat["w"]); S["mlc_sat_delay"] = str(sat["d"])
@@ -395,6 +426,10 @@ def rw_mix(proc, S):
         S[tag + "_traffic"] = fmt(num(r["traffic_gib_s_median"]))
         S[tag + "_ns"] = fmt(num(r["probe_ns_median"]))
     for t in ("1", "9"):
+        rr = [num(S.get(f"rw_{m}_t{t}_imc_over_est")) for m in ("10", "7", "5", "0")]
+        rr = [x for x in rr if ok(x)]
+        if rr:
+            S[f"rw_t{t}_imcest_min"] = fmt(min(rr), 3); S[f"rw_t{t}_imcest_max"] = fmt(max(rr), 3)
         v = [num(r["probe_ns_median"]) for r in rows or [] if r["threads"] == t]
         v = [x for x in v if ok(x)]
         if v:
@@ -451,6 +486,9 @@ def intensity(proc, S):
         # bandwidth saturation: first T reaching 95% of the peak
         sat = next((p for p in tsweep if p["bw"] >= 0.95 * peak["bw"]), None)
         if sat:
+            # primary knee: first offered load reaching 95% of peak bandwidth
+            write_csv(proc, "knee", ["gib_s", "ns"], [[sat["bw"], sat["w"]]])
+            S["int_sat_L"] = fmt(sat["bw"] * GIB / LINE * sat["w"] * 1e-9)
             S["int_sat_threads"] = str(sat["t"]); S["int_sat_gib"] = fmt(sat["bw"])
             S["int_sat_ns"] = fmt(sat["w"])
             if ok(w0):
@@ -468,13 +506,17 @@ def intensity(proc, S):
             S["int_knee_prevthreads"] = str(knee["prev"]["t"])
             S["int_knee_delay"] = str(knee["at"]["d"])
             S["int_knee_lines"] = fmt(knee["bw"] * GIB / LINE * knee["w"] * 1e-9)
-            write_csv(proc, "knee", ["gib_s", "ns"], [[knee["bw"], knee["w"]]])
+            write_csv(proc, "knee2x", ["gib_s", "ns"], [[knee["bw"], knee["w"]]])
         if ok(w0):
             write_csv(proc, "knee_ref", ["gib_s", "ns"], [[0.0, 2 * w0], [peak["bw"] * 1.05, 2 * w0]])
         # criterion 2: max throughput / latency
         pw = max((p for p in pts if ok(p["w"]) and p["w"] > 0), key=lambda p: p["bw"] / p["w"])
         S["int_power_gib"] = fmt(pw["bw"]); S["int_power_ns"] = fmt(pw["w"])
         S["int_power_threads"] = str(pw["t"]); S["int_power_delay"] = str(pw["d"])
+        S["int_power_L"] = fmt(pw["bw"] * GIB / LINE * pw["w"] * 1e-9)
+        if ok(w0):
+            S["int_power_ratio"] = fmt(pw["w"] / w0)
+        S["int_power_frac"] = fmt(100.0 * pw["bw"] / peak["bw"], 2)
         # Little's Law table: delay = 0 thread sweep
         ll = []
         for p in sorted((p for p in pts if p["d"] == 0), key=lambda p: p["t"]):
@@ -658,7 +700,7 @@ def main():
     proc = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "..", "data", "processed")
     S = {}
-    for fn in (zero_queue, working_set, clock_check, mlc, pattern, rw_mix, intensity, cache_miss, tlb, pitfall):
+    for fn in (zero_queue, working_set, probe_range, clock_check, mlc, pattern, rw_mix, intensity, cache_miss, tlb, pitfall):
         try:
             fn(proc, S)
         except (KeyError, ValueError, ZeroDivisionError) as e:   # schema drift: skip, don't die

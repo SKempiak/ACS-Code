@@ -159,10 +159,15 @@ wgap() { [ "$WRITE_GAP_S" -gt 0 ] 2>/dev/null && { echo "$(date +%s),gap,$WRITE_
 
 # blk <blkbench args...> : one measurement point, appended to $RAW.
 # With ENGINE=fio the same point is run through fio/job.fio (one fio call per rep).
+# DEFAULT_SPAN_BYTES>0 restricts every point to the first N bytes of the target unless the
+# point passes its own --span (later options win); rerun_clean.sh lean uses it to keep the
+# 2 GiB LBA range of the original sweeps on a larger test file.
+DEFAULT_SPAN_BYTES="${DEFAULT_SPAN_BYTES:-0}"
 blk() {
-  echo "$(date +%s),${ENGINE},$*" >> "$RAWDIR/timeline.csv"   # wall-clock order of every point
-  if [ "$ENGINE" = fio ]; then fio_point "$@"; return; fi
-  "$BLK" --file "${TARGET:-$FILE}" --seed "$SEED" "${TEMP_ARGS[@]}" "$@" >> "$RAW"
+  local pre=(); [ "$DEFAULT_SPAN_BYTES" -gt 0 ] && pre=(--span "$DEFAULT_SPAN_BYTES")
+  echo "$(date +%s),${ENGINE},${pre[*]} $*" >> "$RAWDIR/timeline.csv"   # wall-clock order of every point
+  if [ "$ENGINE" = fio ]; then fio_point "${pre[@]}" "$@"; return; fi
+  "$BLK" --file "${TARGET:-$FILE}" --seed "$SEED" "${TEMP_ARGS[@]}" "${pre[@]}" "$@" >> "$RAW"
 }
 
 # ------------------------------------------------------------------ fio path
@@ -293,14 +298,18 @@ sum_sustained() {
       return (f>=m)?B[m]:B[f]+(x-f)*(B[f+1]-B[f])}
     END{
       nb=0; for(i=1;i<=n && F[i]>=0.5*F[1];i++) nb=i
-      burst=q(F,1,nb,0.5); steady=q(F,int(n*0.7)+1,n,0.5)
-      cliff_gib=-1; cliff_s=-1
-      for(i=1;i+4<=n;i++){ if(F[i] < 0.5*burst && q(F,i,i+4,0.5) < 0.5*burst){cliff_gib=(i>1?G[i-1]:0); cliff_s=(i>1?T[i-1]:0); break} }
+      burst=q(F,1,nb,0.5)
+      cliff_gib=-1; cliff_s=-1; ci=0
+      for(i=1;i+4<=n;i++){ if(F[i] < 0.5*burst && q(F,i,i+4,0.5) < 0.5*burst){ci=i; cliff_gib=(i>1?G[i-1]:0); cliff_s=(i>1?T[i-1]:0); break} }
+      # steady = median of the seconds after the cliff (all of them); without a cliff the
+      # fill never left the cache, so steady is undefined (-1) and fill_gib is a lower bound
+      steady=(ci>0?q(F,ci,n,0.5):-1)
       ravg=(rsec>0?rgib*1073741824/4096/rsec:-1)
-      print "burst_mibps,burst_s,steady_mibps,steady_over_burst,cliff_gib,cliff_s,fill_gib,fill_s,fill_avg_mibps,rand_steady_iops,rand_iops_q25,rand_iops_q75,rand_steady_p99_us,recovery_mibps,recovery_late_mibps,temp_min_c,temp_max_c"
-      printf "%.0f,%d,%.0f,%.3f,%.1f,%.0f,%.1f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.1f,%.1f\n", burst, nb, steady,
-        (burst>0?steady/burst:0), cliff_gib, cliff_s, fill_gib, fill_s, (fill_s>0?fill_gib*1024/fill_s:0),
-        ravg, q(R,1,r,0.25), q(R,1,r,0.75), q(RP,1,r,0.5), q(V,1,(v<5?v:5),0.5), q(V,(v>5?v-4:1),v,0.5), tmin, tmax}' \
+      print "burst_mibps,burst_s,steady_mibps,steady_over_burst,cliff_gib,cliff_s,fill_gib,fill_s,fill_avg_mibps,rand_steady_iops,rand_iops_q25,rand_iops_q75,rand_steady_p99_us,recovery_mibps,recovery_late_mibps,temp_min_c,temp_max_c,cliff_found,cache_lower_bound_gib"
+      printf "%.0f,%d,%.0f,%.3f,%.1f,%.0f,%.1f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.1f,%.1f,%d,%.1f\n", burst, nb, steady,
+        (burst>0&&steady>0?steady/burst:-1), cliff_gib, cliff_s, fill_gib, fill_s, (fill_s>0?fill_gib*1024/fill_s:0),
+        ravg, q(R,1,r,0.25), q(R,1,r,0.75), q(RP,1,r,0.5), q(V,1,(v<5?v:5),0.5), q(V,(v>5?v-4:1),v,0.5), tmin, tmax,
+        (ci>0), (ci>0?cliff_gib:fill_gib)}' \
     "$P/sustained.csv" > "$P/sustained_summary.csv"
 }
 
@@ -407,7 +416,8 @@ exp_fio_check() {
     echo "[fio_check] SKIPPED: fio is not installed (install it, e.g. 'pacman -S fio', then rerun)."
     return 0
   fi
-  start_experiment fio_check
+  local name="${FIO_EXP_NAME:-fio_check}" nrep="${FIO_REPS:-$REPS}"
+  start_experiment "$name"
   echo "# fio: $(fio --version)" >> "$RAWDIR/env.txt"
   local saved="$ENGINE" pt bs q p m cap r
   # bs qd pattern rwmix — QD=1 baselines plus a deep-queue read and write point
@@ -417,11 +427,12 @@ exp_fio_check() {
   # drive-state effects from the preceding write can be separated from engine effects;
   # raw_order.csv tags each row with its engine and position.
   local ord="$RAWDIR/raw_order.csv" one="$RAWDIR/one.tmp" e first second
-  for pt in "131072 1 seq 10" "131072 32 seq 10" "4096 1 rand 10" "4096 32 rand 10" \
-            "131072 1 seq 0" "4096 1 rand 0" "4096 32 rand 0"; do
+  local points="${FIO_POINTS:-131072 1 seq 10;131072 32 seq 10;4096 1 rand 10;4096 32 rand 10;131072 1 seq 0;4096 1 rand 0;4096 32 rand 0}"
+  local IFS_save="$IFS" ptlist; IFS=';' read -r -a ptlist <<< "$points"; IFS="$IFS_save"
+  for pt in "${ptlist[@]}"; do
     read -r bs q p m <<< "$pt"
-    cap=(); [ "$m" = 0 ] && cap=(--max-bytes "$WCAP")
-    for ((r=0; r<REPS; r++)); do      # interleave the engines rep by rep, alternating order
+    cap=(); [ "$m" = 0 ] && { cap=(--max-bytes "$WCAP"); wgap; }
+    for ((r=0; r<nrep; r++)); do      # interleave the engines rep by rep, alternating order
       if (( r % 2 == 0 )); then first=blkbench; second=fio; else first=fio; second=blkbench; fi
       for e in "$first" "$second"; do
         : > "$one"
@@ -435,10 +446,14 @@ exp_fio_check() {
   done
   ENGINE="$saved"
   end_experiment
-  summ "$RAW" "$P/fio_check.csv" experiment,mode,pattern,bs,qd iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us
-  fio_compare "$P/fio_check.csv" > "$P/fio_compare.csv"
   rm -f "$one"
-  summ "$ord" "$P/fio_order.csv" experiment,mode,pattern,bs,qd iops,lat_p50_us,lat_p99_us
+  if [ "$name" = fio_check ]; then
+    summ "$RAW" "$P/fio_check.csv" experiment,mode,pattern,bs,qd iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us
+    fio_compare "$P/fio_check.csv" > "$P/fio_compare.csv"
+    summ "$ord" "$P/fio_order.csv" experiment,mode,pattern,bs,qd iops,lat_p50_us,lat_p99_us
+  else
+    sum_with_lean fio_check          # merge the partial (lean) run into the full one
+  fi
   cat "$P/fio_compare.csv"
 }
 
@@ -457,11 +472,18 @@ exp_sustained() {
   # baseline temperature, idle
   echo "experiment,phase,mode,pattern,bs,qd,rwmix,t_s,gib_done,ios,iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us,lat_p999_us,lat_max_us,temp_c" > "$RAW"
   for ((i=1; i<=10; i++)); do sleep 1; echo "sustained,idle_pre,none,none,0,0,0,$i,0,0,0,0,0,0,0,0,0,$(temp_now)" >> "$RAW"; done
-  echo "  seq_fill: ${SUSTAIN_GIB} GiB sequential write (time cap ${SUSTAIN_MAX_S}s)…"
+  # STOP_BELOW (e.g. 0.3): stop the fill STOP_HOLD s after throughput falls below that
+  # fraction of the first-5-s burst median (stop-at-cliff); 0 = write the whole file.
+  local stop=(); [ "${STOP_BELOW:-0}" != 0 ] && stop=(--stop-below "$STOP_BELOW" --stop-hold "${STOP_HOLD:-10}" --burst-intervals 5)
+  echo "# STOP_BELOW=${STOP_BELOW:-0} STOP_HOLD=${STOP_HOLD:-10}" >> "$RAWDIR/env.txt"
+  echo "  seq_fill: up to ${SUSTAIN_GIB} GiB sequential write (time cap ${SUSTAIN_MAX_S}s${stop:+, stop at cliff})…"
   "$BLK" --file "$BIG" --precondition --size $((SUSTAIN_GIB*GiB)) --bs 131072 --qd 32 --seed "$SEED" \
-         --interval 1 --runtime "$SUSTAIN_MAX_S" --experiment sustained --phase seq_fill "${TEMP_ARGS[@]}" >> "$RAW"
+         --interval 1 --runtime "$SUSTAIN_MAX_S" --experiment sustained --phase seq_fill "${stop[@]}" "${TEMP_ARGS[@]}" >> "$RAW"
+  # random phase only over the part of the file the fill actually wrote
+  local wspan; wspan=$(awk -F, '$2=="seq_fill"{g=$9} END{printf "%d", g*1073741824/1048576}' "$RAW")
+  wspan=$(( wspan / 4 * 4 * MiB )); [ "$wspan" -ge $((64*MiB)) ] || wspan=$((64*MiB))
   echo "  rand_steady: 4 KiB random write QD32, ${RAND_S}s or ${RAND_CAP_GIB} GiB…"
-  "$BLK" --file "$BIG" --bs 4096 --qd 32 --pattern rand --rwmix 0 --seed "$SEED" --interval 1 \
+  "$BLK" --file "$BIG" --bs 4096 --qd 32 --pattern rand --rwmix 0 --seed "$SEED" --interval 1 --span "$wspan" \
          --runtime "$RAND_S" --max-bytes $((RAND_CAP_GIB*GiB)) --experiment sustained --phase rand_steady "${TEMP_ARGS[@]}" >> "$RAW"
   echo "  idle: ${IDLE_S}s…"
   for ((i=1; i<=IDLE_S; i++)); do sleep 1; echo "sustained,idle,none,none,0,0,0,$i,0,0,0,0,0,0,0,0,0,$(temp_now)" >> "$RAW"; done
@@ -517,18 +539,44 @@ exp_device_state() {
 
 # ------------------------------------------------------------------ reprocess / plan
 latest_raw() { { ls -d "$ROOT/data/raw/$1"/*/ 2>/dev/null || true; } | sort | tail -1; }
+# merge_lean OLD NEW: OLD with every configuration (experiment,mode,pattern,bs,qd,rwmix) that
+# NEW re-measured replaced IN PLACE by NEW's rows (so sweep order, and hence plot lines and
+# the knee rule, are preserved); configurations only in NEW are appended. Used when a lean
+# re-run repeats only part of an experiment (block_size_lean, queue_depth_lean, fio_check_lean).
+merge_lean() {
+  awk -F, 'FNR==1{ if(NR==1){for(i=1;i<=NF;i++)c[$i]=i; print}; next }
+    function k(){return $c["experiment"]","$c["mode"]","$c["pattern"]","$c["bs"]","$c["qd"]","$c["rwmix"]}
+    NR==FNR{ old[++n]=$0; ok[n]=k(); next }
+    { kk=k(); if(!(kk in cnt)) order[++nk]=kk; rows[kk, ++cnt[kk]]=$0 }
+    END{ for(i=1;i<=n;i++){ kk=ok[i]
+           if(kk in cnt){ if(!(kk in done)){ for(j=1;j<=cnt[kk];j++) print rows[kk,j]; done[kk]=1 } }
+           else print old[i] }
+         for(i=1;i<=nk;i++) if(!(order[i] in done)) for(j=1;j<=cnt[order[i]];j++) print rows[order[i],j] }' "$1" "$2"
+}
+# summarize an experiment, merging the newest *_lean run into the newest full run if present
+sum_with_lean() {
+  local e="$1" d l tmp; d="$(latest_raw "$e")"; l="$(latest_raw "${e}_lean")"
+  [ -n "$d" ] && [ -s "$d/raw.csv" ] || { [ -n "$l" ] && d="$l" || return 0; }
+  if [ -n "$l" ] && [ -s "$l/raw.csv" ] && [ "$l" != "$d" ]; then
+    tmp="$(mktemp)"; merge_lean "$d/raw.csv" "$l/raw.csv" > "$tmp"
+    echo "reprocess $e <- $d + $l (lean rows replace matching configurations)"
+  else tmp="$(mktemp)"; cp "$d/raw.csv" "$tmp"; echo "reprocess $e <- $d"; fi
+  if [ "$e" = fio_check ]; then
+    summ "$tmp" "$P/fio_check.csv" experiment,mode,pattern,bs,qd iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us
+    fio_compare "$P/fio_check.csv" > "$P/fio_compare.csv"
+    local o; for o in "$l/raw_order.csv" "$d/raw_order.csv"; do
+      [ -s "$o" ] && { summ "$o" "$P/fio_order.csv" experiment,mode,pattern,bs,qd iops,lat_p50_us,lat_p99_us; break; }; done
+  else "sum_$e" "$tmp"; fi
+  rm -f "$tmp"
+}
+
 reprocess() {
   local e d
-  for e in zero_queue block_size rw_mix queue_depth tail pitfall layout working_set sustained; do
+  for e in zero_queue rw_mix tail pitfall layout working_set sustained; do
     d="$(latest_raw "$e")"; [ -n "$d" ] && [ -s "$d/raw.csv" ] || continue
     echo "reprocess $e <- $d"; "sum_$e" "$d/raw.csv"
   done
-  d="$(latest_raw fio_check)"
-  if [ -n "$d" ] && [ -s "$d/raw.csv" ]; then
-    summ "$d/raw.csv" "$P/fio_check.csv" experiment,mode,pattern,bs,qd iops,mibps,lat_mean_us,lat_p50_us,lat_p99_us
-    fio_compare "$P/fio_check.csv" > "$P/fio_compare.csv"
-    [ -s "$d/raw_order.csv" ] && summ "$d/raw_order.csv" "$P/fio_order.csv" experiment,mode,pattern,bs,qd iops,lat_p50_us,lat_p99_us
-  fi
+  for e in block_size queue_depth fio_check; do sum_with_lean "$e"; done
 }
 
 dryrun() {

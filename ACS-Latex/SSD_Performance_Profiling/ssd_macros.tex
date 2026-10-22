@@ -69,3 +69,25 @@
   \ifnum\ssdK<1024 \ssdK\,KiB\else\the\numexpr\ssdK/1024\relax\,MiB\fi}
 % reads-per-10 code -> mix label (rw_mix table)
 \newcommand{\ssdmixname}[1]{\ifcase#1 100\% write\or\or\or\or\or 50/50\or\or 70/30\or\or\or 100\% read\fi}
+
+% \csvstr\macro{file}{column}: raw string from row 0 of data/<file>.csv (empty if missing)
+\newcommand{\csvstr}[3]{\def#1{}%
+  \IfFileExists{data/#2.csv}{\pgfplotstableread[col sep=comma]{data/#2.csv}\ssdKV
+    \pgfplotstablegetelem{0}{#3}\of\ssdKV\let#1\pgfplotsretval}{}}
+% burst/steady ratio of the sustained fill (or \tbd when there was no cliff)
+\DeclareRobustCommand{\ssdburstratio}{\csvstr\ssdRb{sustained_summary}{burst_mibps}\csvstr\ssdRs{sustained_summary}{steady_mibps}%
+  \ssdratio[0]{\ssdRb}{\ssdRs}}
+% Data-provenance labels. lean_info.csv exists only after `rerun_clean.sh lean` has been synced.
+%   \ssdfromall      for figures/tables the lean run re-measures completely
+%   \ssdfrom{what}   for figures where the lean run replaced only <what>
+\DeclareRobustCommand{\ssdfromall}{\csvstr\ssdLD{lean_info}{run_date}%
+  \ifx\ssdLD\empty data: 2026-10-21 run\else data: lean re-run of \ssdLD\fi}
+\DeclareRobustCommand{\ssdfrom}[1]{\csvstr\ssdLD{lean_info}{run_date}%
+  \ifx\ssdLD\empty Data: 2026-10-21 run.\else Data: #1 from the lean re-run of \ssdLD; all other points
+  from the 2026-10-21 run.\fi}
+% sustained-fill cliff cells: value if a cliff was found, else "none up to N GiB" (lower bound)
+\DeclareRobustCommand{\ssdcliffcell}{\csvstr\ssdCF{sustained_summary}{cliff_found}\def\ssdOne{1}%
+  \ifx\ssdCF\ssdOne\csvval[1]{sustained_summary}{cliff_gib} / \csvval{sustained_summary}{cliff_s}%
+  \else none up to \csvval[1]{sustained_summary}{fill_gib}\,GiB (cache $\geq$ that)\fi}
+\DeclareRobustCommand{\ssdifcliff}[2]{\csvstr\ssdCF{sustained_summary}{cliff_found}\def\ssdOne{1}%
+  \ifx\ssdCF\ssdOne #1\else #2\fi}

@@ -13,7 +13,8 @@ system serves at saturation from up to \valnum{int_Lmax} lines that merely queue
 \valnum{mlp_t1_Lmem_max} random demand misses, but far more lines when the prefetcher streams; and a
 counter-fitted AMAT model shows random SAXPY paying \valqty{amat_rand_aD}{\nano\second} per DRAM miss---the
 DRAM latency divided by \valnum{amat_rand_mlp}-way overlap. Memory-controller counters turn two
-estimates into measurements: every written line costs one extra read (the RFO), and sparse strided reads
+estimates into measurements: every written line costs one extra read (the RFO; within 1\% at full load,
+a few percent below the model with one core), and sparse strided reads
 cost two lines each because of the adjacent-line prefetcher. The lessons are about measurement discipline as
 much as hardware: a bandwidth benchmark must out-size the LLC or it measures cache reuse
 (\cref{sec:pitfall}); a latency benchmark must randomize or it measures the prefetcher; a knee must come from

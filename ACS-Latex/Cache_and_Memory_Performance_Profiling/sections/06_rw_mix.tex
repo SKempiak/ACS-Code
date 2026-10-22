@@ -72,8 +72,8 @@ predicted. Counting one RFO per written line, the estimated DRAM traffic is
 \valqty{rw_5_t9_traffic}{\gibi\byte\per\second} and \valqty{rw_0_t9_traffic}{\gibi\byte\per\second}. The
 memory-controller counters measure \valqty{rw_10_t9_imc}{\gibi\byte\per\second},
 \valqty{rw_7_t9_imc}{\gibi\byte\per\second}, \valqty{rw_5_t9_imc}{\gibi\byte\per\second} and
-\valqty{rw_0_t9_imc}{\gibi\byte\per\second} (within about 1\% of the estimate at every mix), against an idle background of \valqty{cc_imc_rd_idle}{\gibi\byte\per\second}. The RFO model is
-therefore exact: for pure writes the controller reads \valqty{rw_0_t9_imcrd}{\gibi\byte\per\second} (the RFOs)
+\valqty{rw_0_t9_imc}{\gibi\byte\per\second} (within about 1\% of the estimate at every mix), against an idle background of \valqty{cc_imc_rd_idle}{\gibi\byte\per\second}. At full load the RFO
+model therefore holds to within 1\%: for pure writes the controller reads \valqty{rw_0_t9_imcrd}{\gibi\byte\per\second} (the RFOs)
 and writes \valqty{rw_0_t9_imcwr}{\gibi\byte\per\second}. Total DRAM traffic stays at the controller's ceiling
 of about \qty{30}{\gibi\byte\per\second} whatever the mix; MLC's peak-injection bandwidth agrees
 (\valqty{mlc_pk_allreads_gib}{\gibi\byte\per\second} all reads, \valqty{mlc_pk_r31_gib}{\gibi\byte\per\second}
@@ -90,7 +90,12 @@ and read/write bus turnarounds lengthen every read's wait.
 A single generator core ($T=1$) is not controller-bound: demand bandwidth falls only slightly from
 \valqty{rw_10_t1_gib}{\gibi\byte\per\second} (reads) to \valqty{rw_0_t1_gib}{\gibi\byte\per\second} (writes),
 while measured DRAM traffic grows from \valqty{rw_10_t1_imc}{\gibi\byte\per\second} to
-\valqty{rw_0_t1_imc}{\gibi\byte\per\second}. A core can keep more lines moving when part of its stream is
+\valqty{rw_0_t1_imc}{\gibi\byte\per\second}. With one core the measurement is
+\val{rw_t1_imcest_min}--\val{rw_t1_imcest_max}$\times$ the RFO-counted estimate, for pure reads as well as for
+mixes. Our hypothesis, untested, is that this is mostly the estimate's own error: our throughput
+includes lines the generator touches that are still in the \qty{20}{\mebi\byte} L3 from the previous pass,
+since one core's \qty{128}{\mebi\byte} stream is not quite large enough to flush the cache completely in
+every window. With nine cores the effect vanishes. A core can keep more lines moving when part of its stream is
 stores, which retire without waiting for their RFO. The probe barely notices one core:
 \val{rw_t1_ns_min}--\valqty{rw_t1_ns_max}{\nano\second} across the four mixes. As named-kernel references on all
 ten cores, \code{copy} delivers \valqty{rw_ref_copy}{\gibi\byte\per\second} and \code{triad}

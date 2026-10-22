@@ -11,14 +11,19 @@
         disassembly shows \code{vmulps} on \code{ymm} followed by a chain of scalar \code{vaddss}
         (\cref{sec:vectorization}), confirming the hypothesis. We chose not to enable
         \code{-ffast-math} so that all variants remain bit-reproducible against the reference.
-  \item \textbf{Native SAXPY speedup peaks below $N=\num{4096}$.} SAXPY reaches $6.32\times$ at
-        $N=512$ in the baseline and $6.86\times$ at $N=\num{1536}$ in the locality sweep, against
-        $5.79\times$ at $N=\num{4096}$. We first attributed this to per-call overhead, but the tail
-        study (\cref{sec:alignment}) shows that fixed overhead \emph{lowers} the native speedup at
-        small $N$. The counters point elsewhere: at $N=\num{4096}$ the two arrays fill the
-        \qty{32}{\kibi\byte} L1 exactly, and L1D misses first appear there (\num{0.014} per element
-        native, \num{0.023} scalar, versus at most \num{0.0011} below). The speedup peak sits at the
-        largest $N$ that is still fully L1-resident.
+  \item \textbf{Native SAXPY speedup varies within L1.} Over the L1-resident sizes the native
+        speedup is $5.6\text{--}5.9\times$ at $N=\num{1024}$, \num{2048} and \num{3072}, but
+        $6.86\times$ at $N=\num{1536}$ (locality sweep) and $6.32\times$ at $N=512$ (baseline). It
+        falls only slightly, to $5.77\times$, at $N=\num{4096}$, where the two arrays exactly fill
+        the \qty{32}{\kibi\byte} L1 and L1D misses first appear (\num{0.014} per element native,
+        \num{0.023} scalar, versus at most \num{0.0011} at smaller $N$). We first attributed the peaks
+        to per-call overhead, but the tail study (\cref{sec:alignment}) shows that fixed overhead
+        \emph{lowers} the native speedup at small $N$. Cache misses do not explain them either: the
+        scalar time is flat across these sizes, and the peak comes from native needing only
+        \num{0.22}~cycles per element at $N=\num{1536}$ against \numrange{0.26}{0.28} at the others.
+        Untested hypothesis: the relative placement of \code{x} and \code{y} (4K aliasing, as for
+        the stencil below) differs between these allocation sizes. The same distance sweep would
+        test it.
   \item \textbf{Stencil keeps a $2.6\text{--}2.8\times$ advantage in DRAM} while SAXPY and
         multiply fall to $1.88\text{--}1.99\times$ and $1.5\text{--}1.6\times$. Its native build is
         just as bandwidth-bound as theirs: it runs at \SI{101}{\percent} of the DRAM roof
@@ -35,8 +40,10 @@
         effect would make the rate fall monotonically with $N$; this does not. Hypothesis (untested): 4K aliasing. The small \code{x} and \code{y}
         allocations sit at addresses whose difference makes a store to \code{y[i]} look like it
         conflicts with the load of \code{x[i+1]} in the low 12 address bits, which stalls the load;
-        large allocations come from fresh pages with a different relative offset. Testing it would
-        need a sweep over the \code{x}--\code{y} distance, which we did not run.
+        large allocations come from fresh pages with a different relative offset. It would be confirmed by a
+        sweep of the \code{x}--\code{y} distance modulo \qty{4}{\kibi\byte} at fixed $N$, showing
+        the slow rate only at small distances, together with the core's 4K-alias counter
+        (\code{ld_blocks_partial.address_alias}). We ran neither.
   \item \textbf{Scalar and SIMD SAXPY do not converge in DRAM.} We expected both to reach the same
         bandwidth plateau; native stays $1.88\text{--}1.99\times$ ahead. Our first hypothesis was that
         the scalar loop keeps fewer misses in flight. The counters (\cref{sec:locality}) show
@@ -52,8 +59,9 @@
         sizes from $N=\num{65536}$ to \num{1048576}, scalar takes \qtyrange{0.650}{0.653}{\nano\second}
         (\num{1.81} cycles) per element. Only at $N=\num{32768}$, where the two arrays exactly fill
         the \qty{256}{\kibi\byte} L2, do two measurements of the same machine code still differ, by
-        \SI{1}{\percent} (scalar) and \SI{14}{\percent} (native) (\cref{sec:stride}). We could not identify the earlier fast state's
-        cause.
+        \SI{1}{\percent} (scalar) and \SI{14}{\percent} (native). For that residual we have only the
+        untested page-placement hypothesis and the test stated in \cref{sec:stride}. The earlier
+        fast state's cause remains unidentified.
   \item \textbf{Hardware gather loses to scalar.} The explicit \code{vgatherdps} kernel takes
         \qty{3.23}{\nano\second} per element at $N=\num{32768}$ versus \num{2.16} (native scalar
         loop) and \qty{2.02}{\nano\second} (scalar build), i.e.\ $1.5\text{--}1.6\times$
@@ -67,11 +75,16 @@
 
 \subsection{Limitations}
 \begin{itemize}
-  \item \textbf{Limited hardware counters.} We have no root, so we count only \emph{user-space} events of our own process through \code{perf_event_open}
-        (\cref{sec:ceilings-method}): cycles, instructions, generic LLC misses and L1D read misses.
-        Kernel-mode work, uncore/DRAM traffic counters and TLB events are not available, and the
-        generic LLC-miss event's treatment of hardware-prefetch requests is model-specific, so we use
-        misses per element as a relative measure between builds rather than as exact DRAM traffic.
+  \item \textbf{Core-PMU counters only.} The SIMD locality counters are core-PMU, user-space
+        events of the benchmark thread (\cref{sec:ceilings-method}): cycles, instructions, generic LLC
+        misses and L1D read misses. We did not count DRAM traffic for SIMD. The machine can do it:
+        the companion Cache \& Memory report, run on the same machine the same day with
+        \code{perf_event_paranoid}~$=0$, reads the memory-controller (\code{uncore_imc}) counters
+        and finds IMC traffic matching its streaming estimate to within about \SI{1}{\percent}. TLB
+        events were not recorded either. The generic LLC-miss event's treatment of hardware-prefetch
+        requests is model-specific, so we use misses per element as a relative measure between
+        builds rather than as exact DRAM traffic. Counting IMC bytes per element for scalar and
+        native SAXPY would turn the roofline's traffic assumption into a measurement.
   \item \textbf{Fixed clock.} All reported experiments were run on 2026-10-21 with governor
         \sysGovernor{}, turbo \sysTurbo{} and SMT off; the cycle counter confirms
         \qtyrange{2.78}{2.79}{\giga\hertz} for every locality and ceilings configuration

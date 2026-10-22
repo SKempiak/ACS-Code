@@ -100,7 +100,14 @@ ordering, native \SI{60}{\percent} > autovec \SI{25}{\percent} > scalar \SI{1}{\
 cache-line splits predict. At a non-multiple-of-32 offset every second \qty{32}{\byte} load
 straddles a \qty{64}{\byte} line, but only every fourth \qty{16}{\byte} load does, and a
 \qty{4}{\byte} scalar load never does. GCC does not peel the loop to an aligned start
-(\cref{sec:vectorization}), so every split load pays. Every configuration's IQR is below
+(\cref{sec:vectorization}), so every split load pays. The finer structure is not explained. Both vector builds have a
+second level at offsets \numlist{28;36;40;60}: native is slower there (\SI{+60}{\percent} instead
+of \SI{+46}{\percent}), and autovec is faster (\SI{+13}{\percent} instead of \SI{+25}{\percent}),
+although counting split loads predicts the same number at all non-aligned offsets. Untested
+hypothesis: an interaction between the split \emph{stores} to \code{y} and the following loads of
+\code{x}, which have the same offset, for example in the store-to-load address check. Offsetting
+\code{x} and \code{y} independently, which our harness does not support yet, would separate the
+load and store effects. Every configuration's IQR is below
 \SI{0.3}{\percent}.
 
 \emph{DRAM-resident} (\cref{fig:alignment}b). At $N=\num{16777216}$ the penalty all but disappears.

@@ -29,15 +29,15 @@ latency (\valqty{zq_DRAM_mlcns}{\nano\second}), because its random walk stays wi
 windows. Under load, bandwidth reaches 95\% of its \valqty{int_peak_gib}{\gibi\byte\per\second} ceiling
 with only \val{int_sat_ratio}$\times$ the unloaded latency; beyond that, extra cores buy no bandwidth while
 latency doubles and nearly triples. MLC's loaded-latency sweep shows the same ceiling and knee. Little's Law
-with the measured loaded latency gives \valnum{int_knee_lines} lines in flight at the knee, of which the
-controller serves only \valnum{int_L0max}. A single core keeps at most \valnum{mlp_t1_Lmem_max} random
+with the measured loaded latency gives \valnum{int_sat_L} lines in flight at the knee and up to
+\valnum{int_Lmax} beyond it, of which the controller serves only \valnum{int_L0max}. A single core keeps at most \valnum{mlp_t1_Lmem_max} random
 demand misses in flight---below its fill-buffer count---so
 several cores are needed to fill the pipe. Random SAXPY runs \valnum{cm_rand_span}$\times$ slower per element once
 its footprint reaches DRAM, versus \valnum{cm_seq_span}$\times$ for sequential order, and an AMAT model
 fitted to the counters attributes this to DRAM misses whose effective cost is
 \valqty{amat_rand_aD}{\nano\second} each---the zero-queue latency divided by \valnum{amat_rand_mlp}-way
-memory-level parallelism. Memory-controller counters confirm the read-for-ownership model of writes
-exactly, and show that the adjacent-line prefetcher doubles DRAM traffic for sparse strided reads.
+memory-level parallelism. Memory-controller counters match the read-for-ownership model of writes within 1\% at full load
+(4--5.5\% below it with one core), and show that the adjacent-line prefetcher doubles DRAM traffic for sparse strided reads.
 Finally, a one-line change of working-set size turns a
 \valqty{pit_dram_lo}{\gibi\byte\per\second} DRAM result into a fictitious
 \valqty{pit_small_gib}{\gibi\byte\per\second} ``bandwidth'' that is really L1 reuse (\cref{sec:pitfall}).

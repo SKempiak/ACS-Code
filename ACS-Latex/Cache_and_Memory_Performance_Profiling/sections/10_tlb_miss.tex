@@ -81,7 +81,8 @@ as the page tables outgrow the caches: \valqty{tlb_gap_16384_ns}{\nano\second} a
 walk counter stays at \val{tlb_huge_65536_dtlb} even at 65536 pages.
 
 For random SAXPY at $N=2^{24}$, \qty{2}{\mebi\byte} pages cut page walks from \val{tlbs_4k_dtlb} to
-\val{tlbs_huge_dtlb} per element and runtime from \valqty{tlbs_4k_ns}{\nano\second} to
+\val{tlbs_huge_dtlb} per element and runtime from \valqty{tlbs_4k_ns}{\nano\second} (this run; the separate
+\code{cache_miss} run of \cref{sec:cache-miss} measured \valqty{cm_rand_max_ns}{\nano\second}) to
 \valqty{tlbs_huge_ns}{\nano\second} per element, a \val{tlbs_speedup}$\times$ speedup, a little below the
 \val{tlb_ratio_65536}$\times$ of the dependent chase. Overlapping independent misses hides only a small part
 of the walks: each walk adds dependent page-table reads in front of its data miss.

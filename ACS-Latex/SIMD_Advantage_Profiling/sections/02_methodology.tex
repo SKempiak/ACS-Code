@@ -146,10 +146,12 @@ The roofline (\cref{sec:roofline}) needs a peak FLOP rate and memory bandwidths 
         an unread line costs; the roofline uses the latter, \emph{actual} traffic, and counts the
         kernels' bytes the same way (\cref{tab:roofline-inputs}).
 \end{itemize}
-\emph{Hardware counters.} We have no root. With
-\code{perf_event_paranoid}~$=\sysPerfParanoid$ an unprivileged process may still count
-\emph{user-space} events of its own threads, and doing so from inside the benchmark lets us bracket
-exactly the timed repetitions. \code{src/perfctr.c} therefore calls \code{perf_event_open(2)} directly
+\emph{Hardware counters.} The AI agent that ran the benchmarks had no root. The user applied
+the root-only settings: governor, turbo, SMT, the GPE mask, and \code{perf_event_paranoid}, which
+was \sysPerfParanoid{} for the reported session. The SIMD benchmark deliberately counts only
+\emph{core-PMU} events of its own thread with the kernel excluded, which works unprivileged up to
+\code{perf_event_paranoid}~$=2$. Doing so from inside the benchmark lets us bracket exactly the
+timed repetitions. \code{src/perfctr.c} therefore calls \code{perf_event_open(2)} directly
 for cycles, instructions, LLC misses and L1D read misses (kernel time excluded), enabled only around
 each timed repetition; an event that cannot be opened is reported as \code{NA} instead of failing.
 The locality sweep records them (\cref{sec:locality}) and the ceilings record cycles, from which the

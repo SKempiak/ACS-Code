@@ -30,7 +30,8 @@ abstract, introduction and conclusion through generated macros, so they cannot d
   \centering\small
   \caption{Zero-queue random-access latency per level (median over the plateau sizes; each size is the
   median of 8 repetitions); cycles = ns $\times$ \qty{2.8}{\giga\hertz}, the fixed core clock with turbo
-  disabled (\cref{sec:method}). ``min--max'' is the spread across plateau sizes. ``x-check'' is our second
+  disabled (\cref{sec:method}). ``min--max'' is the spread across plateau sizes, and ``IQR\%'' the largest
+  inter-quartile range of the 8 repetitions at any one of those sizes, relative to its median. ``x-check'' is our second
   method (xorshift64* ring, \code{rdtscp} timing). ``2\,MiB'' removes the page-walk component from DRAM
   latency. ``MLC'' is Intel MLC \texttt{-{}-idle\_latency -e -r} at \qty{16}{\kibi\byte}, \qty{128}{\kibi\byte},
   \qty{4}{\mebi\byte} and \qty{256}{\mebi\byte} (median of 3 runs), with $\Delta$ relative to our value.
@@ -38,13 +39,14 @@ abstract, introduction and conclusion through generated macros, so they cannot d
   \label{tab:zero-queue}
   \IfDataExists{zero_queue_table}{%
   \pgfplotstabletypeset[col sep=comma, string type, empty cells with={---},
-    columns={level,range,ns,cycles,ns_min,ns_max,xcheck_ns,xcheck_diff_pct,huge_ns,mlc_ns,mlc_diff_pct},
+    columns={level,range,ns,cycles,ns_min,ns_max,iqr_max_pct,xcheck_ns,xcheck_diff_pct,huge_ns,mlc_ns,mlc_diff_pct},
     columns/level/.style={column name=Level, column type=l},
     columns/range/.style={column name={Plateau sizes}, column type=l},
     columns/ns/.style={column name={ns}, column type=r},
     columns/cycles/.style={column name={cycles}, column type=r},
     columns/ns_min/.style={column name={min}, column type=r},
     columns/ns_max/.style={column name={max}, column type=r},
+    columns/iqr_max_pct/.style={column name={IQR\%}, column type=r},
     columns/xcheck_ns/.style={column name={x-check}, column type=r},
     columns/xcheck_diff_pct/.style={column name={$\Delta$\%}, column type=r},
     columns/huge_ns/.style={column name={2\,MiB}, column type=r},

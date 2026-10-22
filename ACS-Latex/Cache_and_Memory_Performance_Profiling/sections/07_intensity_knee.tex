@@ -25,11 +25,12 @@ second; latency is the probe's time per dependent access---a demand read issued 
 i.e.\ MLC's ``loaded latency''. $T=0$ is the unloaded latency of the same setup
 ($W_0 = \valqty{int_w0_ns}{\nano\second}$).
 
-\paragraph{Knee criterion.} We define the knee objectively as the throughput at which loaded latency
-first reaches $2W_0$, walking the thread sweep in order of \emph{offered} load ($T=0,1,\ldots,9$) and
-interpolating linearly between the two bracketing points (\code{derive.py}). The same rule applied to the
-injection-delay sweep (decreasing delay at $T=9$) is a second estimate, and the point of maximum
-throughput/latency is a third. All three come from the CSV, not from the eye.
+\paragraph{Knee criterion.} We define the knee as the first point, in order of \emph{offered} load
+($T=0,1,\ldots,9$), at which delivered bandwidth reaches 95\% of the peak. Past it, extra load can buy at
+most 5\% more bandwidth. The point of maximum throughput/latency (``power'') is a second criterion. As a
+latency reference we also report where loaded latency first reaches $2W_0$, interpolated between the two
+bracketing points; on this machine that happens only once bandwidth has already peaked, so it marks deep
+saturation rather than the knee. All three come from the CSV (\code{derive.py}), not from the eye.
 
 \begin{figure}[tbp]
   \centering
@@ -51,40 +52,40 @@ throughput/latency is a third. All three come from the CSV, not from the eye.
           \addlegendentry{$2W_0$}}{}
         \IfFileExists{data/knee.csv}{%
           \addplot[only marks, mark=diamond*, mark size=4pt, red] table[x=gib_s, y=ns, col sep=comma] {data/knee.csv};
-          \addlegendentry{knee}}{}
+          \addlegendentry{knee (95\% of peak)}}{}
       \end{axis}
     \end{tikzpicture}%
   }
   \caption{Measured throughput--latency curve, with Intel MLC's loaded-latency sweep for comparison
   (MLC's MB/s converted to GiB/s). Each of our points is one load level; both coordinates are medians
-  of 8 windows (bars: IQR of latency). The knee is where latency first reaches twice its unloaded value.}\label{fig:intensity}
+  of 8 windows (bars: IQR of latency). The knee is the first load level that reaches 95\% of peak bandwidth;
+  the dashed line marks twice the unloaded latency.}\label{fig:intensity}
 \end{figure}
 
 \subsection{Knee and diminishing returns}
-The curve has the textbook shape (\cref{fig:intensity}, \cref{tab:littles-law}). From $T=0$ to
-$T=\val{int_sat_threads}$ bandwidth climbs from the probe's own trickle to
-\valqty{int_sat_gib}{\gibi\byte\per\second}---already 95\% of the \valqty{int_peak_gib}{\gibi\byte\per\second}
-maximum---while latency rises only from \valqty{int_w0_ns}{\nano\second} to \valqty{int_sat_ns}{\nano\second}
-(\val{int_sat_ratio}$\times$). Every core added after that buys almost no bandwidth: the maximum is reached
-at $T=\val{int_peak_threads}$ and $T=9$ still delivers \valqty{int_last_gib}{\gibi\byte\per\second}. Latency,
-however, climbs steadily to \valqty{int_last_ns}{\nano\second}. The memory-controller counters confirm the
+The curve has the textbook shape (\cref{fig:intensity}, \cref{tab:littles-law}). The knee is at
+$T=\val{int_sat_threads}$: bandwidth has climbed from the probe's own trickle to
+\valqty{int_sat_gib}{\gibi\byte\per\second}, 95\% of the \valqty{int_peak_gib}{\gibi\byte\per\second} peak,
+while latency has risen only from \valqty{int_w0_ns}{\nano\second} to \valqty{int_sat_ns}{\nano\second}
+(\val{int_sat_ratio}$\times$). The throughput/latency maximum falls on the same point
+($T=\val{int_power_threads}$, \valqty{int_power_gib}{\gibi\byte\per\second}, \valqty{int_power_ns}{\nano\second}),
+so both criteria agree. Every core added after the knee buys almost no bandwidth: the peak is reached at
+$T=\val{int_peak_threads}$, and $T=9$ still delivers \valqty{int_last_gib}{\gibi\byte\per\second}. Latency,
+however, climbs steadily to \valqty{int_last_ns}{\nano\second}. It crosses $2W_0$ only at
+\valqty{int_knee_gib}{\gibi\byte\per\second}, between $T=\val{int_knee_prevthreads}$ and
+$T=\val{int_knee_threads}$, i.e.\ at the bandwidth peak itself. (In the injection-delay sweep at $T=9$ the
+crossing is at \valqty{int_kneed_gib}{\gibi\byte\per\second}.) The memory-controller counters confirm the
 throughput axis: at $T=4$ and $T=9$ measured DRAM traffic is \val{int_t4_imc_ratio}$\times$ and
-\val{int_t9_imc_ratio}$\times$ the delivered bandwidth. By the $2W_0$ rule the knee lies at
-\valqty{int_knee_gib}{\gibi\byte\per\second} (\val{int_knee_frac}\% of peak), between
-$T=\val{int_knee_prevthreads}$ and $T=\val{int_knee_threads}$. Latency therefore does not double until the
-controller is already saturated. The delay sweep crosses $2W_0$ at
-\valqty{int_kneed_gib}{\gibi\byte\per\second} (between delays \val{int_kneed_prevdelay} and
-\val{int_kneed_delay}), and the throughput/latency maximum is at $T=\val{int_power_threads}$
-(\valqty{int_power_gib}{\gibi\byte\per\second}, \valqty{int_power_ns}{\nano\second}). The useful operating range
-thus ends at four to five streaming cores and \qtyrange{30}{32}{\gibi\byte\per\second}. Beyond it the
-dual-channel controller, not the cores, is the bottleneck: requests no longer finish faster, they queue.
+\val{int_t9_imc_ratio}$\times$ the delivered bandwidth. Beyond the knee the dual-channel controller, not the
+cores, is the bottleneck: requests no longer finish faster, they queue.
 
 \paragraph{Comparison with Intel MLC.} MLC's \texttt{-{}-loaded\_latency} sweep (nine load cores, injection
 delay from 20\,000 down to 0 cycles, latency thread on CPU~2) is plotted in \cref{fig:intensity}. It
 starts lower, at \valqty{mlc_ll_w0_ns}{\nano\second}, for the access-pattern reasons discussed in
-\cref{sec:zero-queue}. It reaches 95\% of its \valqty{mlc_ll_peak_gib}{\gibi\byte\per\second} peak at
-\valqty{mlc_sat_gib}{\gibi\byte\per\second} and \valqty{mlc_sat_ns}{\nano\second}, and its own latency
-doubles at \valqty{mlc_knee_gib}{\gibi\byte\per\second} (\val{mlc_knee_frac}\% of its peak). At full load it
+\cref{sec:zero-queue}. By the same 95\% rule, MLC's knee is at \valqty{mlc_sat_gib}{\gibi\byte\per\second} and
+\valqty{mlc_sat_ns}{\nano\second} (peak \valqty{mlc_ll_peak_gib}{\gibi\byte\per\second}, injection delay
+\val{mlc_sat_delay}), against our \valqty{int_sat_gib}{\gibi\byte\per\second}. MLC's own latency doubles at
+\valqty{mlc_knee_gib}{\gibi\byte\per\second}. At full load it
 reports \valqty{mlc_ll_d0_ns}{\nano\second}. The two instruments agree on the ceiling (within 2\%) and on the
 shape: latency stays near its idle value until the controller approaches
 \qtyrange{30}{32}{\gibi\byte\per\second} and then rises about threefold with almost no further bandwidth.
@@ -92,12 +93,11 @@ shape: latency stays near its idle value until the controller approaches
 \subsection{Little's Law with measured latency}
 For every load level we compute the mean number of lines in flight, $L = \lambda W$
 \cite{little1961proof}, with $\lambda$ the delivered line rate and $W$ the \emph{measured} loaded latency
-of that same window. For comparison, $L_0 = \lambda W_0$ uses the unloaded latency, the usual shortcut
+of that same window. At the knee ($T=\val{int_sat_threads}$), $L=\valnum{int_sat_L}$ lines. For comparison, $L_0 = \lambda W_0$ uses the unloaded latency, the usual shortcut
 when loaded latency is not measured. $L_0$ rises to \valnum{int_L0max} lines at saturation and then stays flat: that is the
 concurrency the memory system can actually \emph{serve} at about \qty{30}{\gibi\byte\per\second}. $L$, in
 contrast, keeps growing to \valnum{int_Lmax} lines at $T=9$; the difference $L - L_0$ is requests waiting in
-queues, which is exactly why latency rises without any bandwidth gain. At the knee,
-$L=\valnum{int_knee_lines}$.
+queues, which is exactly why latency rises without any bandwidth gain.
 
 \begin{table}[tbp]
   \centering\small

@@ -60,7 +60,9 @@ quoted next to every result. Intel MLC v3.13 provides the external cross-check
         \qty{2.8}{\giga\hertz} base clock (equal to the TSC rate). Cycle figures are
         ns~$\times$~\valqty{zq_ghz}{\giga\hertz}. Two independent checks agree. User-mode cycles divided by
         wall time over the timed windows give a median of \valqty{ws_ctr_ghz}{\giga\hertz}. The in-process
-        add-chain probe logged by every run reads \val{zq_probe_ghz_min}--\valqty{zq_probe_ghz_max}{\giga\hertz}.
+        add-chain probe logged by every run reads \val{probe_st_min}--\valqty{probe_st_max}{\giga\hertz} in all
+        \val{probe_st_n} single-thread repetitions (\val{probe_ld_min}--\valqty{probe_ld_max}{\giga\hertz} in the
+        \code{mem_loaded} runs, where it runs just after nine generator threads are started).
         The probe is still not used for conversion: in an earlier run it was disturbed by an ACPI event
         storm (\cref{sec:anomalies}).
   \item \textbf{Interference:} the ACPI general-purpose event that caused that storm (GPE~0x42) was masked
@@ -79,6 +81,14 @@ quoted next to every result. Intel MLC v3.13 provides the external cross-check
         far above the timer resolution, so timer overhead is negligible. The loaded-latency windows read
         generator progress counters at the start and end of the \emph{same} interval in which the probe
         runs, so throughput and latency describe the same moment.
+  \item \textbf{Code version:} the runs were started from a working tree on top of commit \code{29b8630}
+        with uncommitted changes (\code{build.txt} records 37 changed paths). The measured sources,
+        scripts, Makefile, shared harness and \code{tools/summarize} are byte-identical to those committed
+        afterwards in \code{b00db66}. We verified this with \code{git diff b00db66}, which was empty
+        for these paths before the later post-processing-only edits to \code{run.sh} and
+        \code{derive.py}, and from the file times: every source was last modified before the binaries were
+        rebuilt at 20:15, and the run started at 20:22. \code{run.sh} now warns loudly when the tree is
+        dirty and records a hash of the uncommitted code diff in \code{build.txt}.
   \item \textbf{Provenance:} each \code{data/raw/<experiment>/<timestamp>/} directory holds the raw rows,
         \code{env.txt}, \code{build.txt} (git commit, compiler, flags, THP and counter settings),
         \code{commands.txt} (every command line) and \code{validate.txt} (the sanity gate of

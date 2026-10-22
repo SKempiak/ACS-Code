@@ -21,7 +21,7 @@ few percent more IOPS. $L/\text{QD}$ stays at 0.987--0.998. Little's Law holds b
 closed loop, so this confirms that the harness keeps the queue full and the saturation is the device's.
 
 Device state matters as much as configuration. Once the SLC cache is full, sequential writes fall from
-\csvval{sustained_summary}{burst_mibps} to \csvval{sustained_summary}{steady_mibps}\,MiB/s ($18\times$),
+\csvval{sustained_summary}{burst_mibps} to \csvval{sustained_summary}{steady_mibps}\,MiB/s ($\ssdburstratio\times$),
 and random writes average \csvval{sustained_summary}{rand_steady_iops} IOPS with
 \qty{32}{\milli\second} per-second p99. A minute of idle does not bring the cache back. Reads issued
 while the drive is still folding recent writes lose half their IOPS, and their p99.9 grows up to

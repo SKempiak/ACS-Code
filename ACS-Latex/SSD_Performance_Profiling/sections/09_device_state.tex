@@ -88,7 +88,7 @@
       \caption{Composite temperature, all phases.}
     \end{subfigure}%
   }
-  \caption{Sustained-write experiment, one-second samples. (a) The SLC-cache cliff appears as the drop in
+  \caption{Sustained-write experiment, one-second samples (\ssdfromall). (a) The SLC-cache cliff appears as the drop in
   throughput after the burst; (b) the latency tail during the fill; (c) random-write steady state after
   the fill; (d) temperature across the baseline idle, fill, random, idle and recovery phases.}\label{fig:sustained}
 \end{figure}
@@ -98,15 +98,16 @@
   \caption{Sustained-write summary (computed by \code{run.sh} into \code{sustained_summary.csv}). Burst is
   the median of the leading seconds that stay above half the first second's rate. The cliff is the first
   second, starting a 5-second window, whose rate falls below half the burst; the table gives the volume
-  written before it. Steady is the median of the last \qty{30}{\percent} of the fill. The random phase
+  written before it (\ssdfromall). Steady is the median of all seconds after the cliff. A lean re-run stops
+  the fill 10 seconds after the cliff; without a cliff the fill volume is a lower bound on the cache size. The random phase
   alternates between two states, so the table gives its overall average and the per-second
   quartiles.}\label{tab:sustained}
   \begin{tabular}{@{}lr@{}}
     \toprule
     Burst sequential write (MiB/s) / duration (s)  & \csvval{sustained_summary}{burst_mibps} / \csvval{sustained_summary}{burst_s} \\
-    Cliff after (GiB written / s)                  & \csvval[1]{sustained_summary}{cliff_gib} / \csvval{sustained_summary}{cliff_s} \\
-    Post-cliff steady sequential write (MiB/s)     & \csvval{sustained_summary}{steady_mibps} \\
-    Steady / burst                                 & \csvval[3]{sustained_summary}{steady_over_burst} \\
+    Cliff after (GiB written / s)                  & \ssdcliffcell \\
+    Post-cliff steady sequential write (MiB/s)     & \ssdifcliff{\csvval{sustained_summary}{steady_mibps}}{n/a} \\
+    Steady / burst                                 & \ssdifcliff{\csvval[3]{sustained_summary}{steady_over_burst}}{n/a} \\
     Fill: GiB, seconds, average MiB/s              & \csvval[1]{sustained_summary}{fill_gib}, \csvval{sustained_summary}{fill_s}, \csvval{sustained_summary}{fill_avg_mibps} \\
     Random 4 KiB write, QD32: average IOPS         & \csvval{sustained_summary}{rand_steady_iops} \\
     \quad per-second IOPS quartiles; median per-second p99 (\si{\micro\second})
@@ -120,9 +121,9 @@
 \paragraph{Analysis.} The fill began at the SLC ingest rate,
 \csvval{sustained_summary}{burst_mibps}\,MiB/s, for only \csvval{sustained_summary}{burst_s}\,s. After
 \csvval[1]{sustained_summary}{cliff_gib}\,GiB it fell to about \qty{62}{\mebi\byte\per\second} and stayed
-there for the remaining \qty{57}{\gibi\byte}: the median of the last \qty{30}{\percent} is
+there for the remaining \qty{57}{\gibi\byte}: the median of all post-cliff seconds is
 \csvval{sustained_summary}{steady_mibps}\,MiB/s, and the 20-minute average is
-\csvval{sustained_summary}{fill_avg_mibps}\,MiB/s. A burst rate \num{18}$\times$ the steady rate is far
+\csvval{sustained_summary}{fill_avg_mibps}\,MiB/s. A burst rate \ssdburstratio$\times$ the steady rate is far
 more than the \enquote{several times} the hypothesis expected. The post-cliff rate is what this QLC drive
 sustains when it must program QLC directly while also folding cached data. It has two sub-states. Most
 60-second windows sit at \qtyrange{60}{64}{\mebi\byte\per\second}. Eight of the 21 drop to
@@ -176,7 +177,7 @@ the cache, not thermal throttling.
   \IfDataExists{working_set}{%
     \begin{subfigure}[t]{0.49\linewidth}
       \begin{tikzpicture}
-        \begin{axis}[acs, height=0.85\linewidth, xmode=log, log basis x=2, xtick={1,4,16,60}, xticklabels={1,4,16,60},
+        \begin{axis}[acs, height=0.85\linewidth, xmode=log, log basis x=2, xtick=data, log ticks with fixed point,
                      xlabel={Working set (GiB)}, ylabel={QD=1 read mean latency (\si{\micro\second})}]
           \addplot+[iqr bars] table[x=span_gib, y=lat_mean_us_median, iqr of=lat_mean_us, only if={mode}{read}, only if={qd}{1}] {data/working_set.csv};
         \end{axis}
@@ -185,7 +186,7 @@ the cache, not thermal throttling.
     \end{subfigure}\hfill
     \begin{subfigure}[t]{0.49\linewidth}
       \begin{tikzpicture}
-        \begin{axis}[acs, height=0.85\linewidth, xmode=log, log basis x=2, xtick={1,4,16,60}, xticklabels={1,4,16,60},
+        \begin{axis}[acs, height=0.85\linewidth, xmode=log, log basis x=2, xtick=data, log ticks with fixed point,
                      xlabel={Working set (GiB)}, ylabel={QD=32 IOPS}, ymin=0, legend pos=south west]
           \addplot+[iqr bars] table[x=span_gib, y=iops_median, iqr of=iops, only if={mode}{read}, only if={qd}{32}] {data/working_set.csv};
           \addlegendentry{rand read}
@@ -197,7 +198,7 @@ the cache, not thermal throttling.
     \end{subfigure}%
   }
   \caption{\qty{4}{\kibi\byte} random I/O restricted to the first 1--\qty{60}{\gibi\byte} of the written
-  file (medians, IQR bars). The runs followed the sustained write, so the drive was still folding in the background..}\label{fig:working-set}
+  file (medians, IQR bars; \ssdfromall). The runs followed the sustained write, so the drive was still folding in the background..}\label{fig:working-set}
 \end{figure}
 
 QD=1 random-read latency goes from

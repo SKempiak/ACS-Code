@@ -45,6 +45,29 @@ SSD_Performance_Profiling/scripts/rerun_clean.sh
 scripts/sync_data.sh SSD_Performance_Profiling
 \end{lstlisting}
 
+\paragraph{Lean re-run.} \code{rerun_clean.sh lean} is a shorter version of the clean re-run:
+\ensuremath{\sim}\qty{35}{\gibi\byte} written expected, \qty{55}{\gibi\byte} at most, in about
+\qtyrange{35}{50}{\minute}. Its steps are:
+\begin{enumerate}[nosep]
+  \item The sustained fill, first, that \emph{stops at the cliff}: 10 seconds after throughput stays
+        below \qty{30}{\percent} of the burst median, capped at \qty{40}{\gibi\byte}. With no cliff by
+        then, the result is reported as a lower bound on the cache size. A short random phase, a
+        \qty{60}{\second} idle and a recovery probe follow, and the large file is deleted.
+  \item A \qty{10}{\minute} rest, then tail on a freshly preconditioned file.
+  \item The working set over 1, 2 and \qty{4}{\gibi\byte}, forward and reverse.
+  \item QD=32 random reads, then the $\geq$\qty{256}{\kibi\byte} random writes again after a rest.
+  \item Write queue depths 4--32.
+  \item FIO write points with alternating engine order.
+\end{enumerate}
+It also takes an NVMe SMART snapshot before and after, when \code{nvme smart-log} works without root.
+Partial re-measurements replace only the matching configurations of the 2026-10-21 run, and figure
+captions say which run each point comes from.
+\begin{lstlisting}[language=bash]
+sudo fstrim -v /                 # then leave the machine idle >= 30 min
+SSD_Performance_Profiling/scripts/rerun_clean.sh lean dryrun
+SSD_Performance_Profiling/scripts/rerun_clean.sh lean
+\end{lstlisting}
+
 \code{ACS_SCRATCH} selects the device under test, and the \code{safety.sh} gate is identical wherever it
 points: a plain disposable file inside the scratch directory, never a device or mountpoint. Without
 \code{ACS_SCRATCH}, the in-repo \code{data/scratch/} filesystem is profiled instead (an HDD on the test

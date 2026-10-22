@@ -22,14 +22,15 @@
   with \qty{4}{\kibi\byte} pages (\valqty{zq_DRAM_hugens}{\nano\second} with \qty{2}{\mebi\byte} pages). MLC
   reports a lower \valqty{zq_DRAM_mlcns}{\nano\second}, because its random walk stays within a page. A
   loaded-latency probe running concurrently with up to nine streaming cores traces the throughput--latency
-  curve directly. Bandwidth saturates at \valqty{int_sat_gib}{\gibi\byte\per\second} with four cores
-  (\val{int_sat_ratio}$\times$ the unloaded latency); more cores add queueing but no bandwidth, and latency
-  doubles at \valqty{int_knee_gib}{\gibi\byte\per\second}, in agreement with MLC's own sweep. With measured
+  curve directly. The knee is at four cores: \valqty{int_sat_gib}{\gibi\byte\per\second}, 95\% of peak, at
+  \val{int_sat_ratio}$\times$ the unloaded latency (MLC's own sweep: \valqty{mlc_sat_gib}{\gibi\byte\per\second}).
+  More cores add queueing but no bandwidth, and latency more than doubles. With measured
   latency, Little's Law separates the \valnum{int_L0max} lines the controller serves from up to
   \valnum{int_Lmax} that queue, and one core sustains at most \valnum{mlp_t1_Lmem_max} random demand misses.
   Counter-based AMAT fits explain the \valnum{cm_rand_span}$\times$ random-SAXPY slowdown; verified
   \qty{2}{\mebi\byte} pages remove a page-walk cost of up to \valqty{tlb_gap_65536_ns}{\nano\second} per access;
-  and the memory-controller counters confirm the read-for-ownership cost of writes to within a few percent.
+  and the memory-controller counters match the read-for-ownership traffic model within 1\% at full load
+  (4--5.5\% below it with one core).
   We close with the cache-reuse bandwidth pitfall, where a \valqty{pit_small_kib}{\kibi\byte} buffer reports
   \valqty{pit_small_gib}{\gibi\byte\per\second} of nonexistent ``DRAM'' bandwidth.
 \end{abstract}

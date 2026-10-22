@@ -81,10 +81,14 @@ int_peak_gib,32.1
 int_peak_ns,195
 int_peak_ratio,1.90
 int_peak_threads,6
+int_power_L,72.4
 int_power_delay,0
+int_power_frac,95
 int_power_gib,30.6
 int_power_ns,141
+int_power_ratio,1.37
 int_power_threads,4
+int_sat_L,72.4
 int_sat_gib,30.6
 int_sat_ns,141
 int_sat_ratio,1.37
@@ -176,6 +180,10 @@ mlc_pk_r31_gib,30.0
 mlc_pk_r31_mbs,32229
 mlc_pk_triad_gib,30.1
 mlc_pk_triad_mbs,32296
+mlc_power_delay,200
+mlc_power_frac,70
+mlc_power_gib,22.1
+mlc_power_ns,92.2
 mlc_sat_delay,50
 mlc_sat_gib,30.2
 mlc_sat_ns,151
@@ -292,6 +300,14 @@ pit_ratio,3.0
 pit_small_bytes,16320
 pit_small_gib,32.5
 pit_small_kib,16
+probe_ld_max,2.79
+probe_ld_med,2.79
+probe_ld_min,2.69
+probe_ld_n,376
+probe_st_max,2.79
+probe_st_med,2.79
+probe_st_min,2.78
+probe_st_n,1816
 rw_0_t1_gib,13.4
 rw_0_t1_imc,24.9
 rw_0_t1_imc_over_est,0.945
@@ -354,8 +370,12 @@ rw_ref_copy_imcwr,10.0
 rw_ref_triad,21.9
 rw_ref_triad_imcrd,22.1
 rw_ref_triad_imcwr,7.33
+rw_t1_imcest_max,0.962
+rw_t1_imcest_min,0.945
 rw_t1_ns_max,115
 rw_t1_ns_min,107
+rw_t9_imcest_max,1.01
+rw_t9_imcest_min,1.01
 rw_t9_ns_max,571
 rw_t9_ns_min,284
 rw_unloaded_ns,103
@@ -451,6 +471,7 @@ zq_DRAM256_ns,103
 zq_DRAM_cyc,289
 zq_DRAM_cyc_probe,287
 zq_DRAM_hugens,83.4
+zq_DRAM_iqrmax,0.27
 zq_DRAM_max,105
 zq_DRAM_min,98.8
 zq_DRAM_mlcdiff,-27
@@ -460,6 +481,7 @@ zq_DRAM_walk_ns,19.6
 zq_DRAM_xdiff,0.11
 zq_DRAM_xns,103
 zq_L1_cyc,5.03
+zq_L1_iqrmax,0.19
 zq_L1_max,1.80
 zq_L1_min,1.79
 zq_L1_mlcdiff,-22
@@ -468,6 +490,7 @@ zq_L1_ns,1.80
 zq_L1_xdiff,0.021
 zq_L1_xns,1.80
 zq_L2_cyc,14.6
+zq_L2_iqrmax,0.21
 zq_L2_max,6.65
 zq_L2_min,4.31
 zq_L2_mlcdiff,3.6
@@ -476,6 +499,7 @@ zq_L2_ns,5.21
 zq_L2_xdiff,-5.3
 zq_L2_xns,4.94
 zq_L3_cyc,52.1
+zq_L3_iqrmax,10
 zq_L3_max,24.7
 zq_L3_min,14.4
 zq_L3_mlcdiff,-15

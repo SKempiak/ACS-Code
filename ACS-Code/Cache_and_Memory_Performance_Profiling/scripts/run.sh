@@ -91,6 +91,21 @@ start_experiment() {
     echo "online CPUs: $(cat /sys/devices/system/cpu/online 2>/dev/null)"
   } > "$RAWDIR/build.txt"
   : > "$RAWDIR/commands.txt"
+  # Provenance of uncommitted code: record what differs from HEAD and a hash of the diff so the
+  # exact measured sources can be matched to a later commit (git diff <commit> must reproduce it).
+  local dirty
+  dirty="$(git -C "$CODE_ROOT" status --porcelain -- . 2>/dev/null | wc -l)"
+  if [ "$dirty" -gt 0 ]; then
+    {
+      echo "WARNING: working tree is DIRTY ($dirty changed path(s) under ACS-Code)."
+      echo "code diff vs HEAD (src, scripts, Makefile, common, tools):"
+      git -C "$CODE_ROOT" diff --stat HEAD -- "$ROOT/src" "$ROOT/scripts" "$ROOT/Makefile" common tools
+      echo "code diff sha256: $(git -C "$CODE_ROOT" diff HEAD -- "$ROOT/src" "$ROOT/scripts" "$ROOT/Makefile" common tools | sha256sum | cut -d' ' -f1)"
+    } >> "$RAWDIR/build.txt" 2>/dev/null
+    printf '\n%s\n%s\n%s\n\n' "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" \
+      "!!! WARNING: ACS-Code working tree is DIRTY ($dirty changed paths). The measured code is" \
+      "!!! NOT a commit; commit it unchanged afterwards (diff hash in $RAWDIR/build.txt)." >&2
+  fi
   if [ "$VALIDATE" = 1 ]; then
     echo "[$exp] validate.sh -> $RAWDIR/validate.txt"
     "$ROOT/scripts/validate.sh" > "$RAWDIR/validate.txt" 2>&1 \

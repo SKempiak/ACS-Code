@@ -174,9 +174,11 @@ L3. For DRAM-resident native SAXPY they reach \numrange{0.122}{0.128}
 ($N=\num{16777216}\ldots\num{50331648}$), matching the compulsory $2/16 = 0.125$ (two
 \qty{64}{\byte} lines, $x$ and $y$, per \num{16} elements; the dirty $y$ line is written back, not
 missed again). So the vector loop moves no more data than it must. Scalar shows
-\numrange{0.156}{0.164}, about \SI{28}{\percent} more. We cannot attribute this with user-space
-counters alone; one possibility is that the generic LLC-miss event also counts L2 hardware-prefetch
-requests, which behave differently for a slower stream. Either way, scalar does not lose because
+\numrange{0.156}{0.164}, about \SI{28}{\percent} more. Its cause is open. Untested hypothesis: at
+scalar's lower request rate the L2 streamer prefetches further ahead of the demand stream, and its
+prefetch requests, which the generic LLC-miss event may count, include lines evicted before use or
+fetched past the end of each pass. A per-element IMC read count (see \cref{sec:anomalies}) would
+show whether the extra misses are extra DRAM traffic or only extra prefetch requests. Either way, scalar does not lose because
 the vector loop saves misses. The cycle counts explain the remaining gap:
 
 \begin{center}\small

@@ -53,6 +53,11 @@
  *   --temp PATH     sysfs temperature file in millidegrees C (e.g. the NVMe hwmon
  *                   temp1_input); sampled at the end of each rep / interval; -1 if absent
  *   --phase NAME    label for --interval rows
+ *   --stop-below F  (--interval runs) stop-at-cliff: after the first --burst-intervals
+ *                   (default 5) intervals set the burst rate (their median MiB/s), stop
+ *                   issuing once --stop-hold (default 10) consecutive intervals run below
+ *                   F x burst (e.g. 0.3). Used to find the SLC-cache cliff without writing
+ *                   far past it.
  *   --fill rand|zero, --reps N, --seed S, --experiment NAME, --header
  */
 #define _GNU_SOURCE
@@ -147,6 +152,7 @@ int main(int argc, char **argv) {
     unsigned long long max_bytes = 0;
     int qd = 1, reps = 3, rwmix = 10, pattern_rand = 1, fill_zero = 0, runtime_set = 0;
     double runtime = 4.0, interval = 0;
+    double stop_frac = 0; int stop_hold = 10, burst_n = 5;   /* stop-at-cliff (interval mode) */
     unsigned long long seed = 2026u;
     int want_header = 0, precondition = 0, buffered = 0;
 
@@ -167,6 +173,9 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--interval"))  interval = atof(NEXT);
         else if (!strcmp(a, "--temp"))      temp_path = NEXT;
         else if (!strcmp(a, "--phase"))     phase = NEXT;
+        else if (!strcmp(a, "--stop-below")) stop_frac = atof(NEXT);
+        else if (!strcmp(a, "--stop-hold"))  stop_hold = atoi(NEXT);
+        else if (!strcmp(a, "--burst-intervals")) burst_n = atoi(NEXT);
         else if (!strcmp(a, "--fill"))      fill_zero = !strcmp(NEXT, "zero");
         else if (!strcmp(a, "--reps"))      reps = atoi(NEXT);
         else if (!strcmp(a, "--seed"))      seed = strtoull(NEXT, 0, 0);
@@ -291,8 +300,11 @@ int main(int argc, char **argv) {
         int inflight = 0;
         double t_start = acs_now_sec(), deadline = t_start + runtime;
         double next_tick = t_start + interval, tick_start = t_start, lat_max = 0;
+        double first_iv[64], burst = 0; int n_iv = 0, below = 0, cliff_stop = 0;
+        if (burst_n < 1) burst_n = 1;
+        if (burst_n > 64) burst_n = 64;
 
-        #define CAN_ISSUE() ((max_bytes == 0 || submitted < max_bytes) && \
+        #define CAN_ISSUE() ((max_bytes == 0 || submitted < max_bytes) && !cliff_stop && \
                              !(precondition && seq_blk >= nblocks))
         #define PREP_AND_SUBMIT(S) do {                                                   \
             size_t blk = pattern_rand ? (size_t)(splitmix64(&rng) % nblocks)              \
@@ -320,6 +332,18 @@ int main(int argc, char **argv) {
                 print_interval(experiment, phase, mode, pattern_rand, bs, qd, rwmix,
                                next_tick - t_start, done_bytes, tick_ios,
                                next_tick - tick_start, &lat, lat_max, temp_path);
+                if (stop_frac > 0 && !cliff_stop) {   /* stop-at-cliff bookkeeping */
+                    double m = (double)tick_ios * (double)bs / (1024.0*1024.0) / (next_tick - tick_start);
+                    if (n_iv < burst_n) { first_iv[n_iv++] = m;
+                        if (n_iv == burst_n) { qsort(first_iv, (size_t)burst_n, sizeof(double), cmp_d); burst = first_iv[burst_n/2]; } }
+                    else if (m < stop_frac * burst) {
+                        if (++below >= stop_hold) {
+                            cliff_stop = 1;
+                            fprintf(stderr, "blkbench: cliff: %d intervals below %.0f%% of burst %.0f MiB/s; stopping at %.2f GiB\n",
+                                    stop_hold, stop_frac*100, burst, (double)done_bytes/(1024.0*1024.0*1024.0));
+                        }
+                    } else below = 0;
+                }
                 lat.n = 0; tick_ios = 0; lat_max = 0;
                 tick_start = next_tick; next_tick += interval;
             }

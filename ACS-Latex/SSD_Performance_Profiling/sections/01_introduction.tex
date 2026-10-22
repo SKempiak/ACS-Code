@@ -29,6 +29,6 @@ buffer absorbs them. With one request in flight, sequential reads are limited by
 rather than the PCIe~3.0~$\times$4 link. Deeper queues raise them to only \qty{57}{\percent} of the link,
 where the NAND back end becomes the limit (\cref{sec:block-size}). The random-read knee sits at QD~\csvq{queue_depth_knee}{mode=read}{knee_qd}.
 Tails stretch with queueing and with background flash work. Once the SLC cache is full, sustained writes drop
-$18\times$ to the direct-to-QLC rate, and the drive's recent write history changes both read tails and
+$\ssdburstratio\times$ to the direct-to-QLC rate, and the drive's recent write history changes both read tails and
 sequential-read speed (\cref{sec:device-state}). Buffered I/O over-reports throughput
 by more than an order of magnitude because it measures the page cache, not the device.

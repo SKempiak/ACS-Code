@@ -19,7 +19,7 @@
         consistent with firmware (SMM) handling of the events. The source, GPE~0x42, was then masked by the
         user, and all data in this report were re-measured. In the final \code{clock_check} run the
         thread keeps \val{cc_userfrac_min}--\val{cc_userfrac} of the wall time, and the probe reads
-        \val{cc_probe_min}--\valqty{cc_probe_max}{\giga\hertz}. Cycles are still converted with the fixed
+        \val{probe_st_min}--\valqty{probe_st_max}{\giga\hertz} in every single-thread run (\cref{sec:method}). Cycles are still converted with the fixed
         \qty{2.8}{\giga\hertz} clock, which does not depend on the probe (\cref{sec:method}).
   \item \textbf{The add-chain probe is code-alignment sensitive.} A one-ADD loop ran at one or two cycles per
         iteration depending on where the compiler placed it, so some builds read half the clock. The probe

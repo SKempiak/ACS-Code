@@ -67,7 +67,7 @@ against latency.}
   reads stay near \qty{1.4}{\gibi\byte\per\second} from 64 to \qty{256}{\kibi\byte} and reach
   \qty{1.8}{\gibi\byte\per\second} at \qty{1}{\mebi\byte}, a single-request limit well below the
   \qty{3756}{\mebi\byte\per\second} link. The random-write collapse at $\geq$\qty{256}{\kibi\byte} is an
-  SLC-cache-exhaustion episode (see text).}\label{fig:block-size}
+  SLC-cache-exhaustion episode (see text). \ssdfrom{the random writes $\geq$\qty{256}{\kibi\byte}}}\label{fig:block-size}
 \end{figure}
 
 \begin{figure}[tbp]
@@ -97,7 +97,7 @@ against latency.}
     \end{tikzpicture}\fi
   \caption{Sequential throughput at QD=32 against the measured-link ceiling (red), with the QD=1 read
   curve for reference. Deep queues remove the per-request latency limit, so the remaining gap to the line
-  is the device's internal bandwidth plus protocol overhead.}\label{fig:block-size-qd}
+  is the device's internal bandwidth plus protocol overhead. \ssdfrom{the QD=32 random reads}}\label{fig:block-size-qd}
 \end{figure}
 
 \subsection{Analysis}

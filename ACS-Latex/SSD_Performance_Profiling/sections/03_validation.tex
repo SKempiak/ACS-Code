@@ -47,7 +47,7 @@ error), so small p99 differences are expected.
 \begin{table}[tbp]
   \centering\small
   \caption{\code{blkbench} vs.\ FIO on identical points (medians of 5 interleaved repetitions each;
-  latencies in \si{\micro\second}).}\label{tab:fio-check}
+  latencies in \si{\micro\second}). \ssdfrom{the write points}}\label{tab:fio-check}
   \IfFileExists{data/fio_compare.csv}{%
     \ssdload{fio_compare}\def\ssdRows{}%
     \pgfplotsforeachungrouped \ssdR in {0,...,\ssdLast}{%

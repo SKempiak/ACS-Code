@@ -97,9 +97,11 @@ native \qty{0.156}{\nano\second}, $4.13\times$) run the identical machine code: 
 match instruction for instruction, and the native stride kernel takes the same vectorized path
 when $s=1$ (checked in the disassembly). They also use the same allocation. The
 differences (\SI{1}{\percent} for scalar, \SI{14}{\percent} for native) are therefore
-process-to-process variation, plausibly
-because at this $N$ the two arrays fill exactly the \qty{256}{\kibi\byte} L2, which makes the
-timing sensitive to physical page placement (\cref{sec:anomalies}). At stride~2 and beyond the three
+process-to-process variation. Untested hypothesis: at this $N$ the two arrays fill exactly the
+\qty{256}{\kibi\byte} L2, so conflict misses depend on which physical pages each process gets.
+Repeating the configuration in many processes, either on 2~MiB huge pages (fixed physical
+contiguity) or with the physical addresses recorded via \code{/proc/self/pagemap} (root), would
+confirm or refute it (\cref{sec:anomalies}). At stride~2 and beyond the three
 builds agree within \numrange{0.98}{1.03}$\times$ (native vs.\ scalar) at both sizes; \code{autovec}
 is within \SI{10}{\percent} of them everywhere, as expected since its strided loop is equally
 scalar. Two things happen at once. First, the effective bandwidth collapses. In DRAM the time per
