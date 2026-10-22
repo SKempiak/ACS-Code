@@ -1,0 +1,55 @@
+% !TeX root = ../main.tex
+\section{Misleading Setup}\label{sec:pitfall}
+\rubric{AI-use transparency and pitfall analysis}{15}{Honest AI-use note and a meaningful misleading-setup
+analysis (with \cref{sec:ai-use}).}
+
+\begin{hypothesis}
+  Dropping \code{O_DIRECT} lets the OS page cache serve repeated reads of the same region from RAM after
+  the first pass, so a buffered benchmark will report throughput and latency that describe DRAM, not the
+  SSD---orders of magnitude ``better'' than the real device, and entirely fictitious as a storage result.
+\end{hypothesis}
+
+\begin{knobs}
+  Pitfall     & Buffered I/O measuring the page cache instead of the device \\
+  Wrong setup & \qty{4}{\kibi\byte} sequential reads over a \qty{64}{\mebi\byte} region, \emph{no} \code{O_DIRECT} \\
+  Right setup & Identical workload \emph{with} \code{O_DIRECT} (page cache bypassed) \\
+  Fixed       & QD=1, 5 repetitions of \qty{4}{\second}; test file rewritten sequentially just before \\
+  Run         & first run (\code{20261021-103201}); read-only apart from the re-fill, so not repeated \\
+  Script      & \code{SSD_Performance_Profiling/scripts/run.sh pitfall} \\
+\end{knobs}
+
+\begin{table}[!htbp]
+  \centering\small
+  \caption{Same \qty{4}{\kibi\byte} sequential-read workload, direct vs.\ buffered: medians of 5
+  repetitions with the IQR in brackets. Only the \code{O_DIRECT} flag differs.}\label{tab:pitfall}
+  \begin{tabular}{@{}lrr@{}}
+    \toprule
+    Metric & \code{O_DIRECT} (correct) & buffered (page cache) \\
+    \midrule
+    IOPS                         & \csviqr{pitfall}{mode=read}{iops}            & \csviqr{pitfall}{mode=read-buffered}{iops} \\
+    MiB/s                        & \csviqr{pitfall}{mode=read}{mibps}           & \csviqr{pitfall}{mode=read-buffered}{mibps} \\
+    Mean latency (\si{\micro\second}) & \csviqr[2]{pitfall}{mode=read}{lat_mean_us} & \csviqr[2]{pitfall}{mode=read-buffered}{lat_mean_us} \\
+    p99 latency (\si{\micro\second})  & \csviqr[1]{pitfall}{mode=read}{lat_p99_us}  & \csviqr[2]{pitfall}{mode=read-buffered}{lat_p99_us} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Explanation}
+\csvget\ssdBuf{pitfall}{mode=read-buffered}{iops_median}\csvget\ssdDir{pitfall}{mode=read}{iops_median}%
+The buffered run reports \csvq{pitfall}{mode=read-buffered}{iops_median} IOPS at
+\csvq{pitfall}{mode=read-buffered}{mibps_median}\,MiB/s and sub-microsecond latency, a
+\ssdratio[0]{\ssdBuf}{\ssdDir}$\times$ inflation over the correct
+\csvq{pitfall}{mode=read}{iops_median} IOPS. None of it is a storage measurement: after the first pass the
+\qty{64}{\mebi\byte} region lives in the page cache, so every later read is a \code{memcpy} from RAM. Omitting \code{O_DIRECT} is the default behaviour of \code{open()}, so an AI-generated benchmark falls into
+this readily. Two cheap detectors flag it in our data, and a third is expected to:
+\begin{enumerate}
+  \item The throughput exceeds the \qty{3756}{\mebi\byte\per\second} PCIe~3.0~$\times$4 link ceiling
+        (\cref{sec:method}), which no device result can do.
+  \item Sub-microsecond \enquote{storage} latency is physically impossible for NAND flash.
+  \item \emph{Untested:} it should collapse to device speed once the region exceeds free RAM
+        (\qty{63}{\gibi\byte} here).
+\end{enumerate}
+The methodology avoids the trap by construction: \code{O_DIRECT} is the default for every real run, and
+\code{make test} asserts that buffered re-reads are more than $5\times$ faster than direct ones. Related
+traps are a wrong effective queue depth, caught by $L/\text{QD}$ (\cref{tab:littles-law}), and
+wrong-order preconditioning (\cref{sec:layout}).

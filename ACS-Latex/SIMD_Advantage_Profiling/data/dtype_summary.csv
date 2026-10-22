@@ -1,0 +1,8 @@
+kernel,dtype,autovec_1k,native_1k,native_16k,native_16m
+SAXPY,float32,2.84,5.60,4.08,1.99
+SAXPY,float64,1.65,3.28,2.21,1.38
+multiply,float32,3.53,5.19,3.31,1.60
+multiply,float64,1.91,2.82,1.66,1.17
+multiply,int32,1.86,5.37,3.16,1.49
+stencil,float32,2.75,3.35,3.44,2.79
+stencil,float64,1.44,1.73,3.02,1.68

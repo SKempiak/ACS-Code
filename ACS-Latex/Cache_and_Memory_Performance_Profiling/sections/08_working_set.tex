@@ -1,0 +1,104 @@
+% !TeX root = ../main.tex
+\section{Working-Set Sweep}\label{sec:working-set}
+\rubric{Working-set, cache and TLB analysis}{35}{Counters and performance correlated correctly (with
+\cref{sec:cache-miss,sec:tlb}).}
+
+\begin{hypothesis}
+  Chase latency should step up at each capacity (\qty{32}{\kibi\byte}, \qty{256}{\kibi\byte},
+  \qty{20}{\mebi\byte}), and the counters should show why: L1D misses per access rising from 0 to 1 past
+  \qty{32}{\kibi\byte}, LLC misses rising to 1 past \qty{20}{\mebi\byte}, and dTLB walks appearing past the
+  \ensuremath{\sim}\qty{6}{\mebi\byte} \qty{4}{\kibi\byte}-page TLB reach, but not with \qty{2}{\mebi\byte} pages.
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & 1 thread pinned to CPU~2; one node per \qty{64}{\byte} line; user-space counters \\
+  Varied      & working-set size \qty{8}{\kibi\byte}--\qty{512}{\mebi\byte}; random vs.\ sequential; \qty{4}{\kibi\byte} vs.\ \qty{2}{\mebi\byte} pages (random) \\
+  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh working_set} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \begin{subfigure}[t]{0.49\linewidth}
+  \IfDataExists{working_set}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, height=0.72\linewidth,
+                   xlabel={Working-set size (bytes)}, ylabel={Latency (ns/access)}, legend pos=north west,
+                   legend style={font=\scriptsize}]
+        \addplot+[iqr bars] table[x=bytes, y=ns_per_access_median, iqr of=ns_per_access, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
+        \addlegendentry{random, 4\,KiB}
+        \addplot+[iqr bars] table[x=bytes, y=ns_per_access_median, iqr of=ns_per_access, only if={pattern}{random}, only if={pages}{huge}] {data/working_set.csv};
+        \addlegendentry{random, 2\,MiB}
+        \addplot+[iqr bars] table[x=bytes, y=ns_per_access_median, iqr of=ns_per_access, only if={pattern}{sequential}] {data/working_set.csv};
+        \addlegendentry{sequential, 4\,KiB}
+        \acsvline{32768}{L1d}
+        \acsvline{262144}{L2}
+        \acsvline{20971520}{L3}
+      \end{axis}
+    \end{tikzpicture}}
+    \caption{Latency.}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.49\linewidth}
+  \IfDataExists{working_set}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, height=0.72\linewidth, ymin=0,
+                   xlabel={Working-set size (bytes)}, ylabel={Events per access}, legend pos=north west,
+                   legend style={font=\scriptsize}]
+        \addplot+[mark=*, iqr bars] table[x=bytes, y=ctr_l1d_miss_pa_median, iqr of=ctr_l1d_miss_pa, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
+        \addlegendentry{L1D miss}
+        \addplot+[mark=square*, iqr bars] table[x=bytes, y=ctr_llc_ref_pa_median, iqr of=ctr_llc_ref_pa, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
+        \addlegendentry{LLC ref (L2 miss)}
+        \addplot+[mark=triangle*, iqr bars] table[x=bytes, y=ctr_llc_miss_pa_median, iqr of=ctr_llc_miss_pa, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
+        \addlegendentry{LLC miss}
+        \addplot+[mark=diamond*, iqr bars] table[x=bytes, y=ctr_dtlb_miss_pa_median, iqr of=ctr_dtlb_miss_pa, only if={pattern}{random}, only if={pages}{4k}] {data/working_set.csv};
+        \addlegendentry{dTLB walk}
+        \acsvline{32768}{L1d}
+        \acsvline{262144}{L2}
+        \acsvline{20971520}{L3}
+      \end{axis}
+    \end{tikzpicture}}
+    \caption{Counters, random chase, 4\,KiB pages.}
+  \end{subfigure}
+  \caption{Working-set sweep. Left: latency with cache capacities marked. Right: user-space counters
+  per access for the random 4\,KiB-page chase; each step in latency coincides with a miss ratio rising
+  towards one.}\label{fig:working-set}
+\end{figure}
+
+\subsection{Analysis}
+The latency staircase and the counters line up level by level (\cref{fig:working-set}). L1D misses per
+access jump from \ensuremath{\approx}0 to 1 between \qty{32}{\kibi\byte} and \qty{48}{\kibi\byte}, exactly at
+the L1 capacity. Page walks start at \qty{8}{\mebi\byte}, just past the \ensuremath{\approx}\qty{6}{\mebi\byte}
+STLB reach, which is why the \qty{4}{\kibi\byte} latency already climbs inside the L3 region
+(\valqty{ws_8m_4k_ns}{\nano\second} vs.\ \valqty{ws_8m_huge_ns}{\nano\second} with \qty{2}{\mebi\byte} pages).
+LLC misses appear from \qtyrange{12}{16}{\mebi\byte}, before the nominal \qty{20}{\mebi\byte}, and reach one
+per access by \qty{64}{\mebi\byte}. In DRAM the random 4\,KiB-page chase incurs \val{ws_dram_rand4k_dtlb}
+page walks and \val{ws_dram_rand4k_l1d} L1D misses per access (\val{ws_dram_randhuge_l1d} with 2\,MiB pages):
+the walker's reads miss the L1 too, so the 4\,KiB curve sits above the 2\,MiB curve
+(\valqty{ws_dram_rand4k_ns}{\nano\second} vs.\ \valqty{ws_dram_randhuge_ns}{\nano\second} at
+\qty{512}{\mebi\byte}). The sequential chase costs only \valqty{ws_dram_seq_ns}{\nano\second}
+(\val{ws_dram_seq_llcmiss} demand LLC misses per access vs.\ \val{ws_dram_rand_llcmiss}): the prefetcher turns
+its misses into hits.
+
+\paragraph{L2 conflict misses with \qty{4}{\kibi\byte} pages.} L2 misses (LLC references) already appear
+inside the L2 window, non-monotonically: \val{ws_64k_4k_llcref} per access at \qty{64}{\kibi\byte},
+\val{ws_96k_4k_llcref} at \qty{96}{\kibi\byte}, \val{ws_128k_4k_llcref} at \qty{128}{\kibi\byte} and
+\val{ws_192k_4k_llcref} at \qty{192}{\kibi\byte}, approaching one only by \qtyrange{1}{2}{\mebi\byte}. At
+\qty{192}{\kibi\byte} the 4\,KiB-page chase costs \valqty{ws_l2edge_4k_ns}{\nano\second}
+(\val{ws_l2edge_4k_llcref} L2 misses per access), the 2\,MiB-page chase \valqty{ws_l2edge_huge_ns}{\nano\second}
+(\val{ws_l2edge_huge_llcref}). The likely cause is page placement: \qty{4}{\kibi\byte} pages land in arbitrary
+frames, so some L2 sets receive more lines than their associativity, while a contiguous \qty{2}{\mebi\byte}
+page spreads lines evenly. Placement is decided per allocation, so a fresh buffer can reverse the order
+(\valqty{ws_64k_4k_ns}{\nano\second} and \valqty{ws_128k_4k_ns}{\nano\second} at \qty{64}{\kibi\byte} and
+\qty{128}{\kibi\byte} here, \valqty{zq_64k_ns}{\nano\second} and \valqty{zq_128k_ns}{\nano\second} in the
+zero-queue run).
+
+\paragraph{A page-size crossover at the L3 edge.} At \qty{12}{\mebi\byte} and \qty{16}{\mebi\byte} the
+\qty{2}{\mebi\byte}-page chase is \emph{slower} (\valqty{ws_12m_huge_ns}{\nano\second} vs.\
+\valqty{ws_12m_4k_ns}{\nano\second}; \valqty{ws_16m_huge_ns}{\nano\second} vs.\ \valqty{ws_16m_4k_ns}{\nano\second}),
+with more LLC misses (\val{ws_12m_huge_llcmiss} vs.\ \val{ws_12m_4k_llcmiss}; \val{ws_16m_huge_llcmiss} vs.\
+\val{ws_16m_4k_llcmiss}) and no page walks; from \qty{24}{\mebi\byte} the order reverts
+(\valqty{ws_24m_huge_ns}{\nano\second} vs.\ \valqty{ws_24m_4k_ns}{\nano\second}). So page tables competing for
+the L3 cannot explain the early LLC misses. \emph{Untested hypothesis:} a \qtyrange{12}{16}{\mebi\byte} buffer
+occupies only 6--8 contiguous \qty{2}{\mebi\byte} frames, so any uneven mapping onto the hashed L3 slices and
+sets is shared by every line, whereas \qty{4}{\kibi\byte} pages average it out; repeating these points over
+fresh huge-page allocations would test it. Some counters were multiplexed (minimum running fraction
+\val{ws_ctr_cover_min}) and are scaled.

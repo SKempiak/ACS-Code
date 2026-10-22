@@ -1,0 +1,72 @@
+% !TeX root = ../main.tex
+\section{Tail Latency}\label{sec:tail}
+\rubric{Tail latency and device state}{25}{p50/p95/p99/p99.9 reporting and interpretation of queueing,
+thermal and garbage-collection effects (with \cref{sec:device-state}).}
+
+\begin{hypothesis}
+  Moving from a mid queue depth to the near-knee depth should raise the median modestly but stretch the
+  upper percentiles much more: deeper queues mean more requests waiting behind the occasional slow
+  flash operation, so the p99/p99.9 gap over p50 should widen.
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & \qty{4}{\kibi\byte} random read; one job; \qty{6}{\second} runs, 5 repetitions; NVMe
+                temperature recorded per repetition \\
+  Varied      & iodepth 8 (mid), 32 and 64 (bracketing the knee of \cref{sec:queue-depth}), 128 (past
+                it) \\
+  Drive state & after \code{working_set} deleted the \qty{60}{\gibi\byte} file, the drive was idle for
+                \qty{10}{\minute}; then a fresh \qty{2}{\gibi\byte} test file was preconditioned sequentially
+                (at only \qty{69}{\mebi\byte\per\second}: the SLC cache had not yet recovered) \\
+  Script      & \code{SSD_Performance_Profiling/scripts/run.sh tail} (inside \code{rerun_clean.sh}) \\
+\end{knobs}
+
+\begin{figure}[!htbp]
+  \centering
+  \IfDataExists{tail}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, ybar, bar width=7pt, width=0.78\linewidth, ymode=log, log origin=infty,
+                   symbolic x coords={8,32,64,128}, xtick=data, enlarge x limits=0.2,
+                   xlabel={iodepth}, ylabel={Latency (\si{\micro\second})}, legend pos=north west, legend columns=4]
+        \addplot+[iqr bars] table[x=qd, y=lat_p50_us_median,  iqr of=lat_p50_us]  {data/tail.csv};  \addlegendentry{p50}
+        \addplot+[iqr bars] table[x=qd, y=lat_p95_us_median,  iqr of=lat_p95_us]  {data/tail.csv};  \addlegendentry{p95}
+        \addplot+[iqr bars] table[x=qd, y=lat_p99_us_median,  iqr of=lat_p99_us]  {data/tail.csv};  \addlegendentry{p99}
+        \addplot+[iqr bars] table[x=qd, y=lat_p999_us_median, iqr of=lat_p999_us] {data/tail.csv};  \addlegendentry{p99.9}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Latency percentiles at a mid queue depth (8), around the knee (32, 64) and past it (128);
+  medians with IQR bars. Measured after a \qty{10}{\minute} idle period on a freshly
+  preconditioned file. The upper tail widens faster than the median as QD grows: p99.9/p50 rises from
+  \ssdtailratio{8}{p999}$\times$ at QD=8 to \ssdtailratio{128}{p999}$\times$ at QD=128.}\label{fig:tail}
+\end{figure}
+
+\subsection{Analysis}
+After an idle period the tail widens with queue depth as hypothesised, but modestly.
+QD=8: p50~\csvq{tail}{qd=8}{lat_p50_us_median}, p99~\csvq{tail}{qd=8}{lat_p99_us_median},
+p99.9~\csvq{tail}{qd=8}{lat_p999_us_median}\,\si{\micro\second} (p99.9/p50 $=\ssdtailratio{8}{p999}\times$);
+QD=32: \csvq{tail}{qd=32}{lat_p50_us_median}, \csvq{tail}{qd=32}{lat_p99_us_median},
+\csvq{tail}{qd=32}{lat_p999_us_median}\,\si{\micro\second} ($\ssdtailratio{32}{p999}\times$);
+QD=64: p50~\csvq{tail}{qd=64}{lat_p50_us_median}, p99.9~\csvq{tail}{qd=64}{lat_p999_us_median}\,\si{\micro\second}
+($\ssdtailratio{64}{p999}\times$); QD=128: p50~\csvq{tail}{qd=128}{lat_p50_us_median},
+p99.9~\csvq{tail}{qd=128}{lat_p999_us_median}\,\si{\micro\second} ($\ssdtailratio{128}{p999}\times$).
+From QD=8 to 32 the median grows $2.4\times$ and p99.9 $3.0\times$; from 32 to 64, $1.6\times$ and
+$2.3\times$, while IOPS barely grow past the knee
+(\csvq{tail}{qd=64}{iops_median}$\to$\csvq{tail}{qd=128}{iops_median}). Every added request waits, and
+one queued behind an occasional slow read waits longer, so the upper percentiles stretch more than the
+median; p99/p50 follows the same trend (\ssdtailratio{8}{p99}$\times$ to
+\ssdtailratio{128}{p99}$\times$). IOPS agree with the queue-depth sweep within \qty{1}{\percent} at every depth (e.g.\
+\csvq{tail}{qd=32}{iops_median} vs.\ \csvq{queue_depth}{qd=32,mode=read}{iops_median} at QD=32), so
+the read rates reproduce across experiments despite the slow preconditioning pass.
+
+\textbf{The tail depends on recent writes.} In our superseded first run the tail experiment
+(\code{tail/20261021-103201}) started right after \ensuremath{\sim}\qty{11}{\gibi\byte} of random writes
+with no idle period. At QD=32 it delivered \num{64475} IOPS, half the value here, at a median of
+\qty{385}{\micro\second}, and its p99.9/p50 rose from $4.1\times$ at QD=8 to $24\times$ at QD=128 (p99.9
+\qty{16.0}{\milli\second}). It was no hotter (\qtyrange{50.9}{52.9}{\celsius} vs.\
+\qtyrange{42.9}{54.9}{\celsius} here), and although the file and time of day also differed, the likely
+cause is reads waiting behind background folding and garbage collection. Queueing alone keeps the tail
+ratio at about 3--6$\times$; recent heavy writes pushed it to $24\times$. For a latency SLA these percentiles
+matter more than the mean: at QD=32 one read in a thousand takes
+\csvq{tail}{qd=32}{lat_p999_us_median}\,\si{\micro\second} after an idle period but took
+\qty{2.6}{\milli\second} after heavy writes, and past the knee these tails inflate fastest for almost no
+IOPS.

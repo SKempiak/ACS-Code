@@ -1,0 +1,83 @@
+% !TeX root = ../main.tex
+\section{Zero-Queue Baselines}\label{sec:zero-queue}
+
+\begin{hypothesis}
+  With a single dependent access in flight, latency should rise in steps at the L1 (\qty{32}{\kibi\byte}),
+  L2 (\qty{256}{\kibi\byte}) and L3 (\qty{20}{\mebi\byte}) capacities. We expect roughly 4--5 cycles for
+  L1, \ensuremath{\sim}\num{12}~cycles for L2, a few tens of cycles for L3, and \ensuremath{\sim}\qty{80}{\nano\second}
+  (hundreds of cycles) for DRAM, matching Skylake-family numbers.
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & one thread pinned to CPU~2; random (Sattolo) pointer chase; one node per \qty{64}{\byte} line \\
+  Varied      & working-set size inside each level's plateau window; page size (DRAM only); method (primary vs.\ cross-check) \\
+  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh zero_queue} \\
+\end{knobs}
+
+The ring is a single random cycle over one node per cache line, so exactly one request is outstanding.
+\emph{Plateau rule:} a level's latency is not read at its capacity edge, where the set partly spills;
+\code{derive.py} takes the median of the per-size medians over all measured sizes $s$ with
+$2\,C_{\text{prev}} \le s \le 0.75\,C_{\text{level}}$ ($C_{\text{prev}} = \qty{4}{\kibi\byte}$ for L1);
+DRAM uses every size $\ge 4\times$ the L3.
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{Zero-queue random-access latency per level (median over plateau sizes of per-size medians of 8
+  repetitions); cycles = ns $\times$ \qty{2.8}{\giga\hertz}. min/max: spread across plateau sizes; IQR\%:
+  largest relative IQR at any plateau size. x-check: second method (xorshift64* ring, \code{rdtscp}),
+  $\Delta_{\text{x}}$ its signed difference. 2\,MiB: same chase with \qty{2}{\mebi\byte} pages (L2 value from
+  the working-set sweep, \cref{sec:working-set}); it removes the page walk (DRAM) and the
+  \qty{4}{\kibi\byte}-page conflict misses (L2). MLC: \texttt{-{}-idle\_latency -e -r} at \qty{16}{\kibi\byte},
+  \qty{128}{\kibi\byte}, \qty{4}{\mebi\byte} and \qty{256}{\mebi\byte} (median of 3 runs); negative
+  $\Delta_{\text{MLC}}$: MLC is lower. From \code{data/zero_queue_table.csv}.}
+  \label{tab:zero-queue}
+  \setlength{\tabcolsep}{4pt}%
+  \IfDataExists{zero_queue_table}{%
+  \pgfplotstabletypeset[col sep=comma, string type, empty cells with={---},
+    columns={level,range,ns,cycles,ns_min,ns_max,iqr_max_pct,xcheck_ns,xcheck_diff_pct,huge_ns,mlc_ns,mlc_diff_pct},
+    columns/level/.style={column name=Level, column type=l},
+    columns/range/.style={column name={Plateau sizes}, column type=l},
+    columns/ns/.style={column name={ns}, column type=r},
+    columns/cycles/.style={column name={cycles}, column type=r},
+    columns/ns_min/.style={column name={min}, column type=r},
+    columns/ns_max/.style={column name={max}, column type=r},
+    columns/iqr_max_pct/.style={column name={IQR\%}, column type=r},
+    columns/xcheck_ns/.style={column name={x-check}, column type=r},
+    columns/xcheck_diff_pct/.style={column name={$\Delta_{\text{x}}$\,\%}, column type=r,
+      numeric type, fixed, fixed zerofill, precision=1},
+    columns/huge_ns/.style={column name={2\,MiB}, column type=r},
+    columns/mlc_ns/.style={column name={MLC}, column type=r},
+    columns/mlc_diff_pct/.style={column name={$\Delta_{\text{MLC}}$\,\%}, column type=r,
+      numeric type, fixed, fixed zerofill, precision=1},
+    every head row/.style={before row=\toprule, after row=\midrule},
+    every last row/.style={after row=\bottomrule},
+  ]{data/zero_queue_table.csv}}
+\end{table}
+
+\subsection{Analysis}
+Latency is \valqty{zq_L1_ns}{\nano\second} (\valnum{zq_L1_cyc}~cycles) in L1. The L2 plateau with \qty{4}{\kibi\byte} pages is \valqty{zq_L2_ns}{\nano\second} (\valnum{zq_L2_cyc}~cycles),
+the median of sizes that measure \val{zq_L2_min}--\valqty{zq_L2_max}{\nano\second}. This is \emph{not} the
+L2 hit latency: at \qty{128}{\kibi\byte} and \qty{192}{\kibi\byte}, \qty{4}{\kibi\byte} pages already cause
+L2 conflict misses (\cref{sec:working-set}). With \qty{2}{\mebi\byte} pages the same sizes give the L2 hit
+latency, \valqty{zq_L2_hugens}{\nano\second} (about 12 cycles). L3 latency spans
+\val{zq_L3_min}--\valqty{zq_L3_max}{\nano\second} (median \valqty{zq_L3_ns}{\nano\second}), because larger
+sets also miss the second-level TLB. Latency reaches
+\valqty{zq_DRAM_ns}{\nano\second} (\valnum{zq_DRAM_cyc}~cycles) in DRAM. With \qty{2}{\mebi\byte} pages the
+DRAM figure drops to \valqty{zq_DRAM_hugens}{\nano\second}; the \valqty{zq_DRAM_walk_ns}{\nano\second}
+difference is the page walk that every random \qty{4}{\kibi\byte} access beyond the TLB reach pays
+(\cref{sec:tlb}). Our second method agrees within \val{zq_xdiff_absmax}\% at every level (largest on the
+L2 plateau, \val{zq_L2_xdiff_abs}\%; DRAM \val{zq_DRAM_xdiff_abs}\%). L1, L2 and L3 match the hypothesis;
+DRAM with \qty{4}{\kibi\byte} pages is slower than the \ensuremath{\sim}\qty{80}{\nano\second} we expected,
+and the \qty{2}{\mebi\byte}-page value shows the excess is mostly the page walk.
+
+\paragraph{Comparison with Intel MLC.} MLC agrees with our \qty{4}{\kibi\byte}-page L2 plateau
+(\valqty{zq_L2_mlcns}{\nano\second}, \valnum{zq_L2_mlcdiff}\% relative to ours) but is lower at the other
+levels: L1 \valqty{zq_L1_mlcns}{\nano\second} (\valnum{zq_L1_mlcdiff}\%), L3
+\valqty{zq_L3_mlcns}{\nano\second} (\valnum{zq_L3_mlcdiff}\%), and DRAM \valqty{zq_DRAM_mlcns}{\nano\second}
+(\valnum{zq_DRAM_mlcdiff}\%). In L1, MLC's 4 clocks are a plain pointer dereference; our index ring's scaled-index address costs one
+extra cycle. In DRAM, MLC returns the same \valqty{mlc_DRAM_huge_ns}{\nano\second} with and without \code{-L}
+(\qty{2}{\mebi\byte} pages): its default \code{-D} random range of \qty{4}{\kibi\byte} keeps consecutive
+accesses inside one page, so it takes no page walks. Even against
+our \qty{2}{\mebi\byte}-page value (\valqty{zq_DRAM_hugens}{\nano\second}) it is \val{mlc_DRAM_huge_below}\%
+lower. MLC thus measures a best-case local latency; we keep ours because AMAT and TLB analysis need fully
+random access.

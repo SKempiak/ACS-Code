@@ -1,0 +1,57 @@
+% !TeX root = ../main.tex
+\section{Reproducibility}\label{app:repro}
+
+Code and data live in \code{ACS-Code/}, the reports in \code{ACS-Latex/}, at commit \code{c4f53e5adfc1}.
+
+\begin{lstlisting}[language=bash]
+gh repo clone SKempiak/ACS-Code ACS && cd ACS
+git checkout c4f53e5adfc1
+cd ACS-Code
+make tools                                    # build/tools/summarize
+make -C SSD_Performance_Profiling             # build/blkbench (O_DIRECT, libaio)
+make -C SSD_Performance_Profiling test        # safety + sanity checks (~70 MiB written, deleted)
+scripts/collect_env.sh --tex > ../ACS-Latex/common/system_info.tex
+export ACS_SCRATCH="$HOME/acs_ssd_scratch"    # a directory on the SSD under test
+SSD_Performance_Profiling/scripts/run.sh dryrun   # device, link, space; writes nothing
+SSD_Performance_Profiling/scripts/run.sh pitfall  # ran 2026-10-21 in run.sh all
+SSD_Performance_Profiling/scripts/run.sh layout   # ditto
+sudo fstrim -v /                              # 42.8 GiB at ~01:41; idle >= 30 min
+SSD_Performance_Profiling/scripts/rerun_clean.sh  # run 20261022-021116
+scripts/sync_data.sh SSD_Performance_Profiling
+cd ../ACS-Latex && make ssd
+\end{lstlisting}
+\code{rerun_clean.sh} (\cref{sec:method}) first checks free space, drive idleness and recent-TRIM
+evidence, then runs the steps of \cref{tab:budget} with their idle periods. Its console output
+is in \code{data/raw/rerun_clean_20261022-021116.log}, and the root SMART log (taken after the
+2026-10-21 runs) under \code{data/raw/smart/}. The superseded runs (\code{20261021-103201},
+\code{20261021-105439}, and the lean \code{20261021-220614} with its \code{_lean} directories and log)
+remain under \code{data/raw/}. Without \code{ACS_SCRATCH}, the in-repo
+\code{data/scratch/} (an HDD here) is profiled; the safety gate applies either way. Knobs (\code{REPS},
+\code{RUNTIME}, \code{WRITE_CAP_MIB}, \code{SUSTAIN_GIB}, \code{ENGINE=fio}, \dots) are documented in
+\code{run.sh}.
+
+\begin{table}[h]
+  \centering\small
+  \caption{Raw data behind each figure and table (paths under \code{data/raw/} of the SSD project).}\label{tab:raw-data}
+  \begin{tabularx}{\linewidth}{@{}lX@{}}
+    \toprule
+    Figure / table & Raw run directory \\
+    \midrule
+    \Cref{tab:zero-queue} & \code{zero_queue/20261022-021116} \\
+    \Cref{fig:block-size,fig:block-size-qd} & \code{block_size/20261022-021116} \\
+    \Cref{fig:rw-mix}, \cref{tab:rw-mix} & \code{rw_mix/20261022-021116} \\
+    \Cref{fig:queue-depth}, \cref{tab:littles-law} & \code{queue_depth/20261022-021116} \\
+    \Cref{fig:tail} & \code{tail/20261022-021116} (first run: \code{tail/20261021-103201}) \\
+    \Cref{tab:pitfall} & \code{pitfall/20261021-103201} \\
+    \Cref{tab:layout} & \code{layout/20261021-103201} \\
+    \Cref{tab:fio-check,tab:fio-order} & \code{fio_check/20261022-021116} (FIO JSON under \code{fio/}) \\
+    \Cref{fig:sustained}, \cref{tab:sustained} & \code{sustained/20261022-021116} (earlier: \code{sustained/20261021-105439}, \code{sustained/20261021-220614}) \\
+    \Cref{fig:working-set} & \code{working_set/20261022-021116} (lean run: \code{working_set/20261021-220614}) \\
+    \Cref{tab:budget} & \code{rerun_clean_20261022-021116.log} \\
+    tmpfs $L/\text{QD}$ (\cref{sec:queue-depth}) & \code{validate_tmpfs/20261021-231433.txt} (\code{make test} output, scratch on \code{/dev/shm}) \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+Each raw directory holds \code{raw.csv} and \code{env.txt}; \code{tools/summarize} reduces them to the
+CSVs in \code{data/}, from which every table and quoted number is read at compile time.

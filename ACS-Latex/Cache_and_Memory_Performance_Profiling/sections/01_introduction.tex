@@ -1,0 +1,21 @@
+% !TeX root = ../main.tex
+\section{Introduction}\label{sec:intro}
+
+Every memory reference on this machine is served by one of four levels that differ by two orders of
+magnitude in latency: a \qty{32}{\kibi\byte} L1d and \qty{256}{\kibi\byte} L2 per core, a
+\qty{20}{\mebi\byte} shared L3, and DDR4 DRAM. Which level a kernel hits, and how many references it keeps in
+flight, decides its performance far more than its instruction count. We measure this hierarchy on an Intel
+i9-10900F with purpose-built microbenchmarks and hardware counters, interpret the results with AMAT and
+Little's Law, and answer:
+\begin{enumerate}[nosep]
+  \item What is the zero-queue access latency of each level, and how do latency and bandwidth change with
+        access pattern, access size and read/write mix? (\cref{sec:zero-queue,sec:pattern,sec:rw-mix})
+  \item Where does added concurrency stop buying throughput and start costing latency, and does Little's
+        Law hold with measured latency? (\cref{sec:intensity})
+  \item How do working-set size, cache misses and TLB misses show up in counters and runtime?
+        (\cref{sec:working-set,sec:cache-miss,sec:tlb})
+  \item Which benchmark mistake produces misleading numbers? (\cref{sec:pitfall})
+\end{enumerate}
+
+Every number in the text is generated from the processed data (\code{data/summary.csv},
+\cref{app:repro}); the conclusion (\cref{sec:conclusion}) summarises the findings.

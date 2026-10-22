@@ -1,0 +1,105 @@
+% !TeX root = ../main.tex
+\section{Validation and Sanity Checks}\label{sec:validation}
+
+\code{make -C SSD_Performance_Profiling test} (\code{scripts/validate.sh}) checks that the benchmark
+measures the SSD and not an artifact. It writes one \qty{64}{\mebi\byte} scratch file and deletes it.
+\begin{itemize}
+  \item \textbf{Safety gate.} \code{safety.sh} refuses both block devices, a symlink to \code{/dev/sda}
+        inside the scratch directory, a directory, a path outside it (\code{/etc/passwd}), a mountpoint
+        (\code{/}), and scratch directories at \code{/}, \code{\$HOME}, a filesystem root
+        (\code{/dev/shm}) or not owned by the user (\code{/usr/share}); each test checks that the refusal
+        names the intended rule. \code{blkbench} independently refuses a directory and a symlink.
+  \item \textbf{Incompressible data.} The preconditioned file does not shrink under \code{gzip -1}.
+  \item \textbf{Physical orderings.} \qty{128}{\kibi\byte} sequential beats \qty{4}{\kibi\byte} random
+        throughput, and QD 1$\to$8 raises $L=\lambda W$ without exceeding QD (\cref{sec:queue-depth}).
+  \item \textbf{Direct I/O is real.} \csvget\ssdVb{pitfall}{mode=read-buffered}{iops_median}%
+        \csvget\ssdVd{pitfall}{mode=read}{iops_median}\csvget\ssdVr{zero_queue}{mode=read,pattern=rand}{iops_median}%
+        The \code{--buffered} path reaches \ssdratio[0]{\ssdVb}{\ssdVd}$\times$ the sequential and
+        \ssdratio[0]{\ssdVb}{\ssdVr}$\times$ the random \code{O_DIRECT} IOPS (\cref{tab:pitfall}), so the real
+        runs bypass the page cache; \code{make test} asserts a gap of more than $5\times$.
+  \item \textbf{Interface ceiling and identity.} No result may exceed the
+        \qty{3756}{\mebi\byte\per\second} link (the highest,
+        \csvq{block_size}{bs=16384,pattern=seq,mode=read,qd=32}{mibps_median}\,MiB/s, does not), and every
+        \code{env.txt} records the parent disk, \code{rotational}=0, model, firmware and link.
+\end{itemize}
+We did not collect \code{iostat} or \code{perf} data, so effective queue depth is checked in-band
+(\cref{tab:littles-law}).
+
+\subsection{Cross-check against FIO}\label{sec:fio-check}
+\code{run.sh fio_check} runs seven points (QD=1 and 32; reads and writes; \qty{4}{\kibi\byte} random and
+\qty{128}{\kibi\byte} sequential) through both engines, alternating them repetition by repetition. FIO's
+\code{lat} percentiles measure the same submit$\to$completion time (log-bucketed, \ensuremath{\sim}\qty{3}{\percent}
+bin error). We treat agreement within \qty{10}{\percent} in IOPS and p50 as validation
+(\cref{tab:fio-check}).
+
+\begin{table}[!htbp]
+  \centering\small
+  \caption{\code{blkbench} vs.\ FIO on identical points (medians of 5 interleaved repetitions per
+  engine; latencies in \si{\micro\second}).}\label{tab:fio-check}
+  \IfFileExists{data/fio_compare.csv}{%
+    \ssdload{fio_compare}\def\ssdRows{}%
+    \pgfplotsforeachungrouped \ssdR in {0,...,\ssdLast}{%
+      \ssdstr{mode}\ssdM\ssdstr{pattern}\ssdP\ssdstr{bs}\ssdBS\ssdstr{qd}\ssdQD
+      \ssdget{blk_iops}\ssdA\ssdget{fio_iops}\ssdB\ssdget[3]{iops_ratio}\ssdC
+      \ssdget[1]{blk_p50_us}\ssdD\ssdget[1]{fio_p50_us}\ssdE\ssdget[1]{blk_p99_us}\ssdF\ssdget[1]{fio_p99_us}\ssdG
+      \eappto\ssdRows{\expandonce\ssdP\space\expandonce\ssdM & \noexpand\ssdbs{\ssdBS} & \ssdQD &
+        \expandonce\ssdA & \expandonce\ssdB & \expandonce\ssdC & \expandonce\ssdD & \expandonce\ssdE &
+        \expandonce\ssdF & \expandonce\ssdG \noexpand\\}}%
+    \begin{tabular}{@{}llrrrrrrrr@{}}
+      \toprule
+      Pattern & Block & QD & \multicolumn{2}{c}{IOPS} & FIO/blk & \multicolumn{2}{c}{p50} & \multicolumn{2}{c}{p99} \\
+      \cmidrule(lr){4-5}\cmidrule(lr){7-8}\cmidrule(l){9-10}
+      & & & blk & FIO & & blk & FIO & blk & FIO \\
+      \midrule
+      \ssdRows
+      \bottomrule
+    \end{tabular}}{\acsmissing{data/fio_compare.csv}}
+\end{table}
+
+\textbf{Reads agree:} IOPS ratios of
+\csvq[3]{fio_compare}{mode=read,pattern=rand,qd=1}{iops_ratio}--%
+\csvq[3]{fio_compare}{mode=read,pattern=seq,qd=32}{iops_ratio} and p50 within \qty{2}{\percent}. Every
+step preconditions its test file first, so the \qty{128}{\kibi\byte} sequential points read freshly
+written data at the same rate as \cref{sec:zero-queue,sec:block-size}
+(\csvq{fio_check}{experiment=blkbench,mode=read,pattern=seq,qd=1}{mibps_median}\,MiB/s at QD=1).
+
+\textbf{Writes vary more, mostly with drive state.} The write points give ratios of
+\csvq[3]{fio_compare}{mode=write,pattern=seq,qd=1}{iops_ratio} (sequential),
+\csvq[3]{fio_compare}{mode=write,pattern=rand,qd=1}{iops_ratio} and
+\csvq[3]{fio_compare}{mode=write,pattern=rand,qd=32}{iops_ratio} (random, QD=1 and 32), with p50 within
+\qty{2}{\micro\second}. In \cref{tab:fio-order}, position within a pair moves the sequential write from
+\csvq{fio_order}{experiment=blkbench_1st,mode=write,pattern=seq}{iops_median} to
+\csvq{fio_order}{experiment=blkbench_2nd,mode=write,pattern=seq}{iops_median} IOPS for the same engine,
+more than the engine gap, and the QD=32 random-write ratio was 0.78 in our superseded first run, which a
+fixed engine bias would not allow. FIO's slower QD=1 random write (0.93 in both runs) may reflect a small
+per-I/O host cost. We give write numbers from either engine a \ensuremath{\sim}\qty{15}{\percent}
+uncertainty.
+
+\begin{table}[!htbp]
+  \centering\small
+  \caption{Write points of \code{fio_check} split by engine and by position within each pair of
+  repetitions: median IOPS of 3 (\code{blkbench} first, FIO second) or 2 (the other two columns)
+  repetitions per cell.}\label{tab:fio-order}
+  \IfFileExists{data/fio_order.csv}{%
+  \begin{tabular}{@{}lrrrr@{}}
+    \toprule
+    Point & blkbench 1st & blkbench 2nd & FIO 1st & FIO 2nd \\
+    \midrule
+    \qty{4}{\kibi\byte} rand, QD=1
+         & \csvq{fio_order}{experiment=blkbench_1st,mode=write,pattern=rand,qd=1}{iops_median}
+         & \csvq{fio_order}{experiment=blkbench_2nd,mode=write,pattern=rand,qd=1}{iops_median}
+         & \csvq{fio_order}{experiment=fio_1st,mode=write,pattern=rand,qd=1}{iops_median}
+         & \csvq{fio_order}{experiment=fio_2nd,mode=write,pattern=rand,qd=1}{iops_median} \\
+    \qty{4}{\kibi\byte} rand, QD=32
+         & \csvq{fio_order}{experiment=blkbench_1st,mode=write,qd=32}{iops_median}
+         & \csvq{fio_order}{experiment=blkbench_2nd,mode=write,qd=32}{iops_median}
+         & \csvq{fio_order}{experiment=fio_1st,mode=write,qd=32}{iops_median}
+         & \csvq{fio_order}{experiment=fio_2nd,mode=write,qd=32}{iops_median} \\
+    \qty{128}{\kibi\byte} seq, QD=1
+         & \csvq{fio_order}{experiment=blkbench_1st,mode=write,pattern=seq}{iops_median}
+         & \csvq{fio_order}{experiment=blkbench_2nd,mode=write,pattern=seq}{iops_median}
+         & \csvq{fio_order}{experiment=fio_1st,mode=write,pattern=seq}{iops_median}
+         & \csvq{fio_order}{experiment=fio_2nd,mode=write,pattern=seq}{iops_median} \\
+    \bottomrule
+  \end{tabular}}{\acsmissing{data/fio_order.csv}}
+\end{table}

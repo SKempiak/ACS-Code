@@ -1,0 +1,118 @@
+% !TeX root = ../main.tex
+\section{Methodology}\label{sec:method}
+\rubric{Baseline, correctness, reproducibility}{15}{Reference validation, controlled timing,
+reproducible scripts and a documented environment (with \cref{sec:correctness,sec:baseline}).}
+
+\subsection{Platform}
+\newcommand{\acspinning}{Each run is pinned to one physical core
+(\code{--cpu 2}, \code{sched_setaffinity}); SMT is disabled, so the core has no sibling
+thread, and no other pinning/isolation is used.}
+\input{../common/environment_table}
+
+This Comet Lake core implements AVX2 and FMA but \emph{not} AVX-512, so the widest vector is
+\qty{256}{bit} (\code{ymm}). \code{-march=native} targets AVX2+FMA; the generic \code{x86-64}
+target only guarantees SSE2, so the plain auto-vectorized build emits \qty{128}{bit} (\code{xmm})
+code. That gap is why \code{autovec} and \code{native} are separate variants (\cref{tab:variants}).
+
+\subsection{Kernels}
+\begin{table}[tbp]
+  \centering\small
+  \caption{Kernels and floating-point operations (FLOPs) per processed element.}\label{tab:kernels}
+  \begin{tabular}{@{}lll@{}}
+    \toprule
+    Kernel & Definition & FLOPs / element \\
+    \midrule
+    SAXPY               & $y_i \leftarrow a\,x_i + y_i$                         & 2 \\
+    Dot product         & $s \leftarrow \sum_i x_i\, y_i$                        & 2 \\
+    Elementwise multiply & $z_i \leftarrow x_i\, y_i$                            & 1 \\
+    3-point stencil     & $y_i \leftarrow a\,x_{i-1} + b\,x_i + c\,x_{i+1}$      & 5 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+A multiply and an add count as one FLOP each, so an FMA is two. All four kernels are implemented
+and validated; SAXPY, with the simplest unit-stride access, is the representative kernel for the
+locality, alignment and stride studies. Inputs are a fixed-seed linear-congruential sequence in
+$[-0.5, 0.5)$ (no denormals, NaNs or overflow); the gather uses a Fisher--Yates permutation of
+$[0,N)$. Float32 SAXPY touches \qty{8}{\byte} per element, so its working set crosses the
+\qty{32}{\kibi\byte} L1d near $N\approx\num{4096}$, the \qty{256}{\kibi\byte} L2 near
+$N\approx\num{32768}$ and the \qty{20}{\mebi\byte} L3 near $N\approx\num{2.6e6}$; plots mark these
+boundaries.
+
+\subsection{Build variants}
+\begin{table}[tbp]
+  \centering\small
+  \caption{Build variants. Only the kernel translation unit (\code{src/kernels.c}) differs; the
+  timing harness (\code{main.c}, \code{common.c}) and the reference (\code{reference.c}) are
+  compiled identically across variants.}\label{tab:variants}
+  \begin{tabularx}{\linewidth}{@{}lX@{}}
+    \toprule
+    Variant & Kernel compiler flags (from \code{simd_bench --info}) \\
+    \midrule
+    scalar    & \code{-O3 -fno-tree-vectorize -fno-tree-slp-vectorize} \\
+    autovec   & \code{-O3} (generic \code{x86-64} $\Rightarrow$ SSE2, \qty{128}{bit}) \\
+    native    & \code{-O3 -march=native} (AVX2+FMA, \qty{256}{bit}) \\
+    native512 & not available on this CPU (no AVX-512; \qty{256}{bit} is the widest ISA) \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+The compiler is GCC \sysGCC{}. The reference is built with
+\code{-O2 -fno-tree-vectorize -ffp-contract=off}, so it evaluates each expression in strict,
+non-fused order. No variant uses \code{-ffast-math}: results stay reproducible, but the compiler
+cannot reassociate the dot-product reduction, an effect we measure rather than hide
+(\cref{sec:vectorization,sec:negative}).
+
+\subsection{Data collection, timing and hypotheses}
+All measurements were taken on \textbf{2026-10-21} on an idle machine, settings checked before each
+run and jobs serialized through a lock file: \code{baseline} at 20:38, the other six experiments
+from 20:47 to 20:54 (\cref{tab:raw-data}). Beforehand the user masked an ACPI event storm
+(GPE~0x42) that had stolen $\approx\SI{13}{\percent}$ of wall time in the companion Cache \& Memory
+project; the mask does not survive a reboot (\cref{app:repro}). Governor \sysGovernor{}, turbo
+\sysTurbo{} and SMT off (\cref{tab:environment}) fix the core at \qty{2.8}{\giga\hertz}. Two checks
+guard against a shared core: no configuration varies by more than $1.36\times$ between its fastest
+and slowest repetition (all but one $\le1.32\times$), and the user-space cycle counter, where stolen
+time would show as a lower clock, reads \qtyrange{2.78}{2.79}{\giga\hertz} for all \num{96} locality
+and \num{123} ceilings configurations.
+\begin{itemize}
+  \item Timer: \code{CLOCK_MONOTONIC_RAW} (\qty{1}{\nano\second} resolution); each repetition times
+        a calibrated batch of at least \qty{25}{\milli\second}, so resolution and call overhead are
+        negligible. 3 warm-up invocations, 12 repetitions; median with interquartile-range (IQR)
+        error bars. Speedup error bars span
+        $[\,q_{25}(\text{SIMD})/q_{75}(\text{scalar}),\; q_{75}(\text{SIMD})/q_{25}(\text{scalar})\,]$
+        (\code{scripts/speedup_iqr.awk}).
+  \item Results pass through a \code{volatile} sink and kernels live in their own translation unit,
+        so no loop is dead-code eliminated. The sweep (\code{scripts/run.sh}) is not shuffled.
+  \item An earlier turbo-on sweep (2026-10-12, commit \code{73f8fb8}, raw directory
+        \code{20261012-182813}) is not used for any result. Its cache-resident rates were
+        $1.72\text{--}1.75\times$ the fixed-clock values (dot product
+        \qtyrange{2.43}{2.49}{\giga\flop\per\second} at $0.5$~FLOP/cycle, i.e.\
+        $\approx\qty{4.9}{\giga\hertz}$), while DRAM bandwidth does not scale, so its DRAM-resident
+        SAXPY speedups were only $1.32\text{--}1.44\times$, the single turbo figure we quote.
+\end{itemize}
+Each experiment opens with a hypothesis from first principles (lane counts, cache sizes, port
+counts). Some were drafted after the superseded turbo sweep, so we treat them as predictions and
+state where the data contradicts them.
+
+\subsection{Machine ceilings and hardware counters}\label{sec:ceilings-method}
+The roofline (\cref{sec:roofline}) needs ceilings \emph{not} derived from the kernels it explains;
+a separate program (\code{src/ceilings.c}, \code{run.sh ceilings}) measures them:
+\begin{itemize}
+  \item \emph{Peak FLOP rate}: \num{12} independent register accumulators $a \leftarrow a\,m + c$
+        (with \num{4}-cycle latency and two FMA ports, $4\times2=8$ chains saturate the ports), as
+        scalar \code{mulss}+\code{addss} (\code{scalar}'s ceiling), scalar FMA, SSE
+        \code{mulps}+\code{addps} (\code{autovec}, no FMA) and AVX2 \code{vfmadd231ps}/\code{pd}
+        (\code{native}).
+  \item \emph{Bandwidth}: STREAM-style \emph{read}, \emph{copy} and \emph{triad}
+        ($a_i = b_i + s\,c_i$) with AVX2 loads/stores, at a footprint inside each level (L1
+        \qty{16}{\kibi\byte}, L2 \qty{128}{\kibi\byte}, L3 \qty{8}{\mebi\byte}, DRAM
+        \qty{512}{\mebi\byte}) and over a \qty{4}{\kibi\byte}--\qty{512}{\mebi\byte} sweep. Roofs and
+        kernel intensities count actual traffic: explicit loads and stores in L1, where stores hit,
+        plus the write-allocate read in L2, L3 and DRAM (\cref{tab:roofline-inputs}). The read
+        stream's add chain caps it at one \qty{32}{\byte} load per cycle
+        (\qty{89}{\gibi\byte\per\second}), so it is never a roof.
+\end{itemize}
+\emph{Hardware counters.} The AI agent that ran the benchmarks had no root; the user applied the
+root-only settings (governor, turbo, SMT, GPE mask, \code{perf_event_paranoid}~$=$~\sysPerfParanoid{}).
+\code{src/perfctr.c} opens the thread's own user-space core-PMU events (cycles, instructions, LLC
+misses, L1D read misses) with \code{perf_event_open(2)}, unprivileged up to
+\code{perf_event_paranoid}~$=2$, enabled only around each timed repetition (\code{NA} if
+unavailable).

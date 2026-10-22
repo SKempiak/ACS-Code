@@ -1,0 +1,52 @@
+% !TeX root = ../main.tex
+\section{Negative Example}\label{sec:negative}
+\rubric{AI-use transparency and failure case}{10}{A meaningful negative or misleading example, verified
+and explained (with \cref{sec:ai-use}).}
+
+\begin{hypothesis}
+  A naive benchmark---or a quickly generated one that only ever tests a small array---would conclude
+  that SAXPY enjoys the full $\approx6\times$ SIMD speedup. We predict instead that the same
+  \emph{vectorized} kernel shows almost no speedup on a DRAM-resident array, because memory bandwidth,
+  not vector throughput, then sets the pace.
+\end{hypothesis}
+
+\begin{knobs}
+  Case        & memory-bound SAXPY: a loop that provably vectorizes (\code{vfmadd213ps} on
+                \code{ymm}, \cref{sec:vectorization}) but whose working set far exceeds L3 \\
+  Build       & \code{native} (\code{-O3 -march=native}) vs \code{scalar} \\
+  Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh negative} \\
+\end{knobs}
+
+\subsection{Evidence}
+The SAXPY loop at \code{kernels.c:29} is vectorized at \qty{256}{bit} with FMA
+(\cref{sec:vectorization}), yet its speedup over scalar falls with size:
+\begin{center}\small
+  \begin{tabular}{@{}rrrrr@{}}
+    \toprule
+    $N$ & working set & native GFLOP/s & \% of roof & speedup \\
+    \midrule
+    \num{1024}      & \qty{8}{\kibi\byte} (L1)    & 20.1 & 72  & $5.60\times$ \\
+    \num{16384}     & \qty{128}{\kibi\byte} (L2)  & 13.7 & 84  & $4.11\times$ \\
+    \num{262144}    & \qty{2}{\mebi\byte} (L3)    & 8.6  & 99  & $2.82\times$ \\
+    \num{4194304}   & \qty{32}{\mebi\byte} (DRAM) & 6.0  & --  & $2.31\times$ \\
+    \num{8388608}   & \qty{64}{\mebi\byte} (DRAM) & 5.2  & 120 & $2.19\times$ \\
+    \num{16777216}  & \qty{128}{\mebi\byte} (DRAM) & 4.7 & 109 & $1.95\times$ \\
+    \num{33554432}  & \qty{256}{\mebi\byte} (DRAM) & 4.5 & 104 & $1.92\times$ \\
+    \bottomrule
+  \end{tabular}
+\end{center}
+``\% of roof'': native GFLOP/s over $B_\ell \cdot I$ for the level holding the data
+(\cref{sec:roofline}); \qty{32}{\mebi\byte} straddles L3 and DRAM.
+
+\subsection{Explanation}
+The hypothesis was half right: the $\approx6\times$ of L1 does not survive in DRAM, but the speedup
+settles at $1.92\text{--}1.95\times$, not ``almost none''. The loop genuinely uses SIMD, but at
+\qty{0.167}{\flop\per\byte} it is deep in the bandwidth-bound region: native SAXPY runs at \SIrange{104}{120}{\percent} of the separately measured
+DRAM roof with the compulsory \numrange{0.122}{0.128} LLC misses per element (\cref{sec:locality}).
+\emph{No} wider vector, AVX-512 included, could make it faster. The remaining $\approx1.9\times$ is
+the scalar loop's instruction cost (\num{2.34} vs \num{1.25} cycles per element), which shrinks at
+turbo clocks (\cref{sec:method}).
+
+The dot product is subtler: it reports ``vectorized'' and uses a \qty{256}{bit} \code{vmulps},
+yet the serial reduction leaves $\approx1\times$. Both carry the same lesson for AI-assisted benchmarking: ``it compiled to SIMD'' is necessary but not
+sufficient evidence that a kernel is faster.

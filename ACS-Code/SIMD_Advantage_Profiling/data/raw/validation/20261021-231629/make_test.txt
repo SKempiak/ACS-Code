@@ -1,0 +1,42 @@
+# make test  (2026-10-21 23:16 EDT; git 352e01affb93, working tree with the validate-err print)
+./scripts/validate.sh
+validate [scalar]: 190 cases
+validate [autovec]: 190 cases
+validate [native]: 198 cases
+validate: 578/578 cases passed across scalar autovec native
+max relative error vs reference (passing cases):
+  autovec  dot                f32  0.000e+00  (n=1 offset=0)
+  autovec  dot                f64  0.000e+00  (n=1 offset=0)
+  autovec  mul                f32  0.000e+00  (n=1 offset=0)
+  autovec  mul                f64  0.000e+00  (n=1 offset=0)
+  autovec  mul                i32  0.000e+00  (n=1 offset=0)
+  autovec  saxpy              f32  0.000e+00  (n=1 offset=0)
+  autovec  saxpy              f64  0.000e+00  (n=1 offset=0)
+  autovec  saxpy-gather       f32  0.000e+00  (n=7 offset=0)
+  autovec  saxpy-stride       f32  0.000e+00  (n=17 offset=0)
+  autovec  stencil            f32  0.000e+00  (n=1 offset=0)
+  autovec  stencil            f64  0.000e+00  (n=1 offset=0)
+  native   dot                f32  2.052e-07  (n=127 offset=0)
+  native   dot                f64  0.000e+00  (n=1 offset=0)
+  native   mul                f32  0.000e+00  (n=1 offset=0)
+  native   mul                f64  0.000e+00  (n=1 offset=0)
+  native   mul                i32  0.000e+00  (n=1 offset=0)
+  native   saxpy              f32  0.000e+00  (n=1 offset=0)
+  native   saxpy              f64  0.000e+00  (n=1 offset=0)
+  native   saxpy-gather_avx2  f32  0.000e+00  (n=7 offset=0)
+  native   saxpy-gather       f32  0.000e+00  (n=7 offset=0)
+  native   saxpy-stride       f32  0.000e+00  (n=17 offset=0)
+  native   stencil            f32  0.000e+00  (n=1 offset=0)
+  native   stencil            f64  0.000e+00  (n=1 offset=0)
+  scalar   dot                f32  0.000e+00  (n=1 offset=0)
+  scalar   dot                f64  0.000e+00  (n=1 offset=0)
+  scalar   mul                f32  0.000e+00  (n=1 offset=0)
+  scalar   mul                f64  0.000e+00  (n=1 offset=0)
+  scalar   mul                i32  0.000e+00  (n=1 offset=0)
+  scalar   saxpy              f32  0.000e+00  (n=1 offset=0)
+  scalar   saxpy              f64  0.000e+00  (n=1 offset=0)
+  scalar   saxpy-gather       f32  0.000e+00  (n=7 offset=0)
+  scalar   saxpy-stride       f32  0.000e+00  (n=17 offset=0)
+  scalar   stencil            f32  0.000e+00  (n=1 offset=0)
+  scalar   stencil            f64  0.000e+00  (n=1 offset=0)
+all correctness checks passed

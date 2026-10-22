@@ -1,0 +1,31 @@
+src/kernels.c:29:26: optimized: loop vectorized using 16 byte vectors and unroll factor 4
+src/kernels.c:29:26: optimized:  loop versioned for vectorization because of possible aliasing
+src/kernels.c:29:26: optimized: epilogue loop vectorized using 8 byte vectors and unroll factor 2
+src/kernels.c:35:26: optimized: loop vectorized using 16 byte vectors and unroll factor 4
+src/kernels.c:41:26: optimized: loop vectorized using 16 byte vectors and unroll factor 4
+src/kernels.c:41:26: optimized:  loop versioned for vectorization because of possible aliasing
+src/kernels.c:41:26: optimized: epilogue loop vectorized using 8 byte vectors and unroll factor 2
+src/kernels.c:49:30: optimized: loop vectorized using 16 byte vectors and unroll factor 4
+src/kernels.c:49:30: optimized:  loop versioned for vectorization because of possible aliasing
+src/kernels.c:49:30: optimized: epilogue loop vectorized using 8 byte vectors and unroll factor 2
+src/kernels.c:56:26: optimized: loop vectorized using 16 byte vectors and unroll factor 2
+src/kernels.c:56:26: optimized:  loop versioned for vectorization because of possible aliasing
+src/kernels.c:62:26: optimized: loop vectorized using 16 byte vectors and unroll factor 2
+src/kernels.c:68:26: optimized: loop vectorized using 16 byte vectors and unroll factor 2
+src/kernels.c:68:26: optimized:  loop versioned for vectorization because of possible aliasing
+src/kernels.c:76:30: optimized: loop vectorized using 16 byte vectors and unroll factor 2
+src/kernels.c:76:30: optimized:  loop versioned for vectorization because of possible aliasing
+src/kernels.c:83:26: optimized: loop vectorized using 16 byte vectors and unroll factor 4
+src/kernels.c:83:26: optimized:  loop versioned for vectorization because of possible aliasing
+src/kernels.c:89:26: optimized: loop vectorized using 16 byte vectors and unroll factor 4
+src/kernels.c:89:26: optimized:  loop versioned for vectorization because of possible aliasing
+src/kernels.c:89:26: optimized: epilogue loop vectorized using 8 byte vectors and unroll factor 2
+src/kernels.c:89:26: missed: couldn't vectorize loop
+src/kernels.c:90:25: missed: not vectorized: no vectype for stmt: _4 = *_3;
+ scalar_type: const float
+src/kernels.c:94:26: missed: couldn't vectorize loop
+src/kernels.c:96:21: missed: not vectorized: no vectype for stmt: _6 = *_5;
+ scalar_type: const float
+src/kernels.c:94:26: missed: couldn't vectorize loop
+src/kernels.c:96:21: missed: not vectorized: no vectype for stmt: _14 = *_13;
+ scalar_type: const float

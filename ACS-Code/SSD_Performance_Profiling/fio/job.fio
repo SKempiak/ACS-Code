@@ -1,0 +1,48 @@
+; job.fio — FIO job for the Project 3 sweeps (one measurement point per invocation).
+;
+; scripts/run.sh drives it (ENGINE=fio for the standard sweeps, and always in the
+; `fio_check` engine cross-check). Every knob comes from the environment, all of
+; which run.sh sets; by hand, e.g. a 4 KiB random read at QD32 on the test file:
+;
+;   FILENAME=$ACS_SCRATCH/testfile.bin SIZE=2147483648 BS=4096 RW=randread \
+;   RWMIXREAD=100 QD=32 RUNTIME=4 IOSIZE=1099511627776 DIRECT=1 SEED=20260312 \
+;     fio --output-format=json fio/job.fio \
+;   | scripts/fio_to_csv.sh --header manual read rand 4096 32 10 0 -1
+;
+; Target: a disposable file in the scratch directory, gated by scripts/safety.sh;
+; never a raw device. Offsets are block-aligned (bs multiple of 4 KiB). The run
+; stops at RUNTIME seconds or after IOSIZE bytes, whichever comes first (run.sh
+; sets IOSIZE to the per-rep write cap for write points, else 1 TiB); if IOSIZE
+; exceeds SIZE, fio wraps within the region. No ramp_time, to match blkbench
+; (run.sh preconditions the test file before every experiment, also inside `all`).
+;
+; Data pattern: fio's default buffer contents are pseudo-random (incompressible),
+; matching blkbench's xorshift64* fill; refill_buffers is left off (generated once),
+; also matching blkbench.
+
+[global]
+ioengine=libaio
+direct=${DIRECT}               ; 1 = O_DIRECT (page cache bypassed); 0 only for the pitfall
+filename=${FILENAME}
+size=${SIZE}                   ; LBA range: whole test file, or a working-set span
+io_size=${IOSIZE}
+bs=${BS}
+rw=${RW}                       ; randread randwrite randrw read write rw
+rwmixread=${RWMIXREAD}         ; used only by randrw / rw
+iodepth=${QD}
+iodepth_batch_submit=1         ; submit one request at a time, as blkbench does
+iodepth_batch_complete_min=1
+numjobs=1
+runtime=${RUNTIME}
+thread=1
+norandommap=1
+randrepeat=0
+randseed=${SEED}
+random_generator=tausworthe64  ; uniform offsets on files > 2^32 blocks
+unified_rw_reporting=mixed     ; one combined section ("mixed") for read+write
+lat_percentiles=1              ; percentiles of total (submit->completion) latency,
+                               ; the quantity blkbench reports
+percentile_list=50:95:99:99.9
+group_reporting=1
+
+[point]

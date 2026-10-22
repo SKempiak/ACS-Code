@@ -1,0 +1,52 @@
+; precondition.fio — bring the target region to a known state before measuring.
+;
+; What run.sh actually does (blkbench, so it works without fio):
+;   * standard sweeps: before every experiment, `blkbench --precondition` fallocates the
+;     2 GiB test file and writes every block ONCE, sequentially, 1 MiB at QD8, O_DIRECT,
+;     incompressible fill. Reads therefore hit written extents (O_DIRECT reads of
+;     unwritten ext4 extents never reach the device), and the region's FTL mappings exist.
+;   * device-state runs (`run.sh sustained` / `device_state`): the large file is written
+;     once sequentially (128 KiB, QD32) WHILE logging throughput, latency percentiles and
+;     NVMe temperature every second (blkbench --precondition --interval 1). That pass is
+;     both the preconditioning and the SLC-cache-exhaustion measurement; a 4 KiB random
+;     write phase then drives the region toward random-write steady state.
+;
+; This file is the FIO equivalent of those two steps, for a host with fio:
+;
+;   FILENAME=$ACS_SCRATCH/bigfile.bin SIZE=64g fio fio/precondition.fio
+;
+; Steady state is judged from the logs (write_bw_log / write_lat_log at 1 s), in the
+; spirit of SNIA PTS: throughput in the last part of the run varies < 10-20 % around
+; its mean with no trend. Delete the file afterwards (run.sh does so automatically).
+; SAFETY: FILENAME must be a disposable file inside the scratch directory, checked with
+; scripts/safety.sh first — never a device or partition.
+
+[global]
+ioengine=libaio
+direct=1
+filename=${FILENAME}
+size=${SIZE}
+thread=1
+log_avg_msec=1000              ; one log sample per second
+per_job_logs=0
+
+; 1) one full sequential pass over the region (fill + SLC-cache cliff)
+[seq_fill]
+rw=write
+bs=128k
+iodepth=32
+write_bw_log=precond_seq
+write_lat_log=precond_seq
+
+; 2) 4 KiB random overwrite toward steady state (runs after seq_fill completes)
+[rand_steady]
+stonewall
+rw=randwrite
+bs=4k
+iodepth=32
+norandommap=1
+random_generator=tausworthe64
+runtime=180                    ; stop at 180 s or 8 GiB, whichever first
+io_size=8g
+write_bw_log=precond_rand
+write_lat_log=precond_rand

@@ -1,0 +1,183 @@
+% !TeX root = ../main.tex
+\section{Locality Sweep}\label{sec:locality}
+\rubric{Locality and memory-bound analysis}{20}{Working-set transitions identified, and the compression
+of SIMD gains in the memory-bound regime explained.}
+
+\begin{hypothesis}
+  For float32 SAXPY (two arrays, \qty{8}{\byte}/element) the per-element time should be flat and low
+  while the working set fits in L1 ($2N\cdot\qty{4}{\byte}\le\qty{32}{\kibi\byte}$, i.e.\
+  $N\lesssim\num{4096}$), step up at the L2 boundary ($N\approx\num{32768}$) and again past L3
+  ($N\approx\num{2.6e6}$), and saturate in DRAM. The scalar and SIMD curves should be far apart in
+  L1 and converge once DRAM bandwidth, which both share, dominates.
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & kernel SAXPY; float32; unit stride; aligned; pinned to CPU~2 \\
+  Varied      & $N$ (dense grid, powers of two and midpoints, across L1/L2/LLC/DRAM); variant \\
+  Counters    & user-space cycles, instructions, LLC and L1D read misses (\cref{sec:ceilings-method}) \\
+  Bandwidth   & elements/s $\times\,\qty{12}{\byte}$ (read $x$, read and write $y$) vs.\ each level's triad roof \\
+  Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh locality} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \begin{minipage}[t]{0.49\linewidth}
+  \IfDataExists{locality}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, xlabel={$N$ (elements)}, ylabel={Time per element (ns)},
+                   ytick={0.05,0.1,0.2,0.5,1}, yticklabels={0.05,0.1,0.2,0.5,1}, width=\linewidth, height=0.68\linewidth, legend pos=south east, legend style={font=\scriptsize}]
+        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{scalar}] {data/locality.csv};
+        \addlegendentry{scalar}
+        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{autovec}] {data/locality.csv};
+        \addlegendentry{autovec}
+        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{native}] {data/locality.csv};
+        \addlegendentry{native}
+        \acsvline{4096}{L1d}
+        \acsvline{32768}{L2}
+        \acsvline{2600000}{L3}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{SAXPY time per element across cache levels: native rises in steps at each
+  boundary.}\label{fig:locality}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.49\linewidth}
+  \IfDataExists{locality}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, xlabel={Footprint (bytes)},
+                   ylabel={Bandwidth (GiB/s)}, ytick={5,10,20,50,100,200,500},
+                   yticklabels={5,10,20,50,100,200,500}, width=\linewidth, height=0.68\linewidth, legend pos=south west, legend style={font=\tiny}]
+        \addplot+[iqr bars] table[x expr=\thisrow{n}*8, y expr=\thisrow{elems_per_s_median}*12/1073741824,
+            y error plus expr=(\thisrow{elems_per_s_q75}-\thisrow{elems_per_s_median})*12/1073741824,
+            y error minus expr=(\thisrow{elems_per_s_median}-\thisrow{elems_per_s_q25})*12/1073741824,
+            only if={variant}{scalar}] {data/locality.csv};
+        \addlegendentry{SAXPY scalar}
+        \addplot+[iqr bars] table[x expr=\thisrow{n}*8, y expr=\thisrow{elems_per_s_median}*12/1073741824,
+            y error plus expr=(\thisrow{elems_per_s_q75}-\thisrow{elems_per_s_median})*12/1073741824,
+            y error minus expr=(\thisrow{elems_per_s_median}-\thisrow{elems_per_s_q25})*12/1073741824,
+            only if={variant}{native}] {data/locality.csv};
+        \addlegendentry{SAXPY native}
+        \IfFileExists{data/ceilings.csv}{%
+          \addplot+[no marks, thick, black] table[x=bytes,
+              y expr={\thisrow{bytes} < 32768 ? \thisrow{gib_per_s_median} : \thisrow{gib_per_s_total_median}},
+              only if={bench}{triad}, only if={label}{sweep}] {data/ceilings.csv};
+          \addlegendentry{triad (measured roof)}
+          \addplot+[no marks, densely dashed, black!60] table[x=bytes, y=gib_per_s_total_median,
+              only if={bench}{read}, only if={label}{sweep}] {data/ceilings.csv};
+          \addlegendentry{read (add-latency-bound)}
+        }{}
+        \acsvline{32768}{L1d}
+        \acsvline{262144}{L2}
+        \acsvline{20971520}{L3}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Effective bandwidth versus footprint: SAXPY against the independently measured triad
+  (explicit traffic below \qty{32}{\kibi\byte}, incl.\ write-allocate above). Where native meets the
+  triad it is bandwidth-bound. The dashed read stream is add-latency-bound
+  ($\approx\qty{89}{\gibi\byte\per\second}$ in L1 and L2), not a ceiling.}\label{fig:locality-bw}
+  \end{minipage}
+\end{figure}
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{Effective SAXPY bandwidth (GiB/s, \qty{12}{\byte}/element) at one $N$ per level, next to
+  that level's independently measured triad roof (\cref{sec:ceilings-method}).}\label{tab:locality-bw}
+  \IfDataExists{locality_levels}{%
+    \pgfplotstabletypeset[
+      col sep=comma, string type,
+      columns={level,n,footprint,scalar,autovec,native,triad},
+      columns/level/.style={column name=Level},
+      columns/n/.style={column name=$N$},
+      columns/footprint/.style={column name=Footprint},
+      columns/scalar/.style={column name=scalar, column type=r},
+      columns/autovec/.style={column name=autovec, column type=r},
+      columns/native/.style={column name=native, column type=r},
+      columns/triad/.style={column name=triad roof, column type=r},
+      every head row/.style={before row=\toprule, after row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/locality_levels.csv}%
+  }
+\end{table}
+
+
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{locality_counters}{%
+    \begin{subfigure}[t]{0.49\linewidth}
+      \begin{tikzpicture}
+        \begin{axis}[acs, width=0.95\linewidth, height=0.58\linewidth, xmode=log, log basis x=2, ymode=log,
+                     xlabel={$N$}, ylabel={LLC misses / element}, legend pos=north west,
+                     legend style={font=\scriptsize}]
+          \addplot+[iqr bars] table[x=n, y=llc_miss_per_elem_median, iqr of=llc_miss_per_elem,
+              only if={variant}{scalar}] {data/locality_counters.csv};
+          \addlegendentry{scalar}
+          \addplot+[iqr bars] table[x=n, y=llc_miss_per_elem_median, iqr of=llc_miss_per_elem,
+              only if={variant}{native}] {data/locality_counters.csv};
+          \addlegendentry{native}
+          \acsvline{2600000}{L3}
+        \end{axis}
+      \end{tikzpicture}
+      \caption{LLC misses per element.}
+    \end{subfigure}\hfill
+    \begin{subfigure}[t]{0.49\linewidth}
+      \begin{tikzpicture}
+        \begin{axis}[acs, width=0.95\linewidth, height=0.58\linewidth, xmode=log, log basis x=2, ymode=log,
+                     xlabel={$N$}, ylabel={Cycles / element}, legend pos=north west,
+                     ytick={0.1,0.2,0.5,1,2,5,10}, yticklabels={0.1,0.2,0.5,1,2,5,10},
+                     legend style={font=\scriptsize}]
+          \addplot+[iqr bars] table[x=n, y=cycles_per_elem_median, iqr of=cycles_per_elem,
+              only if={variant}{scalar}] {data/locality_counters.csv};
+          \addlegendentry{scalar}
+          \addplot+[iqr bars] table[x=n, y=cycles_per_elem_median, iqr of=cycles_per_elem,
+              only if={variant}{native}] {data/locality_counters.csv};
+          \addlegendentry{native}
+          \acsvline{4096}{L1d}
+          \acsvline{32768}{L2}
+          \acsvline{2600000}{L3}
+        \end{axis}
+      \end{tikzpicture}
+      \caption{Core cycles per element.}
+    \end{subfigure}%
+  }
+  \caption{User-space hardware counters for the locality sweep (\code{perf_event_open}).}\label{fig:locality-counters}
+\end{figure}
+
+\subsection{Analysis}
+The transitions line up with the cache sizes. In L1 native SAXPY takes
+\qtyrange{0.080}{0.100}{\nano\second} per element, $5.6\text{--}6.9\times$ faster than scalar; the
+speedup drops to $4.0\text{--}4.2\times$ past L1, $3.1\times$ past L2 and $2.8\times$ on the L3
+plateau. Past L3 the gap narrows but does \emph{not} close, contradicting the hypothesis: native
+takes \qtyrange{0.43}{0.45}{\nano\second} and scalar \qtyrange{0.83}{0.85}{\nano\second}, a speedup
+of $1.88\text{--}1.96\times$.
+
+In bandwidth terms (\cref{tab:locality-bw,fig:locality-bw}) native SAXPY reaches 76, 86, 100 and
+\SI{103}{\percent} of the measured triad roof in L1, L2, L3 and DRAM: bandwidth-bound in L3 and DRAM
+(in DRAM still below the \qty{25.7}{\gibi\byte\per\second} of the copy stream, which has the same
+two-reads-one-write pattern) and issue-bound in L1 and L2. Scalar is flat at
+\qtyrange{17}{20.5}{\gibi\byte\per\second} through L3, far below every roof.
+
+\emph{Counters} (\cref{fig:locality-counters}). For DRAM-resident native SAXPY, LLC misses reach
+\numrange{0.122}{0.128} per element, the compulsory $2/16 = 0.125$ (one line each of $x$ and $y$ per
+\num{16} elements), so the vector loop moves no more data than it must. Scalar shows
+\numrange{0.156}{0.164}, about \SI{28}{\percent} more, for a reason we have not established
+(\cref{sec:anomalies}). The cycle counts explain
+the remaining gap:
+
+\begin{center}\small
+  \begin{tabular}{@{}lrrrr@{}}
+    \toprule
+    cycles/element (IPC) & L1 ($N=\num{2048}$) & L2 ($N=\num{16384}$) & L3 ($N=\num{524288}$) & DRAM ($N=\num{33554432}$) \\
+    \midrule
+    scalar & 1.53 (4.6) & 1.68 (4.2) & 1.81 (3.9) & 2.34 (3.0) \\
+    native & 0.26 (3.1) & 0.40 (1.9) & 0.64 (1.2) & 1.25 (0.6) \\
+    \bottomrule
+  \end{tabular}
+\end{center}
+Native SAXPY's cycles per element grow $4.7\times$ from L1 to DRAM and its IPC falls to \num{0.6}:
+it waits on memory. Scalar already spends \num{1.53} cycles per element in L1 at IPC \num{4.6}, this
+core's issue limit, and in DRAM still retires \num{3.0} instructions per cycle: most of its time is
+execution. $2.34/1.25 = 1.88$ is exactly the measured DRAM speedup at this size. So once
+native sits on the bandwidth roof, the speedup is scalar's instruction-bound time over the memory
+time, a ratio that depends on the clock (\cref{sec:method}).

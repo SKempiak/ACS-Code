@@ -1,0 +1,64 @@
+% !TeX root = ../main.tex
+\section{AI-Use Note}\label{sec:ai-use}
+
+Summarized from \code{AI_USE_LOG.md} in the code repository.
+
+\begin{description}[style=nextline]
+  \item[Tools used] Claude Code, an AI coding agent, for coding, debugging, and running the experiments.
+        All sessions used the model Claude Opus~5.5. On
+        2026-09-15 it produced the templates (folder structure, READMEs, Makefiles,
+        files with placeholder markers, report skeletons) that every later step filled in. On 2026-10-12 to
+        2026-10-20 it produced the implementation, and on 2026-10-21 the rework (measured ceilings,
+        counters, AVX2 gather, extended sweeps and the fixed-clock re-run). It also produced a
+        preliminary draft of the report, which I discarded; I wrote this report myself.
+        GCC~\sysGCC{} and \code{objdump} produced the builds and the vectorization evidence.
+  \item[Who ran the measurements] The timed SIMD experiments of 2026-10-21 (the reported runs, plus earlier sessions that
+        were discarded for interference) were executed by Claude
+        Code on my machine, with my approval. Before the runs I set the
+        governor to \code{performance}, disabled turbo and SMT, and masked the ACPI GPE~0x42
+        interrupt storm. Claude Code checked these settings before each run and serialized its runs with
+        other benchmark jobs through a lock file. All measurements come from these real runs on
+        the machine in \cref{tab:environment}.
+  \item[What they helped generate] The four kernels and their references; the build-variant
+        Makefile; the benchmark driver and the shared timer/allocation/pinning helpers; the
+        experiment scripts (\code{run.sh}), the summarizer (\code{summarize.c}) and the
+        vectorization-evidence script; the roofline-ceiling microbenchmarks
+        (\code{ceilings.c}), the \code{perf_event_open} counter helper (\code{perfctr.c}), the
+        explicit AVX2 gather kernel and the post-processing scripts (\code{speedup_iqr.awk},
+        \code{roofline.sh}, \code{tables.sh}).
+  \item[Who verified what] The AI ran the automated checks: \code{make test} (\num{578} cases in total),
+        the disassembly comparisons, the per-run settings and shared-core checks, and the
+        CSV-to-text spot checks of every quoted number. I verified all AI output, applied
+        the root-only system settings, and reviewed the results,
+        which drove several of the corrections below. ``Independently'' therefore means checked
+        against measurements and tool output, as well as against my own analysis.
+  \item[What was independently modified, tested, or rejected] Concrete corrections, among others.
+        (1)~The generated Makefile compiled the \emph{whole} program with each variant's
+        flags; this was restructured so only the kernel translation unit varies, keeping the
+        timing harness identical across builds. (2)~The processed-CSV column names and one
+        figure filter had drifted from what the plots expect---the stride figure asked for
+        \code{n=16777216} while the data was measured at \code{n=4194304}---which would have
+        produced a silently empty plot; the filter was corrected to the measured size.
+        (3)~\emph{An AI-written script was simply wrong}: the \code{awk} in
+        \code{verify_vectorization.sh} took its output path as a trailing \code{VAR=value}
+        argument, which \code{awk} does not assign until it reaches that argument, so the
+        \code{BEGIN} block saw an empty string and aborted with a null-redirection error. It
+        was caught the first time \code{make report} was run and fixed by passing the path
+        with \code{-v}. We also chose \emph{not} to enable \code{-ffast-math}, rejecting the
+        easy way to make the dot product vectorize, because it would break bit-reproducibility
+        against the reference---and because the non-reassociated reduction is itself a result
+        worth reporting (\cref{sec:vectorization,sec:negative}).
+  \item[Validation] Correctness: \num{578} reference and known-answer cases in total
+        (\num{190} scalar, \num{190} autovec, \num{198} native) pass (\cref{sec:correctness}).
+        Vectorization: confirmed by compiler report and disassembly, not assumed
+        (\cref{sec:vectorization}). Numbers: every number from the 2026-10-21 runs traces to a
+        committed file (\cref{app:repro}); the memory-bound claims are
+        cross-checked against bandwidth and peak FLOP rate measured by separate microbenchmarks
+        (\code{src/ceilings.c}), not derived from the kernels themselves (\cref{sec:roofline}).
+        Review corrections that changed results: an early roofline bandwidth was derived from
+        SAXPY itself (circular; replaced by the independent ceilings); the AI-drafted claims that
+        scalar and SIMD ``converge'' in DRAM and that small-$N$ speedups are inflated by per-call
+        overhead were both contradicted by the fixed-clock data and ignored; the alignment sweep had
+        silently skipped offsets \qtyrange{40}{56}{\byte} and was re-run; and the L1 roof first
+        included a write-allocate read that L1-resident stores do not incur.
+\end{description}

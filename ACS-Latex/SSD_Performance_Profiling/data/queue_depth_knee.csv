@@ -1,0 +1,3 @@
+mode,knee_qd,knee_iops,knee_lat_us,next_qd,gain_pct,max_iops
+write,2,98866,20.1,4,-83.4,254579
+read,64,152416,418.0,128,3.3,158887

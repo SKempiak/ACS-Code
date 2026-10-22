@@ -1,0 +1,41 @@
+% !TeX root = ../main.tex
+\section{Anomalies and Limitations}\label{sec:anomalies}
+
+\subsection{Unexpected results and how they were resolved}
+\begin{itemize}[nosep, leftmargin=*]
+  \item \textbf{An ACPI event storm stole wall time from every core.} In a first run (data discarded), the
+        add-chain probe read either \qty{2.79}{\giga\hertz} or about \qty{2.41}{\giga\hertz} with turbo off.
+        Hypothesis: the clock is constant but the thread loses wall time. In the retained \code{clock_check}
+        run the core clock was \valqty{cc_acpi_core_ghz}{\giga\hertz} in all \val{cc_acpi_windows} windows,
+        but in the \val{cc_acpi_gpe_pct}\% with an ACPI event burst (about \val{cc_acpi_gpe_per_window} per
+        window) the pinned thread ran user code for only \val{cc_acpi_userfrac_gpe} of the wall time (quiet:
+        \val{cc_acpi_userfrac_quiet}), with nothing charged by the OS---consistent with firmware (SMM)
+        handling. The source, GPE~0x42, was masked and all data re-measured (\cref{sec:method}).
+  \item \textbf{Smaller items.} The add-chain probe was code-alignment sensitive (now a 32-byte-aligned
+        loop of eight ADDs). The unit-stride scalar read is not the single-core peak (\cref{sec:pattern}).
+        With one generator core, $k=12$ chains deliver less bandwidth than $k=10$ or $k=16$ at the same
+        memory latency, a generator-loop artifact (unresolved; envelope used). The two unloaded DRAM
+        latencies, 6\% apart in the disturbed run, now agree (\valqty{int_w0_ns}{\nano\second},
+        \valqty{zq_DRAM256_ns}{\nano\second}).
+  \item \textbf{Methodology traps caught early:} $L/N=1$ in the known-concurrency sweep holds by
+        construction (\cref{sec:intensity}); element-level read/write mixes measure the access pattern, not
+        the mix (\cref{sec:rw-mix}); and an early TLB run requested THP but got \code{AnonHugePages: 0 kB},
+        while with THP \sysHugePages{} a ``\qty{4}{\kibi\byte}'' buffer gets huge pages unless it opts out.
+        Both page policies are therefore set before first touch and verified (\cref{sec:tlb}).
+\end{itemize}
+
+\subsection{Limitations}
+\begin{itemize}[nosep, leftmargin=*]
+  \item \textbf{Counters.} Memory-controller counts are system-wide; the idle background of
+        \valqty{cc_imc_rd_idle}{\gibi\byte\per\second} reads and \valqty{cc_imc_wr_idle}{\gibi\byte\per\second}
+        writes is small but not subtracted. Core events are user-mode, measuring thread only; generic LLC events
+        may undercount prefetch-driven fills, and multiplexed counts are scaled.
+  \item \textbf{Single-core traffic model not closed.} With one generator core the memory-controller
+        counters read \val{rw_t1_imcest_min}--\val{rw_t1_imcest_max}$\times$ the RFO-counted estimate
+        (\cref{sec:rw-mix}); the cause is an untested hypothesis.
+  \item \textbf{The loaded-latency probe is itself load} and measures a demand read; $L=\lambda W$ for the
+        streaming sweep assumes its latency is representative of the generators' prefetches. The
+        known-concurrency sweep does not need that assumption.
+  \item \textbf{One machine and configuration:} a single i9-10900F, one NUMA node, two DDR4 channels at
+        \qty{2933}{MT/s}, turbo \sysTurbo{}; MLC ran with prefetchers enabled (no root).
+\end{itemize}

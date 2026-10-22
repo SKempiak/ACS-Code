@@ -1,0 +1,81 @@
+% !TeX root = ../main.tex
+\section{Data Type Comparison}\label{sec:dtype}
+
+\begin{hypothesis}
+  A \qty{256}{bit} register holds \num{8} float32 but only \num{4} float64 lanes, so float64 should
+  show roughly half the SIMD speedup of float32 for the same kernel while data is cache-resident.
+  int32 elementwise multiply should behave like float32 (\num{8} lanes, one \code{vpmulld}). In DRAM,
+  float64 moves twice the bytes per element, so its \emph{absolute} throughput should be lower and
+  its speedup should compress toward $1\times$ just as float32 does.
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & unit stride; aligned \\
+  Varied      & data type (float32, float64, int32); kernel; variant; $N = 2^{10}\ldots2^{24}$ \\
+  Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh dtype} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \begin{minipage}[t]{0.42\linewidth}
+  \IfDataExists{dtype}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, xlabel={$N$ (elements)}, ylabel={Speedup over scalar}, width=\linewidth, height=0.72\linewidth, legend pos=north east, legend style={font=\scriptsize}]
+        \addplot+[iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{mul}, only if={variant}{native}, only if={dtype}{f32}] {data/dtype.csv};
+        \addlegendentry{multiply float32}
+        \addplot+[iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{mul}, only if={variant}{native}, only if={dtype}{f64}] {data/dtype.csv};
+        \addlegendentry{multiply float64}
+        \addplot+[iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{mul}, only if={variant}{native}, only if={dtype}{i32}] {data/dtype.csv};
+        \addlegendentry{multiply int32}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Native speedup of elementwise multiply by data type (median; error bars: range implied
+  by the two IQRs). float32 and int32 (\num{8} lanes) track each other; float64 (\num{4} lanes) is
+  about half. SAXPY and stencil: \cref{tab:dtype}.}\label{fig:dtype}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.56\linewidth}
+  \centering\footnotesize\setlength{\tabcolsep}{2.5pt}
+  \captionof{table}{Speedup over scalar by kernel and data type (\code{dtype.csv}), at $N=\num{1024}$ (L1),
+  \num{16384} (L2) and \num{16777216} (DRAM).}\label{tab:dtype}
+  \IfDataExists{dtype_summary}{%
+    \pgfplotstabletypeset[
+      col sep=comma, string type,
+      columns={kernel,dtype,autovec_1k,native_1k,native_16k,native_16m},
+      columns/kernel/.style={column name=Kernel},
+      columns/dtype/.style={column name=Type},
+      columns/autovec_1k/.style={column name={autovec, \num{1024}}, column type=r},
+      columns/native_1k/.style={column name={native, \num{1024}}, column type=r},
+      columns/native_16k/.style={column name={\num{16384}}, column type=r},
+      columns/native_16m/.style={column name={\num{16777216}}, column type=r},
+      every head row/.style={before row=\toprule, after row=\midrule},
+      every row no 2/.style={before row=\midrule}, every row no 5/.style={before row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/dtype_summary.csv}%
+  }
+  \end{minipage}
+\end{figure}
+
+
+
+\subsection{Analysis}
+At $N=\num{1024}$ native float64 keeps \numrange{0.52}{0.59} of float32's speedup for all three
+kernels (multiply $2.82\times$ vs $5.19\times$, SAXPY $3.28\times$ vs $5.60\times$, stencil
+$1.73\times$ vs $3.35\times$), close to the predicted $1/2$, and int32 multiply (one \code{vpmulld}
+over \num{8} lanes) lands on the float32 curve ($5.37\times$). The ratio is not universal: at
+$N=\num{16384}$ the stencil keeps $3.02\times$ in float64 against $3.44\times$ in float32, because
+the float32 stencil is depressed at these sizes (\cref{sec:anomalies}), and by $N=\num{65536}$
+multiply narrows to $1.40\times$ vs $2.11\times$.
+
+\emph{Operation cost.} \code{autovec} gains $3.53\times$ on float32 multiply at $N=\num{1024}$ but
+only $1.86\times$ on int32: SSE2 has no packed 32-bit multiply (\code{pmulld} is SSE4.1), so GCC
+emulates it with seven instructions per \num{4} lanes (two \code{pmuludq}, two shifts, two
+\code{pshufd} and a \code{punpckldq}).
+
+In DRAM ($N=\num{16777216}$) every speedup compresses as predicted (native float32
+$1.60$--$2.79\times$, float64 $1.17$--$1.68\times$), and float64 keeps \SIrange{60}{73}{\percent} of
+the float32 gain. Float32 multiply's $1.51\times$ in the baseline sweep differs by a
+\SI{6}{\percent} run-to-run spread in native throughput, so we quote $1.5\text{--}1.6\times$. Float64's absolute multiply
+throughput is under half of float32's (\num{0.80} vs \qty{1.72}{\giga\flop\per\second}) because
+each element moves twice the bytes. Lane count and operation cost set the cache-resident speedup;
+bytes per element set the DRAM throughput.

@@ -1,0 +1,108 @@
+% !TeX root = ../main.tex
+\section{Alignment and Tail Handling}\label{sec:alignment}
+\rubric{Alignment, tail, stride/gather studies}{20}{Quantified alignment, prologue/epilogue and masking
+effects with a convincing explanation (with \cref{sec:stride}).}
+
+\begin{hypothesis}
+  A start address that is not \qty{32}{\byte}-aligned should make some \qty{256}{bit} loads
+  unaligned and/or trigger a scalar peel prologue, a modest fixed cost most visible at small $N$.
+  On a client Skylake core unaligned \code{vmovups} within one cache line are nearly free, so we
+  expect a small penalty (tens of percent) that recurs with \qty{64}{\byte} period across a line.
+\end{hypothesis}
+\begin{hypothesis}
+  (For the extended sweep.) \code{scalar}'s \qty{4}{\byte} loads never straddle a line, so it should
+  be insensitive to the offset, and \code{autovec} (\qty{16}{\byte} loads) should suffer less than
+  \code{native}. In DRAM the misalignment cost should vanish into memory stalls. For short loops the
+  time per \emph{call} should grow in steps of \num{8} elements (\code{native}) or \num{4}
+  (\code{autovec}), with the vectorized epilogue making the remainder cheap but not free.
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & kernel SAXPY; float32; unit stride \\
+  Varied      & start offsets $0, 4, 8, \ldots, \qty{60}{\byte}$ (every multiple of \num{4}) at $N=\num{4096}$
+                (L1-resident, isolates the prologue from bandwidth) and $N=\num{16777216}$
+                (\qty{128}{\mebi\byte}, DRAM-resident); tail: every $N$ from \num{8} to \num{72} and
+                $N$ stepping across an \num{8}-lane boundary near \num{4096}, offset $0$; all three
+                build variants \\
+  Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh alignment} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \begin{subfigure}[t]{0.49\linewidth}
+    \begin{tikzpicture}
+      \begin{axis}[acs, height=0.56\linewidth, xlabel={Start offset (bytes)}, ylabel={Time per element (ns)},
+                   legend style={font=\scriptsize}, legend pos=north east, ymin=0]
+        \acsvariantlegend
+        \addplot+[var scalar, forget plot, iqr bars] table[x=offset, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{scalar}, only if={n}{4096}] {data/alignment.csv};
+        \addplot+[var autovec, forget plot, iqr bars] table[x=offset, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{autovec}, only if={n}{4096}] {data/alignment.csv};
+        \addplot+[var native, forget plot, iqr bars] table[x=offset, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{native}, only if={n}{4096}] {data/alignment.csv};
+      \end{axis}
+    \end{tikzpicture}
+    \caption{$N=\num{4096}$ (L1-resident).}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.49\linewidth}
+    \begin{tikzpicture}
+      \begin{axis}[acs, height=0.56\linewidth, xlabel={Start offset (bytes)}, ylabel={Time per element (ns)}, ymin=0]
+        \addplot+[var scalar, forget plot, iqr bars] table[x=offset, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{scalar}, only if={n}{16777216}] {data/alignment.csv};
+        \addplot+[var autovec, forget plot, iqr bars] table[x=offset, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{autovec}, only if={n}{16777216}] {data/alignment.csv};
+        \addplot+[var native, forget plot, iqr bars] table[x=offset, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{native}, only if={n}{16777216}] {data/alignment.csv};
+      \end{axis}
+    \end{tikzpicture}
+    \caption{$N=\num{16777216}$ (DRAM-resident).}
+  \end{subfigure}
+  \caption{Cost of a misaligned start for SAXPY, by build variant (median, IQR error bars).}\label{fig:alignment}
+\end{figure}
+
+\begin{figure}[tbp]
+  \centering
+  \begin{subfigure}[t]{0.49\linewidth}
+    \begin{tikzpicture}
+      \begin{axis}[acs, height=0.56\linewidth, xlabel={$N$ (elements)}, ylabel={Time per call (ns)},
+                   restrict x to domain=0:100, xmin=6, xmax=74, xtick={8,16,...,72}, legend style={font=\scriptsize}, legend pos=north west]
+        \acsvariantlegend
+        \addplot+[mark size=1pt, var scalar, forget plot, iqr bars] table[x=n, y expr=\thisrow{ns_per_elem_median}*\thisrow{n}, y error plus expr=(\thisrow{ns_per_elem_q75}-\thisrow{ns_per_elem_median})*\thisrow{n}, y error minus expr=(\thisrow{ns_per_elem_median}-\thisrow{ns_per_elem_q25})*\thisrow{n}, only if={variant}{scalar}] {data/alignment_tail.csv};
+        \addplot+[mark size=1pt, var autovec, forget plot, iqr bars] table[x=n, y expr=\thisrow{ns_per_elem_median}*\thisrow{n}, y error plus expr=(\thisrow{ns_per_elem_q75}-\thisrow{ns_per_elem_median})*\thisrow{n}, y error minus expr=(\thisrow{ns_per_elem_median}-\thisrow{ns_per_elem_q25})*\thisrow{n}, only if={variant}{autovec}] {data/alignment_tail.csv};
+        \addplot+[mark size=1pt, var native, forget plot, iqr bars] table[x=n, y expr=\thisrow{ns_per_elem_median}*\thisrow{n}, y error plus expr=(\thisrow{ns_per_elem_q75}-\thisrow{ns_per_elem_median})*\thisrow{n}, y error minus expr=(\thisrow{ns_per_elem_median}-\thisrow{ns_per_elem_q25})*\thisrow{n}, only if={variant}{native}] {data/alignment_tail.csv};
+      \end{axis}
+    \end{tikzpicture}
+    \caption{Short loops: time per call, $N=8\ldots72$ (IQR bars, mostly hidden by the marks).}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.49\linewidth}
+    \begin{tikzpicture}
+      \begin{axis}[acs, height=0.56\linewidth, xlabel={$N$ (elements)}, ylabel={Time per element (ns)},
+                   restrict x to domain=4080:4140, xmin=4084, xmax=4132, ymin=0]
+        \addplot+[var scalar, forget plot, iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{scalar}] {data/alignment_tail.csv};
+        \addplot+[var autovec, forget plot, iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{autovec}] {data/alignment_tail.csv};
+        \addplot+[var native, forget plot, iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{native}] {data/alignment_tail.csv};
+      \end{axis}
+    \end{tikzpicture}
+    \caption{Across an \num{8}-lane boundary near $N=\num{4096}$.}
+  \end{subfigure}
+  \caption{Tail handling: remainder elements processed by the vectorized epilogue (offset $0$).}\label{fig:tail}
+\end{figure}
+
+
+\subsection{Analysis}
+\emph{Misaligned starts, L1-resident} (\cref{fig:alignment}a). Native SAXPY runs at
+\qtyrange{0.098}{0.100}{\nano\second} per element at the \qty{32}{\byte}-aligned offsets $0$ and
+\num{32}, \SI{46}{\percent} slower at most other offsets and up to \SI{60}{\percent} slower at
+\numlist{28;36;40;60}. \code{autovec} is fast exactly at multiples of \num{16} and
+\SIrange{13}{25}{\percent} slower elsewhere; \code{scalar} varies by only \SI{1.0}{\percent}. This is
+what cache-line splits predict: off a 32-byte boundary every second \qty{32}{\byte} load straddles a
+\qty{64}{\byte} line, every fourth \qty{16}{\byte} load does, and a \qty{4}{\byte} load never does;
+GCC does not peel to an aligned start, so every split pays. The second level at
+\numlist{28;36;40;60} is unexplained (untested: split stores to \code{y} interacting with loads of
+\code{x}). Every IQR is below \SI{0.3}{\percent}.
+
+\emph{DRAM-resident} (\cref{fig:alignment}b). The spread across offsets is only \SI{6.1}{\percent}
+(native), \SI{5.7}{\percent} (autovec) and \SI{2.1}{\percent} (scalar), with no split-load pattern:
+the cost hides under DRAM misses, as hypothesized.
+
+\emph{Tails} (\cref{fig:tail}). Near $N=\num{4096}$ the \numrange{1}{7} leftover elements are
+invisible. In short loops ($N=8\ldots72$) native's time per call is lowest at multiples of \num{8}
+(\qty{13.7}{\nano\second} at $N=16$ to \qty{16.7}{\nano\second} at $N=72$) and typically
+\qtyrange{2}{3}{\nano\second} higher at $N\equiv7 \pmod 8$: the sawtooth of one \qty{128}{bit} step
+plus up to three scalar iterations (\cref{sec:vectorization}). A fixed $\approx\qtyrange{10}{13}{\nano\second}$ per call (call, setup, aliasing check)
+means native beats scalar by only $1.11\times$ at $N=8$ and $3.32\times$ at $N=72$. A masked AVX2
+tail (\code{vmaskmovps}) would replace the remainder path; we did not implement one.

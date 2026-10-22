@@ -1,0 +1,33 @@
+%% numbers.tex — every measured number quoted in the prose comes from data/summary.csv,
+%% written by ACS-Code/Cache_and_Memory_Performance_Profiling/scripts/derive.py and copied
+%% here by scripts/sync_data.sh. Nothing is hand-copied, so text and figures cannot drift.
+%%
+%%   \val{key}              the value as written by derive.py (e.g. 3.21), or \tbd if absent
+%%   \valqty{key}{\unit}    \qty{value}{\unit}, or \tbd\,\unit if absent
+%%   \valnum{key}           \num{value}, or \tbd
+%%   \IfVal{key}{yes}{no}   branch on whether the key exists
+%%
+%% Keys are documented in derive.py; e.g. zq_L2_ns, int_knee_gib, amat_rand_aD.
+\makeatletter
+\IfFileExists{data/summary.csv}{%
+  \pgfplotstableread[col sep=comma, string type]{data/summary.csv}\acs@summary
+  \pgfplotstableforeachcolumnelement{key}\of\acs@summary\as\acs@key{%
+    \pgfplotstablegetelem{\pgfplotstablerow}{value}\of\acs@summary
+    \expandafter\xdef\csname acsval@\acs@key\endcsname{\pgfplotsretval}%
+  }%
+}{}
+\newcommand{\IfVal}[3]{\ifcsname acsval@#1\endcsname #2\else #3\fi}
+\newcommand{\val}[1]{\IfVal{#1}{\csname acsval@#1\endcsname}{\tbd}}
+\newcommand{\valnum}[1]{\IfVal{#1}{\num{\csname acsval@#1\endcsname}}{\tbd}}
+\newcommand{\valqty}[2]{\IfVal{#1}{\qty{\csname acsval@#1\endcsname}{#2}}{\tbd\,\unit{#2}}}
+\makeatother
+
+%% IQR error bars for derived columns written by derive.py (mlp_littles.csv)
+\pgfplotsset{
+  /pgfplots/table/lmem iqr/.style={
+    y error plus expr={\thisrow{L_mem_q75}-\thisrow{L_mem}},
+    y error minus expr={\thisrow{L_mem}-\thisrow{L_mem_q25}}},
+  /pgfplots/table/gib iqr/.style={
+    y error plus expr={\thisrow{gib_s_q75}-\thisrow{gib_s}},
+    y error minus expr={\thisrow{gib_s}-\thisrow{gib_s_q25}}},
+}

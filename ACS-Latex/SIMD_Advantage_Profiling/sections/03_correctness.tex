@@ -1,0 +1,29 @@
+% !TeX root = ../main.tex
+\section{Correctness Validation}\label{sec:correctness}
+
+Every build variant is checked two independent ways before its timings are trusted
+(\code{make test}, \code{scripts/validate.sh}). \emph{Reference comparison:} \code{src/reference.c}
+holds plain scalar loops compiled with \code{-fno-tree-vectorize -ffp-contract=off} (strict,
+non-fused, left-to-right order); the driver runs kernel and reference on identical inputs and
+compares them element by element (or the scalar result, for the dot product) before timing.
+
+\begin{knobs}
+  Cases  & kernels $\times$ \{float32, float64\}; $N$ around multiples of the lane count
+           ($1,2,3,7,8,9,15,16,17,31,33,64,127,1000,1024,4095,4096,4097,65536$); start offsets
+           \numlist{4;8;12;16;20;28;32;60}~\unit{\byte}; strides $2,4,8,16$; gather; explicit AVX2 gather (native only,
+           $N \in \{7,8,9,16,17,1000,4096,65536\}$); int32 multiply \\
+  Tolerance & relative error $\le 10^{-5}$ (float32) and $\le 10^{-12}$ (float64): loose enough for
+             FMA contraction in the vectorized builds, tight enough to catch real bugs \\
+  Command & \code{make test} \\
+\end{knobs}
+
+\emph{Known-answer self-test} (\code{simd_bench --selftest}): fixed inputs with known results for
+every kernel and the AVX2 gather (e.g.\ $y=2x+y$ with $x=1,y=3$ gives $5$), which guards against
+kernel and reference sharing a mistake. Remainder sizes and misaligned starts exercise the epilogue
+and prologue that later experiments stress.
+
+Result (\code{data/raw/validation/20261021-231629/make_test.txt}): all \num{578} cases pass
+(\num{190} each for scalar and autovec, \num{198} for native, which adds the AVX2 gather). The
+largest relative error is \num{2.1e-7} (native float32 dot product, $N=127$); every other case,
+including all float64 and int32 cases, matches bit for bit. The test coefficients ($a=0.5$; stencil
+$0.25, 0.5, 0.25$) make every product exact, so only the reduction exercises the tolerance.

@@ -1,0 +1,7 @@
+experiment: clock_check (run manually with the commands in commands.txt, under the shared benchmark flock)
+timestamp:  20261021-194648
+git commit: 536f95de97871f98aa3acf6a2409e5dc5f3a3613 (+ uncommitted working tree)
+compiler:   cc (GCC) 16.2.1 20260810
+CFLAGS:     -std=gnu11 -O3 -march=native -g -Wall -Wextra -pthread -I../common/include -Isrc
+smt/control=off no_turbo=1 governor=performance (checked before the run)
+online CPUs: 0-9

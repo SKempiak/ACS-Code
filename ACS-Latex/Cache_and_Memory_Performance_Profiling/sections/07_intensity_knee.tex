@@ -1,0 +1,189 @@
+% !TeX root = ../main.tex
+\section{Intensity Sweep and the Throughput--Latency Knee}\label{sec:intensity}
+\rubric{Throughput--latency knee}{35}{Clear knee identification, diminishing-returns discussion and a
+Little's Law connection.}
+
+% minipage: keep the hypothesis box in one piece (it must not split around Figure 4)
+\noindent\begin{minipage}{\linewidth}
+\begin{hypothesis}
+  One core can keep only about a dozen demand misses in flight (its L1 fill buffers), so it cannot
+  saturate DRAM. Adding load should raise bandwidth until the controller saturates in the low tens of
+  \unit{\gibi\byte\per\second} (two DDR4 channels); past that, extra load should buy almost no bandwidth
+  but sharply raise latency (queueing). By Little's Law, saturation needs tens of outstanding lines---more
+  than one core provides.
+\end{hypothesis}
+\end{minipage}
+
+\begin{knobs}
+  Generators  & \code{mem_loaded}: $T = 0 \ldots 9$ cores (all physical cores except CPU~2), each streaming its own \qty{128}{\mebi\byte} region with \qty{256}{\bit} loads; then $T=9$ throttled by an injection delay of 8--2048 empty iterations per line \\
+  Probe       & random pointer chase over \qty{256}{\mebi\byte} on CPU~2, measured in the same window as the generators' throughput \\
+  Known MLP   & $T$ cores each running $k$ independent random chases: $T=1$, $k = 1\ldots32$; $T = 2\ldots9$, $k=8$ \\
+  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh intensity} \\
+\end{knobs}
+
+\paragraph{Method and knee criterion.} Each point reports \emph{both} axes from one window: generator
+progress counters are snapshotted around a \qty{200}{\milli\second} probe run. Throughput is all lines moved
+per second; latency is the probe's time per dependent demand read \emph{under} that load ($T=0$: unloaded
+$W_0 = \valqty{int_w0_ns}{\nano\second}$). The knee is the first point, in order of offered load, at which
+bandwidth reaches 95\% of the peak; maximum throughput/latency (``power'') is a second criterion and the
+point where latency reaches $2W_0$ a latency reference, all computed by \code{derive.py}.
+
+\begin{figure}[tbp]
+  \centering
+  \begin{subfigure}[t]{0.53\linewidth}
+  \IfDataExists{intensity_loaded}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, height=0.8\linewidth, xlabel={Delivered bandwidth (GiB/s)},
+                   ylabel={Loaded latency of a random read (ns)}, xmin=0, xmax=34, ymin=0, ymax=320,
+                   legend pos=north west, legend style={font=\scriptsize, inner sep=1pt, row sep=-1pt}]
+        \addplot+[blue, mark=*, mark options={fill=blue}, thick, iqr bars] table[x=total_gib_s_median, y=probe_ns_median, iqr of=probe_ns,
+                  only if={delay}{0}] {data/intensity_loaded.csv};
+        \addlegendentry{ours: $T=0\ldots9$ cores}
+        \addplot+[only marks, orange!85!black, mark=triangle*, mark options={fill=orange}, iqr bars] table[x=total_gib_s_median, y=probe_ns_median,
+                  iqr of=probe_ns, only if={threads}{9}] {data/intensity_loaded.csv};
+        \addlegendentry{ours: $T=9$, injection delay}
+        \IfFileExists{data/mlc_loaded.csv}{%
+          \addplot[black!80, solid, thick, mark=o, mark size=1.5pt] table[x=gib_s, y=ns, col sep=comma] {data/mlc_loaded.csv};
+          \addlegendentry{Intel MLC loaded latency}}{}
+        \IfFileExists{data/knee_ref.csv}{%
+          \addplot[densely dashed, black!50, no marks] table[x=gib_s, y=ns, col sep=comma] {data/knee_ref.csv};
+          \addlegendentry{$2W_0$}}{}
+        \IfFileExists{data/knee.csv}{%
+          \addplot[only marks, mark=diamond*, mark size=4pt, red] table[x=gib_s, y=ns, col sep=comma] {data/knee.csv};
+          \addlegendentry{knee (95\% of peak)}}{}
+      \end{axis}
+    \end{tikzpicture}}
+    \caption{Latency vs.\ delivered bandwidth.}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.45\linewidth}
+  \IfDataExists{intensity_loaded}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, width=0.86\linewidth, height=1.0\linewidth, xmin=-0.3, xmax=9.3, ymin=0, ymax=320, xtick={0,...,9},
+                   axis y line*=left, xlabel={Streaming cores $T$},
+                   ylabel={Loaded latency (ns)}, ylabel style={blue}]
+        \addplot+[blue, mark=*, mark options={fill=blue}, thick, iqr bars] table[x=threads, y=probe_ns_median,
+                  iqr of=probe_ns, only if={delay}{0}] {data/intensity_loaded.csv};
+        \addplot[densely dashed, black!50, domain=-0.3:9.3, samples=2] {2*\val{int_w0_ns}};
+        \node[font=\scriptsize, black!60, anchor=south west, inner sep=1pt] at (axis cs:-0.2,{2*\val{int_w0_ns}}) {$2W_0$};
+        \acsvline{\val{int_sat_threads}}{knee}
+      \end{axis}
+      \begin{axis}[acs, width=0.86\linewidth, height=1.0\linewidth, xmin=-0.3, xmax=9.3, ymin=0, ymax=36, grid=none,
+                   axis y line*=right, axis x line=none, ylabel={Bandwidth (GiB/s)}, ylabel style={red!80!black}]
+        \addplot+[red!80!black, mark=square*, mark options={fill=red!80!black}, densely dashed] table[x=threads, y=total_gib_s_median,
+                  only if={delay}{0}] {data/intensity_loaded.csv};
+      \end{axis}
+    \end{tikzpicture}}
+    \caption{Latency (left, blue) and bandwidth (right, red) vs.\ cores.}
+  \end{subfigure}
+  \caption{Measured throughput--latency curve. (a)~Our load levels with Intel MLC's loaded-latency sweep.
+  (b)~The thread sweep: bandwidth flattens at the knee while latency keeps rising. Both coordinates are
+  medians of 8 windows (bars: IQR of latency); the dashed line marks $2W_0$.}\label{fig:intensity}
+\end{figure}
+
+\subsection{Knee and diminishing returns}
+The curve has the textbook shape (\cref{fig:intensity}, \cref{tab:littles-law}). The knee is at
+$T=\val{int_sat_threads}$: bandwidth has climbed to
+\valqty{int_sat_gib}{\gibi\byte\per\second}, 95\% of the \valqty{int_peak_gib}{\gibi\byte\per\second} peak,
+while latency has risen only from \valqty{int_w0_ns}{\nano\second} to \valqty{int_sat_ns}{\nano\second}
+(\val{int_sat_ratio}$\times$). The throughput/latency maximum falls on the same point
+($T=\val{int_power_threads}$, \valqty{int_power_gib}{\gibi\byte\per\second}, \valqty{int_power_ns}{\nano\second}),
+so both criteria agree. Every core added after the knee buys almost no bandwidth (peak at
+$T=\val{int_peak_threads}$; $T=9$ still \valqty{int_last_gib}{\gibi\byte\per\second}), while latency climbs
+to \valqty{int_last_ns}{\nano\second}. Latency crosses $2W_0$ only at
+\valqty{int_knee_gib}{\gibi\byte\per\second}, between $T=\val{int_knee_prevthreads}$ and
+$T=\val{int_knee_threads}$, at the bandwidth peak itself (injection-delay sweep:
+\valqty{int_kneed_gib}{\gibi\byte\per\second}). Memory-controller counters confirm the throughput axis
+(\val{int_t4_imc_ratio}$\times$ and \val{int_t9_imc_ratio}$\times$ the delivered bandwidth at $T=4$ and $T=9$).
+Beyond the knee requests no longer finish faster; they queue. Against the theoretical peak of two DDR4 channels at \qty{2933}{MT/s} (\code{dmidecode}),
+$2\times\qty{8}{\byte}\times\qty{2933}{MT/s}=\qty{46.9}{\giga\byte\per\second}=\qty{43.7}{\gibi\byte\per\second}$,
+the measured peak (\valqty{int_peak_gib}{\gibi\byte\per\second}) is \qty{73}{\percent} and the knee
+\qty{70}{\percent}, the usual practical limit for DDR4 (refresh, bank conflicts, bus turnarounds).
+
+\paragraph{Comparison with Intel MLC.} MLC's \texttt{-{}-loaded\_latency} sweep starts lower, at
+\valqty{mlc_ll_w0_ns}{\nano\second} (\cref{sec:zero-queue}). By the same 95\% rule, its knee is at \valqty{mlc_sat_gib}{\gibi\byte\per\second} and
+\valqty{mlc_sat_ns}{\nano\second} (peak \valqty{mlc_ll_peak_gib}{\gibi\byte\per\second}, injection delay
+\val{mlc_sat_delay}); its latency doubles at \valqty{mlc_knee_gib}{\gibi\byte\per\second} and reaches
+\valqty{mlc_ll_d0_ns}{\nano\second} at full load. The instruments agree on the ceiling (within 2\%) and the
+shape.
+
+\subsection{Little's Law with measured latency}
+For every load level, $L = \lambda W$ \cite{little1961proof} is the mean number of lines in flight, with
+$\lambda$ the delivered line rate and $W$ the \emph{measured} loaded latency of the same window; at the knee
+$L=\valnum{int_sat_L}$. The usual shortcut $L_0 = \lambda W_0$ rises to \valnum{int_L0max} lines and then
+stays flat: the concurrency the memory system can \emph{serve}. $L$ keeps growing to \valnum{int_Lmax} lines
+at $T=9$; the difference is requests waiting in queues, which is why latency rises with no bandwidth gain.
+
+\begin{table}[htb]
+  \centering\small
+  \caption{Little's Law across the thread sweep (no injection delay), generated from
+  \code{data/littles_law.csv}. $\lambda$ = delivered lines/s (\qty{64}{\byte} lines), $W$ = loaded probe
+  latency, $L=\lambda W$; $L_0=\lambda W_0$ with the unloaded $W_0$.}\label{tab:littles-law}
+  \IfDataExists{littles_law}{%
+  \pgfplotstabletypeset[col sep=comma,
+    columns={threads,gib_s,mlines_s,w_ns,L,L0},
+    columns/threads/.style={column name=$T$, column type=r},
+    columns/gib_s/.style={column name={BW (GiB/s)}, fixed, precision=2, zerofill},
+    columns/mlines_s/.style={column name={$\lambda$ (Mlines/s)}, fixed, precision=0},
+    columns/w_ns/.style={column name={$W$ (ns)}, fixed, precision=1, zerofill},
+    columns/L/.style={column name={$L=\lambda W$}, fixed, precision=1, zerofill},
+    columns/L0/.style={column name={$L_0=\lambda W_0$}, fixed, precision=1, zerofill},
+    every head row/.style={before row=\toprule, after row=\midrule},
+    every last row/.style={after row=\bottomrule},
+  ]{data/littles_law.csv}}
+\end{table}
+
+\begin{figure}[tbp]
+  \centering
+  \begin{subfigure}[t]{0.49\linewidth}
+    \IfDataExists{mlp_littles}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, height=0.72\linewidth, xmode=log, log basis x=2, ymode=log, log basis y=2,
+                   xlabel={Offered concurrency $N=T\cdot k$}, ylabel={$L_{\text{mem}}=\lambda W_{\text{mem}}$}, legend pos=north west,
+                   legend style={font=\scriptsize}]
+        \addplot+[mark=*, iqr bars] table[x=N, y=L_mem, only if={threads}{1}, col sep=comma, lmem iqr] {data/mlp_littles.csv};
+        \addlegendentry{$T=1$, $k=1\ldots32$}
+        \addplot+[mark=square*, iqr bars] table[x=N, y=L_mem, only if={chains}{8}, col sep=comma, lmem iqr] {data/mlp_littles.csv};
+        \addlegendentry{$k=8$, $T=1\ldots9$}
+        \addplot[densely dashed, black!50, domain=1:80, samples=2] {x};
+        \addlegendentry{$L=N$}
+      \end{axis}
+    \end{tikzpicture}}
+    \caption{Lines in flight in memory vs.\ offered $N$.}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.49\linewidth}
+    \IfDataExists{mlp_littles}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, height=0.72\linewidth, xmode=log, log basis x=2, ymin=0,
+                   xlabel={Offered concurrency $N=T\cdot k$}, ylabel={Bandwidth (GiB/s)}, legend pos=north west,
+                   legend style={font=\scriptsize}]
+        \addplot+[mark=*, iqr bars] table[x=N, y=gib_s, only if={threads}{1}, col sep=comma, gib iqr] {data/mlp_littles.csv};
+        \addlegendentry{$T=1$}
+        \addplot+[mark=square*, iqr bars] table[x=N, y=gib_s, only if={chains}{8}, col sep=comma, gib iqr] {data/mlp_littles.csv};
+        \addlegendentry{$k=8$}
+      \end{axis}
+    \end{tikzpicture}}
+    \caption{Random-read bandwidth vs.\ $N$.}
+  \end{subfigure}
+  \caption{Known-concurrency sweep: $k$ independent random chases per core (median of 8 windows, bars:
+  IQR). $L_{\text{mem}}$ uses the probe's concurrent memory latency $W_{\text{mem}}$; the dashed line $L=N$
+  would mean every chain always had a request in memory.}\label{fig:mlp}
+\end{figure}
+
+\paragraph{What the known-concurrency sweep shows.} With $W$ taken as each chain's own step time,
+$L/N$ is \val{mlp_LN_min}--\val{mlp_LN_max}, but that holds by construction and only confirms the progress
+accounting. The informative quantity is $L_{\text{mem}} = \lambda W_{\text{mem}}$, with $W_{\text{mem}}$
+the probe's concurrent memory latency (\valqty{mlp_t1_wmem}{\nano\second} with one generator core). One core
+peaks at \valqty{mlp_t1_peak_gib}{\gibi\byte\per\second} ($k=\val{mlp_t1_peak_k}$) and its $L_{\text{mem}}$
+never exceeds \valnum{mlp_t1_Lmem_max} lines (\cref{fig:mlp}); extra chains wait inside the core, so step
+time grows instead (\valqty{mlp_t1_last_ns}{\nano\second} at $k=\val{mlp_t1_last_k}$). This is consistent with
+the core's 12 L1D fill buffers. (We use the envelope; $k=12$ is an unresolved outlier, \cref{sec:anomalies}.)
+With $k=8$ per core, adding cores raises bandwidth to \valqty{mlp_peak_gib}{\gibi\byte\per\second} at $T=\val{mlp_peak_T}$
+($L_{\text{mem}}=\valnum{mlp_peak_Lmem}$, $W_{\text{mem}}=\valqty{mlp_peak_wmem}{\nano\second}$). Random demand
+reads thus reach only about 60\% of the streaming peak: nine such cores keep about seven lines each in
+flight, and the memory system queues long before it is fully used.
+
+\paragraph{Streaming vs.\ demand concurrency.} One streaming core keeps $L=\valnum{int_t1_L}$ lines in
+flight at \valqty{int_t1_gib}{\gibi\byte\per\second} (\cref{tab:littles-law}), about three times its
+\valnum{mlp_t1_Lmem_max} demand misses, because most streamed lines are fetched by the L2 prefetcher, whose
+requests are tracked in the L2's queue rather than the fill buffers. The \valnum{int_L0max} lines the controller serves at saturation are about two streaming cores'
+worth of concurrency (four with queueing), but six random-access cores' worth.

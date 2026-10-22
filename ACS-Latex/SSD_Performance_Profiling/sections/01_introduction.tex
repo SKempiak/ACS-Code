@@ -1,0 +1,19 @@
+% !TeX root = ../main.tex
+\section{Introduction}\label{sec:intro}
+
+NVMe SSDs deliver high IOPS and throughput only when requests are issued concurrently. Like memory,
+storage shows a queueing-driven throughput--latency tradeoff: deeper queues raise utilization up to a
+saturation knee, and past it latency climbs for little extra throughput. We characterize this on a
+Micron 2210 \qty{512}{\giga\byte} QLC NVMe SSD, using \code{O_DIRECT} I/O against disposable files, a
+small \code{libaio} benchmark as the primary engine and FIO as a cross-check
+(\cref{sec:method,sec:validation}). The report answers:
+\begin{enumerate}
+  \item What are the QD=1 latencies for small random and large sequential I/O? (\cref{sec:zero-queue})
+  \item How do block size, access pattern, read/write mix and queue depth shape IOPS, MiB/s and latency,
+        and where is the PCIe interface ceiling? (\cref{sec:block-size,sec:rw-mix})
+  \item Where is the queue-depth knee, by what criterion, and what does Little's Law say about the
+        harness? (\cref{sec:queue-depth})
+  \item What do tail latency and device state reveal: working-set size, SLC-cache exhaustion and steady
+        state, data layout, and temperature? (\cref{sec:tail,sec:device-state})
+  \item Which setup mistake produces misleading numbers? (\cref{sec:pitfall})
+\end{enumerate}

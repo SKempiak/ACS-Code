@@ -1,0 +1,36 @@
+% !TeX root = ../main.tex
+\section{Anomalies and Limitations}\label{sec:anomalies}
+\rubric{Report quality}{10}{Clear plots, concise writing, honest anomalies and thoughtful limitations.}
+
+\subsection{Unexpected results}
+The dot product, the DRAM gap and the losing AVX2 gather are explained in
+\cref{sec:vectorization,sec:locality,sec:stride}. Three anomalies remain open:
+\begin{itemize}
+  \item \textbf{Cache-resident stencil is slower than L3-resident stencil}:
+        \qtyrange{16.6}{17.3}{\giga\flop\per\second} for $N=\num{1024}\ldots\num{16384}$ but
+        \qtyrange{19.9}{20.7}{\giga\flop\per\second} for $N=\num{65536}\ldots\num{1048576}$,
+        reproducibly, which no monotonic cache effect explains. Untested hypothesis: 4K aliasing
+        between stores to \code{y[i]} and loads of \code{x[i+1]}; sweeping the \code{x}--\code{y}
+        distance modulo \qty{4}{\kibi\byte} with the \code{ld_blocks_partial.address_alias} counter
+        would test it.
+  \item \textbf{Native SAXPY peaks within L1} ($6.86\times$ at $N=\num{1536}$, $6.32\times$ at
+        $N=512$, else $5.6\text{--}5.9\times$); the same placement hypothesis applies.
+  \item \textbf{Same code, different process, $N=\num{32768}$}: \SI{1}{\percent} (scalar) and
+        \SI{14}{\percent} (native) apart. Untested hypothesis: the two arrays exactly fill the
+        \qty{256}{\kibi\byte} L2, so conflict misses depend on physical page placement.
+\end{itemize}
+
+\subsection{Limitations}
+\begin{itemize}
+  \item \textbf{Core-PMU counters only}: no DRAM-traffic or TLB events, and the generic LLC-miss
+        event's prefetch handling is model-specific, so we only compare it between builds. IMC bytes
+        per element (as read by the companion Cache \& Memory report) would turn the roofline's
+        traffic assumption into a measurement.
+  \item \textbf{Fixed clock}: reproducible but not normal operation; at turbo, DRAM-resident SAXPY
+        speedups shrink to $1.32\text{--}1.44\times$ (\cref{sec:method}).
+  \item \textbf{One machine, one compiler} (i9-10900F, GCC \sysGCC{}), no AVX-512 part.
+  \item \textbf{THP always-on, no core isolation, unshuffled sweep order}; the shared-core checks of
+        \cref{sec:method} guard the data.
+  \item \textbf{Discarded sessions}: earlier sessions that day, before the GPE storm was masked and
+        while another agent's unlocked smoke tests briefly shared CPU~2.
+\end{itemize}

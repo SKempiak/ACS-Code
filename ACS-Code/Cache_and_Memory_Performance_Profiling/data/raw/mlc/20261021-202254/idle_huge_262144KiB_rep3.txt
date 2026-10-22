@@ -1,0 +1,6 @@
+Intel(R) Memory Latency Checker - v3.13
+Command line parameters: --idle_latency -e -r -L -c2 -b262144 -t2 
+
+Using buffer size of 256.000MiB
+Each iteration took 212.3 base frequency clocks (	75.6	ns)
+

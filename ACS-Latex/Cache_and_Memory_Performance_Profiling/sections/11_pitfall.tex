@@ -1,0 +1,51 @@
+% !TeX root = ../main.tex
+\section{Benchmark Pitfall}\label{sec:pitfall}
+\rubric{AI-use transparency and pitfall analysis}{15}{Honest AI-use note and a meaningful benchmark-pitfall
+demonstration (with \cref{sec:ai-use}).}
+
+\begin{hypothesis}
+  A ``DRAM bandwidth'' benchmark that re-streams a cache-sized buffer will report several times the real
+  memory bandwidth, because every pass after the first hits in cache. We expect an L1/L2-resident buffer to
+  report tens of \unit{\gibi\byte\per\second} and a DRAM-resident one to settle near the single-core
+  streaming figure of \cref{sec:pattern}.
+\end{hypothesis}
+
+\begin{knobs}
+  Pitfall     & Measuring cache reuse instead of DRAM: picking a buffer that fits in cache \\
+  Wrong setup & Working set \qty{16}{\kibi\byte} (\num{16320}\,B after rounding to whole loop units; L1-resident), re-streamed many times, one thread \\
+  Right setup & Working set \qtyrange{64}{512}{\mebi\byte} (well past the \qty{20}{\mebi\byte} LLC) \\
+  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh pitfall} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{pitfall}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, width=0.75\linewidth, height=0.36\linewidth,
+                   xlabel={Streamed working-set size (bytes)}, ylabel={Reported read BW (GiB/s)},
+                   ymin=0, legend pos=north east]
+        \addplot+[iqr bars] table[x=wss_bytes, y=gib_s_median, iqr of=gib_s] {data/pitfall.csv};
+        \addlegendentry{single-thread read}
+        \acsvline{32768}{L1d \qty{32}{KiB}}
+        \acsvline{262144}{L2 \qty{256}{KiB}}
+        \acsvline{20971520}{L3 \qty{20}{MiB}}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{The same streaming kernel ``measures'' wildly different bandwidth depending only on the buffer
+  size. A \valqty{pit_small_kib}{\kibi\byte} buffer reports \valqty{pit_small_gib}{\gibi\byte\per\second};
+  the honest DRAM-resident figure is \val{pit_dram_lo}--\valqty{pit_dram_hi}{\gibi\byte\per\second}. Nothing
+  about the code changed---only where the data lived.}\label{fig:pitfall}
+\end{figure}
+
+\subsection{Explanation}
+At \valqty{pit_small_kib}{\kibi\byte} the kernel reports \valqty{pit_small_gib}{\gibi\byte\per\second},
+falling as the set spills L1 and L2; once the set is \qty{64}{\mebi\byte} or larger---genuinely
+DRAM-resident---it settles at \val{pit_dram_lo}--\valqty{pit_dram_hi}{\gibi\byte\per\second}, a
+\val{pit_ratio}$\times$ overstatement. (This is the scalar unit-stride read of \cref{sec:pattern}, so its
+DRAM figure is not the single-core peak.) The small-buffer number is L1/L2 bandwidth from a loop that
+re-reads the same cached lines. An AI-generated bandwidth microbenchmark easily falls into this trap,
+because a \qty{16}{\kibi\byte} array is a natural default and tens of \unit{\gibi\byte\per\second} look
+plausible. Two cheap detectors flag it: (1) the result \emph{changes with buffer size} beyond the LLC, and (2) one
+core reports as much as the whole memory system delivers to \emph{all} cores (\valqty{int_peak_gib}{\gibi\byte\per\second}, \cref{sec:intensity}). We avoid the pitfall by sizing every point against the cache capacities and using DRAM working sets
+at least $3\times$ the LLC.

@@ -1,0 +1,150 @@
+% !TeX root = ../main.tex
+\section{Roofline Interpretation}\label{sec:roofline}
+\rubric{Roofline and quantitative insight}{20}{Correct arithmetic intensity, use of measured memory
+bandwidth, and a justified compute- vs.\ memory-bound conclusion.}
+
+\begin{hypothesis}
+  All four kernels have very low arithmetic intensity (well under \qty{1}{\flop\per\byte}). With
+  single-core bandwidth of tens of \unit{\giga\byte\per\second} and a peak vector rate near
+  \qty{100}{\giga\flop\per\second}, all should sit on the \emph{bandwidth} slope when DRAM-resident.
+  The stencil, with the highest intensity, should come closest to the compute roof.
+\end{hypothesis}
+\begin{hypothesis}
+  (For the measured ceilings.) Even the L1 roof should put the ridge point above
+  \qty{0.5}{\flop\per\byte}, so cache-resident native kernels should also be bounded by bandwidth
+  (or the load/store ports behind it), not by the FMA units.
+\end{hypothesis}
+
+Attainable performance at arithmetic intensity $I$ (FLOPs per byte of memory traffic) is bounded by
+\begin{equation}
+  P(I) = \min\bigl(P_{\text{peak}},\; B_{\ell} \cdot I\bigr),
+\end{equation}
+where $B_{\ell}$ is the bandwidth of the memory level $\ell$ holding the data
+\cite{williams2009roofline}. We draw one roof per level (a cache-aware roofline); both ceilings
+come from separate microbenchmarks (\cref{sec:ceilings-method}), never from the kernels plotted.
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{Measured roofline ceilings, single core (\code{run.sh ceilings}). Top: register-only
+  accumulator loops; FLOP/cycle and clock from the cycle counter. Bottom: STREAM-style bandwidth
+  (GiB/s) at one footprint per level; \enquote{incl.\ WA} adds the write-allocate read. Roofs use
+  the explicit triad in L1 and triad incl.\ WA below it; the read stream ($^{*}$) is
+  add-latency-bound and not a roof.}\label{tab:ceilings}
+  \IfDataExists{ceilings_peak}{%
+    \pgfplotstabletypeset[
+      col sep=comma,
+      columns={isa,gflops_median,flops_per_cycle,ghz},
+      columns/isa/.style={column name=Peak loop, string type, string replace*={_}{\_}},
+      columns/gflops_median/.style={column name=GFLOP/s, fixed, zerofill, precision=1},
+      columns/flops_per_cycle/.style={column name=FLOP/cycle, fixed, zerofill, precision=2},
+      columns/ghz/.style={column name=GHz, fixed, zerofill, precision=2},
+      every head row/.style={before row=\toprule, after row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/ceilings_peak.csv}%
+  }\par\medskip
+  \IfDataExists{ceilings_bw}{%
+    \pgfplotstabletypeset[
+      col sep=comma,
+      columns={level,bytes,read,copy,triad,triad_total},
+      columns/level/.style={column name=Level, string type},
+      columns/bytes/.style={column name=Footprint (B), int detect},
+      columns/read/.style={column name=read$^{*}$, fixed, zerofill, precision=1},
+      columns/copy/.style={column name=copy, fixed, zerofill, precision=1},
+      columns/triad/.style={column name=triad, fixed, zerofill, precision=1},
+      columns/triad_total/.style={column name={triad incl.\ WA}, fixed, zerofill, precision=1},
+      every head row/.style={before row={\toprule & & \multicolumn{4}{c}{GiB/s}\\}, after row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/ceilings_bw.csv}%
+  }
+\end{table}
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{Arithmetic intensity (float32) from the actual traffic per element, the same convention
+  as the triad roof: L2, L3 and DRAM include the write-allocate read of a store to an unread line;
+  in L1 every store hits, so there is none.}\label{tab:roofline-inputs}
+  \begin{tabularx}{\linewidth}{@{}lrrX@{}}
+    \toprule
+    Kernel & $I$, L2--DRAM & $I$, L1 & Traffic per element (L2--DRAM) \\
+    \midrule
+    SAXPY        & \num{0.167} & \num{0.167} & $2\,\text{FLOP} / \qty{12}{\byte}$: read $x,y$, write $y$ (already read: no write-allocate) \\
+    multiply     & \num{0.063} & \num{0.083} & $1\,\text{FLOP} / \qty{16}{\byte}$: read $x,y$, write $z$ + write-allocate of $z$ \\
+    stencil      & \num{0.417} & \num{0.625} & $5\,\text{FLOP} / \qty{12}{\byte}$: read $x$ once (reuse), write $y$ + write-allocate \\
+    dot product  & \num{0.25}  & \num{0.25}  & $2\,\text{FLOP} / \qty{8}{\byte}$: read $x,y$, no store \\
+    triad (roof) & \num{0.125} & \num{0.167} & $2\,\text{FLOP} / \qty{16}{\byte}$: read $b,c$, write $a$ + write-allocate \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\begin{figure}[tbp]
+  \centering
+  \IfDataExists{roofline_points}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, ymode=log, xlabel={Arithmetic intensity (FLOP/byte)},
+                   ylabel={Performance (GFLOP/s)}, width=0.68\linewidth, height=0.42\linewidth,
+                   xmin=0.02, xmax=20, ymin=0.5, ymax=400,
+                   legend pos=outer north east, legend style={font=\scriptsize}]
+        \IfFileExists{data/roofline_roofs.csv}{%
+          \addplot[thick, black] table[x=ai, y=gflops, only if={roof}{L1}] {data/roofline_roofs.csv};
+          \addlegendentry{L1 roof}
+          \addplot[thick, black!70, densely dashed] table[x=ai, y=gflops, only if={roof}{L2}] {data/roofline_roofs.csv};
+          \addlegendentry{L2 roof}
+          \addplot[thick, black!55, dashdotted] table[x=ai, y=gflops, only if={roof}{L3}] {data/roofline_roofs.csv};
+          \addlegendentry{L3 roof}
+          \addplot[thick, black!40, dotted] table[x=ai, y=gflops, only if={roof}{DRAM}] {data/roofline_roofs.csv};
+          \addlegendentry{DRAM roof}
+          \addplot[thin, red!60] table[x=ai, y=gflops, only if={roof}{peak_sse_f32}] {data/roofline_roofs.csv};
+          \addlegendentry{SSE peak (autovec)}
+          \addplot[thin, red!60, densely dashed] table[x=ai, y=gflops, only if={roof}{peak_scalar_f32}] {data/roofline_roofs.csv};
+          \addlegendentry{scalar peak}
+        }{}
+        \addplot+[only marks, mark=*, nodes near coords, point meta=explicit symbolic,
+                  every node near coord/.style={font=\tiny, anchor=south west}, iqr bars]
+          table[x=ai, y=gflops_median, iqr of=gflops, meta=kernel, only if={variant}{native}, only if={level}{L1}] {data/roofline_points.csv};
+        \addlegendentry{native, L1-resident}
+        \addplot+[only marks, mark=square*, iqr bars] table[x=ai, y=gflops_median, iqr of=gflops, only if={variant}{native}, only if={level}{L2}] {data/roofline_points.csv};
+        \addlegendentry{native, L2-resident}
+        \addplot+[only marks, mark=triangle*, iqr bars] table[x=ai, y=gflops_median, iqr of=gflops, only if={variant}{native}, only if={level}{L3}] {data/roofline_points.csv};
+        \addlegendentry{native, L3-resident}
+        \addplot+[only marks, mark=diamond*, iqr bars] table[x=ai, y=gflops_median, iqr of=gflops, only if={variant}{native}, only if={level}{DRAM}] {data/roofline_points.csv};
+        \addlegendentry{native, DRAM}
+        \addplot+[only marks, mark=o, black, iqr bars] table[x=ai, y=gflops_median, iqr of=gflops, only if={variant}{scalar}, only if={level}{DRAM}] {data/roofline_points.csv};
+        \addlegendentry{scalar, DRAM}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Cache-aware roofline for one core. Roofs: measured triad bandwidth per level, capped
+  by the measured AVX2-FMA peak; thin red lines: measured SSE and scalar peaks. Points: native (and
+  DRAM scalar) GFLOP/s from \cref{tab:baseline-gflops}, L1 points at their L1 intensity; IQR bars
+  mostly hidden by the markers.}\label{fig:roofline}
+\end{figure}
+
+\subsection{Analysis}
+\emph{Ceilings} (\cref{tab:ceilings}). The AVX2 FMA loop reaches \qty{89.2}{\giga\flop\per\second}
+float32 (\num{44.6} float64), \num{31.99}~FLOP/cycle at \qty{2.79}{\giga\hertz}: exactly the
+$2~\text{FMA ports} \times 8~\text{lanes} \times 2 = 32$ the core allows. The SSE and scalar loops
+also reach their port limits (\num{8.00} and \num{1.99}~FLOP/cycle). The ridge points $P_{\text{peak}}/B_\ell$ are $\approx\num{0.53}$, \num{0.92},
+\num{1.71} and \qty{3.42}{\flop\per\byte} from L1 to DRAM; the L1 ridge is just above the
+\qty{0.5}{\flop\per\byte} of the second hypothesis, and only the L1 stencil ($I=\num{0.625}$) lies
+right of it.
+
+\emph{DRAM-resident kernels.} Every intensity (\numrange{0.06}{0.42}~FLOP/byte) is far left of the
+DRAM ridge, so all four kernels are bandwidth-bound, as hypothesized. Native multiply reaches
+\SI{100}{\percent} of the DRAM roof, the stencil \SI{101}{\percent} and SAXPY \SI{107}{\percent}
+(\num{4.65} vs \qty{4.35}{\giga\flop\per\second}). Sustainable bandwidth depends a little on the
+access pattern (SAXPY writes a line it has just read), so the triad roof is a reference, not a bound
+to the byte; since it comes from a different loop, landing on it is evidence, not a tautology. The scalar points sit at \SIrange{37}{66}{\percent} of the
+roof (dot: \SI{20}{\percent}): the instruction-bound loops of \cref{sec:locality}.
+
+\emph{Cache-resident kernels.} L3-resident native points sit at \SIrange{95}{100}{\percent} of the
+L3 roof. In L2 SAXPY and multiply reach \SI{86}{\percent} and \SI{88}{\percent} (stencil
+\SI{42}{\percent}); in L1 SAXPY reaches \SI{72}{\percent} of the roof and \SI{23}{\percent} of the FMA
+peak, and the stencil \SI{19}{\percent} of the peak that bounds it. So, confirming the second hypothesis,
+cache-resident kernels are bounded by load/store and instruction issue, not the FMA units. From L2 outward each step in
+\cref{fig:locality} is a move to a lower roof.
+
+\emph{The dot product} is far \emph{below} every roof because it is latency-bound: one scalar
+\code{vaddss} per element with a \num{4}-cycle latency allows $0.5$~FLOP/cycle,
+\qty{1.39}{\giga\flop\per\second}, and it measures \qtyrange{1.39}{1.42}{\giga\flop\per\second} for
+$N=\num{1024}$ to \num{1048576}. Wider vectors cannot help a kernel waiting on memory; only
+higher intensity (fusing passes, cache blocking) can.

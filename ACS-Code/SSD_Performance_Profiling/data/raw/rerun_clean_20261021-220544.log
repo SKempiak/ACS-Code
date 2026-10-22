@@ -1,0 +1,6 @@
+== rerun_clean.sh run (lean)  (scratch: /home/samsonk/acs_ssd_scratch on /dev/nvme0n1p3 -> nvme0n1)
+REMINDER: run 'sudo fstrim -v /' first, then leave the machine idle >= 30 min.
+free space: 77 GiB; required: 50 GiB (large file + 10 GiB margin)
+TRIM evidence (journal, last 12 h):
+  Oct 21 21:34:54 samson-ai-desktop sudo[2316591]:  samsonk : TTY=pts/0 ; PWD=/home/samsonk ; USER=root ; COMMAND=/usr/bin/fstrim -v /
+fstrim.service last run: Mon 2026-10-19 01:10:11 EDT

@@ -1,0 +1,107 @@
+% !TeX root = ../main.tex
+\section{Cache-Miss Impact}\label{sec:cache-miss}
+
+\begin{hypothesis}
+  As the SAXPY footprint grows past each cache, time per element should rise with the misses per element.
+  Sequential order should rise gently (the prefetcher turns misses into hits), random order sharply. Because
+  independent iterations overlap their misses, the effective DRAM miss cost should be well below the
+  zero-queue latency.
+\end{hypothesis}
+
+\begin{knobs}
+  Kernel      & $y_i = a\,x_i + y_i$ (float64), two arrays, \qty{4}{\kibi\byte} pages \\
+  Varied      & $N = 2^{8} \ldots 2^{24}$ (footprint $16N$ bytes sequential; $20N$ random, which adds a 4-byte index per element); order (sequential, random permutation) \\
+  Counters    & L1D read misses, LLC read references/misses, dTLB walks, cycles, instructions (user space, per element) \\
+  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh cache_miss} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \begin{subfigure}[t]{0.49\linewidth}
+  \IfDataExists{cache_miss_ctr}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, width=0.97\linewidth, height=0.72\linewidth,
+                   xlabel={$N$ (elements)}, ylabel={Time per element (ns)}, legend pos=north west,
+                   legend style={font=\scriptsize}]
+        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={pattern}{sequential}] {data/cache_miss_ctr.csv};
+        \addlegendentry{sequential}
+        \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={pattern}{random}] {data/cache_miss_ctr.csv};
+        \addlegendentry{random}
+        \IfFileExists{data/amat_fit.csv}{%
+        \addplot[only marks, mark=o, mark size=2.5pt, black] table[x=n, y=predicted_ns, col sep=comma] {data/amat_fit.csv};
+        \addlegendentry{AMAT fit}}{}
+        \acsvline{2048}{L1d}
+        \acsvline{16384}{L2}
+        \acsvline{1310720}{L3}
+      \end{axis}
+    \end{tikzpicture}}
+    \caption{Runtime and fitted AMAT model.}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.49\linewidth}
+  \IfDataExists{cache_miss_ctr}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, height=0.72\linewidth, ymin=0,
+                   xlabel={$N$ (elements)}, ylabel={Events per element}, legend pos=north west,
+                   legend style={font=\scriptsize}]
+        \addplot+[mark=*, iqr bars] table[x=n, y=ctr_l1d_miss_pe_median, iqr of=ctr_l1d_miss_pe, only if={pattern}{random}] {data/cache_miss_ctr.csv};
+        \addlegendentry{L1D miss (rand)}
+        \addplot+[mark=triangle*, iqr bars] table[x=n, y=ctr_llc_miss_pe_median, iqr of=ctr_llc_miss_pe, only if={pattern}{random}] {data/cache_miss_ctr.csv};
+        \addlegendentry{LLC miss (rand)}
+        \addplot+[mark=diamond*, iqr bars] table[x=n, y=ctr_dtlb_miss_pe_median, iqr of=ctr_dtlb_miss_pe, only if={pattern}{random}] {data/cache_miss_ctr.csv};
+        \addlegendentry{dTLB walk (rand)}
+        \addplot+[mark=o, dashed, iqr bars] table[x=n, y=ctr_l1d_miss_pe_median, iqr of=ctr_l1d_miss_pe, only if={pattern}{sequential}] {data/cache_miss_ctr.csv};
+        \addlegendentry{L1D miss (seq)}
+        \addplot+[mark=x, dashed, iqr bars] table[x=n, y=ctr_llc_miss_pe_median, iqr of=ctr_llc_miss_pe, only if={pattern}{sequential}] {data/cache_miss_ctr.csv};
+        \addlegendentry{LLC miss (seq)}
+        \acsvline{2048}{L1d}
+        \acsvline{16384}{L2}
+        \acsvline{1310720}{L3}
+      \end{axis}
+    \end{tikzpicture}}
+    \caption{Counters per element.}
+  \end{subfigure}
+  \caption{SAXPY time per element and counters vs.\ footprint and traversal order (two \code{double}
+  arrays, $16N$ bytes; lines mark where $16N$ crosses L1/L2/L3; random order also reads a $4N$-byte index
+  array, so its $20N$-byte footprint crosses each capacity at $0.8\times$ the marked $N$). Open circles: AMAT model fitted to the
+  counters (\cref{eq:amat-fit}).}\label{fig:cache-miss}
+\end{figure}
+
+\subsection{Analysis}
+Sequential SAXPY rises from \valqty{cm_seq_min_ns}{\nano\second} per element in L1 to
+\valqty{cm_seq_max_ns}{\nano\second} in DRAM, a \val{cm_seq_span}$\times$ span, with only
+\val{cm_seq_max_llc_miss} demand LLC misses per element at the largest size. Random traversal rises from \valqty{cm_rand_min_ns}{\nano\second} to
+\valqty{cm_rand_max_ns}{\nano\second}, a \val{cm_rand_span}$\times$ span, with \val{cm_rand_max_l1d_miss}
+L1D misses, \val{cm_rand_max_llc_miss} LLC misses and \val{cm_rand_max_dtlb_miss} page walks per element at
+$N=2^{24}$ (a line of $x$, a line of $y$ and page-walk reads). At DRAM sizes the random curve is
+\val{cm_dram_gap}$\times$ the sequential one: that gap is the miss cost the prefetcher hides.
+
+\subsection{AMAT fitted to measured miss counts}
+Classic AMAT, $t_{L1} + m_{L1}\bigl(t_{L2} + m_{L2}(t_{L3} + m_{L3}\,t_{\text{DRAM}})\bigr)$, assumes
+serialised misses. We instead fit its per-element form to the counters, separately for each order:
+\begin{equation}\label{eq:amat-fit}
+  t_{\text{elem}} = t_0 + a_2\,h_{L2} + a_3\,h_{L3} + a_D\,m_D ,
+\end{equation}
+with per-element hits served by L2 ($h_{L2}$ = L1D misses $-$ LLC references), by L3 ($h_{L3}$ = LLC
+references $-$ LLC misses) and DRAM misses ($m_D$ = LLC misses); $t_0$ absorbs L1-hit work. Least squares
+over the 17 footprints gives, for random order,
+$t_0=\valqty{amat_rand_t0}{\nano\second}$, $a_2=\valqty{amat_rand_a2}{\nano\second}$,
+$a_3=\valqty{amat_rand_a3}{\nano\second}$, $a_D=\valqty{amat_rand_aD}{\nano\second}$ ($R^2=\val{amat_rand_r2}$);
+for sequential order $a_D=\valqty{amat_seq_aD}{\nano\second}$ ($R^2=\val{amat_seq_r2}$). The fitted $a_D$ is
+the \emph{exposed} cost of one DRAM miss; the zero-queue DRAM latency divided by it gives the average
+number of overlapped misses: \val{amat_rand_mlp} for random and \val{amat_seq_mlp} for sequential SAXPY
+(whose remaining misses come in long, predictable runs). For random order the zero-queue L2 and L3 latencies
+are likewise \val{amat_rand_ovlL2}$\times$ and \val{amat_rand_ovlL3}$\times$ the fitted $a_2$ and $a_3$. All
+three factors are close to the \valnum{mlp_t1_Lmem_max} demand misses one core keeps in flight
+(\cref{sec:intensity}). Classic serialised AMAT confirms this at $N=2^{24}$: with the
+\cref{tab:zero-queue} latencies, the measured
+$h_{L2}=\val{amat_rand_hl2_last}$, $h_{L3}=\val{amat_rand_hl3_last}$, $m_D=\val{amat_rand_md_last}$ and the
+fitted $t_0$, it predicts \valqty{amat_rand_serial_ns}{\nano\second} per element
+(\valqty{amat_rand_serial_dram_ns}{\nano\second} of it DRAM) against the measured
+\valqty{cm_rand_max_ns}{\nano\second}, a \val{amat_rand_serial_ratio}-fold overprediction.
+
+Caveats: the L2/L3 terms are only roughly determined. The largest relative errors (random up to
+\val{amat_rand_maxrelerr}\%, sequential \val{amat_seq_maxrelerr}\%) are at $N=2^{8}$
+(\val{amat_rand_256_relerr}\%, loop overhead) and $N=2^{20}$ (\val{amat_rand_1048576_relerr}\%), where the
+footprint equals the L3: only \val{cm_rand_1m_llc_miss} LLC misses but already \val{cm_rand_1m_dtlb_miss}
+page walks per element, and the model has no term for walks without DRAM misses
+(\qty{2}{\mebi\byte} pages: \valqty{tlbs_huge_1m_ns}{\nano\second}, \cref{tab:tlb-saxpy}).

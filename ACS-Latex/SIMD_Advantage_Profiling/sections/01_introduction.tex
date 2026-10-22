@@ -1,0 +1,16 @@
+% !TeX root = ../main.tex
+\section{Introduction}\label{sec:intro}
+
+Single-instruction-multiple-data (SIMD) units let one instruction operate on a whole vector of
+elements. On the Intel Core i9-10900F studied here the widest unit is AVX2 with FMA: a
+\qty{256}{bit} register holds \num{8} float32 or \num{4} float64 lanes, so the \emph{ideal} speedup
+over scalar code is $8\times$ or $4\times$. Loads and stores, loop tails, reduction dependencies
+and, above all, memory bandwidth keep real kernels below that. We measure where the benefit
+appears, how far it falls short of the lane count, and when it disappears:
+\begin{enumerate}
+  \item How much faster are auto-vectorized builds than scalar builds for each kernel, and how does
+        that change from cache-resident to DRAM-resident working sets? (\cref{sec:baseline,sec:locality})
+  \item What do alignment, loop tails, stride and gather access, and data type cost? (\cref{sec:alignment,sec:stride,sec:dtype})
+  \item Where do these kernels sit in a roofline model of this machine? (\cref{sec:roofline})
+  \item When does the expected SIMD benefit fail to appear? (\cref{sec:negative})
+\end{enumerate}

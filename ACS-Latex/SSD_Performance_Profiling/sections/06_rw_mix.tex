@@ -1,0 +1,72 @@
+% !TeX root = ../main.tex
+\section{Read/Write Mix}\label{sec:rw-mix}
+\rubric{Read/write and queue-depth analysis}{40}{Correct mix and queue-depth experiments, knee
+identification and Little's Law reasoning (with \cref{sec:queue-depth}).}
+
+\begin{hypothesis}
+  At a fixed block size and queue depth, a mixed read/write workload should deliver \emph{fewer} total
+  IOPS than either pure workload, not a weighted average: reads and writes contend for the controller and
+  flash channels, and a read queued behind a slow program/erase inherits its latency. We expect pure
+  writes to post the highest IOPS at QD=16 (write-buffer absorption) and the 50/50 mix to be the worst.
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & \qty{4}{\kibi\byte} random; iodepth 16; one job; \code{O_DIRECT}; 5 repetitions of
+                \qty{4}{\second} (points with writes also stop at \qty{256}{\mebi\byte} and start after a
+                \qty{120}{\second} pause) \\
+  Varied      & reads per 10 I/Os, deterministically interleaved: 10 (100\% R), 7 (70/30), 5 (50/50),
+                0 (100\% W) \\
+  Script      & \code{SSD_Performance_Profiling/scripts/run.sh rw_mix} \\
+\end{knobs}
+
+\begin{figure}[!htbp]
+  \centering
+  \IfDataExists{rw_mix}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, ybar, bar width=16pt, width=0.7\linewidth, xtick={0,5,7,10}, enlarge x limits=0.18,
+                   xlabel={Reads per 10 I/Os}, ylabel={Total IOPS}, ymin=0,
+                   xticklabels={0 (100\%\,W),50/50,70/30,100\%\,R}]
+        \addplot+[iqr bars] table[x=rwmix, y=iops_median, iqr of=iops] {data/rw_mix.csv};
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Total \qty{4}{\kibi\byte} random IOPS at QD=16 across read/write mixes (median, IQR bars). Both
+  pure workloads beat the mixes; the 50/50 mix is the worst.}\label{fig:rw-mix}
+\end{figure}
+
+\begin{table}[!htbp]
+  \centering\small
+  \caption{Read/write mix at QD=16, \qty{4}{\kibi\byte} random: medians with the IQR in brackets;
+  latencies in \si{\micro\second}.}\label{tab:rw-mix}
+  \IfDataExists{rw_mix}{%
+    \ssdload{rw_mix}\def\ssdRows{}%
+    \pgfplotsforeachungrouped \ssdR in {0,...,\ssdLast}{%
+      \ssdstr{rwmix}\ssdM
+      \ssdiqr{iops}\ssdA\ssdiqr[1]{lat_mean_us}\ssdB\ssdiqr{lat_p99_us}\ssdC
+      \eappto\ssdRows{\noexpand\ssdmixname{\ssdM} & \expandonce\ssdA & \expandonce\ssdB & \expandonce\ssdC \noexpand\\}}%
+    \begin{tabularx}{\linewidth}{@{}Xrrr@{}}
+      \toprule
+      Mix & Total IOPS & Mean latency & p99 \\
+      \midrule
+      \ssdRows
+      \bottomrule
+    \end{tabularx}}
+\end{table}
+
+\subsection{Analysis}
+Pure writes are fastest, at \csvq{rw_mix}{rwmix=0}{iops_median} IOPS and
+\csvq[0]{rw_mix}{rwmix=0}{lat_mean_us_median}\,\si{\micro\second} mean, because the controller absorbs
+them into its SLC/SRAM buffer; pure reads reach \csvq{rw_mix}{rwmix=10}{iops_median} IOPS. Mixing is worse
+than either: 70/30 drops to \csvq{rw_mix}{rwmix=7}{iops_median} IOPS and 50/50 to
+\csvq{rw_mix}{rwmix=5}{iops_median}, below even pure reads. A write occupies a die (program, or the
+buffer flush it triggers), reads mapped to that die queue behind it, and interleaving breaks up the
+buffer's batching.
+
+p99 rises from \csvq{rw_mix}{rwmix=10}{lat_p99_us_median}\,\si{\micro\second} for pure reads to
+\csvq{rw_mix}{rwmix=7}{lat_p99_us_median} (70/30) and
+\csvq{rw_mix}{rwmix=5}{lat_p99_us_median}\,\si{\micro\second} (50/50), while pure writes have the lowest
+p99, \csvq{rw_mix}{rwmix=0}{lat_p99_us_median}\,\si{\micro\second}. In the 50/50 mix the median falls to
+\csvq[0]{rw_mix}{rwmix=5}{lat_p50_us_median}\,\si{\micro\second}, because half the requests are buffered
+writes, while its p99 is more than $3\times$ that of pure reads, plausibly reads waiting behind writes. A
+\enquote{70\% read} workload is thus not a weighted average of the pure results; mixes must be measured,
+not interpolated.

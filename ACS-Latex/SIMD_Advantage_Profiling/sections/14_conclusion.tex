@@ -1,0 +1,10 @@
+% !TeX root = ../main.tex
+\section{Conclusion}\label{sec:conclusion}
+
+On this AVX2 machine SIMD pays off handsomely only when the data fits in cache and the kernel is
+not a serial reduction: \code{-march=native} then gives $3.5$--$5.8\times$ at $N=\num{4096}$,
+limited by load/store issue rather than the FMA units. In DRAM the vector builds run \emph{at} the independently
+measured bandwidth roof, and what remains ($1.88$--$2.02\times$ for SAXPY) is the scalar loops' own
+instruction cost at the fixed clock. Float64 keeps about half the cache-resident gain, and any
+non-unit stride or gather erases it. The main lesson: ``the loop vectorized'' is not ``the loop
+is fast''.

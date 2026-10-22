@@ -1,0 +1,7 @@
+/data/excalidev/repos/ACS-issue3/ACS-Code/Cache_and_Memory_Performance_Profiling/build/mem_bandwidth --cpu0 2 --threads 1 --reps 8 --min-ms 100 --seed 20260312 --kernel read --bytes 16384 --pages 4k --experiment pitfall
+/data/excalidev/repos/ACS-issue3/ACS-Code/Cache_and_Memory_Performance_Profiling/build/mem_bandwidth --cpu0 2 --threads 1 --reps 8 --min-ms 100 --seed 20260312 --kernel read --bytes 131072 --pages 4k --experiment pitfall
+/data/excalidev/repos/ACS-issue3/ACS-Code/Cache_and_Memory_Performance_Profiling/build/mem_bandwidth --cpu0 2 --threads 1 --reps 8 --min-ms 100 --seed 20260312 --kernel read --bytes 1048576 --pages 4k --experiment pitfall
+/data/excalidev/repos/ACS-issue3/ACS-Code/Cache_and_Memory_Performance_Profiling/build/mem_bandwidth --cpu0 2 --threads 1 --reps 8 --min-ms 100 --seed 20260312 --kernel read --bytes 8388608 --pages 4k --experiment pitfall
+/data/excalidev/repos/ACS-issue3/ACS-Code/Cache_and_Memory_Performance_Profiling/build/mem_bandwidth --cpu0 2 --threads 1 --reps 8 --min-ms 100 --seed 20260312 --kernel read --bytes 67108864 --pages 4k --experiment pitfall
+/data/excalidev/repos/ACS-issue3/ACS-Code/Cache_and_Memory_Performance_Profiling/build/mem_bandwidth --cpu0 2 --threads 1 --reps 8 --min-ms 100 --seed 20260312 --kernel read --bytes 268435456 --pages 4k --experiment pitfall
+/data/excalidev/repos/ACS-issue3/ACS-Code/Cache_and_Memory_Performance_Profiling/build/mem_bandwidth --cpu0 2 --threads 1 --reps 8 --min-ms 100 --seed 20260312 --kernel read --bytes 536870912 --pages 4k --experiment pitfall

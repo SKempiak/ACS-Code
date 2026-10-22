@@ -1,0 +1,62 @@
+% !TeX root = ../main.tex
+\section{AI-Use Note}\label{sec:ai-use}
+
+Summarized from \code{AI_USE_LOG.md} in the code repository.
+
+\begin{description}[style=nextline]
+  \item[Tools used] Claude Code (Claude Opus~5.5) for coding, debugging, and analysing the data: the
+        initial harness up to 2026-10-20, then the 2026-10-21 rework and the analysis of the final runs.
+        GCC~\sysGCC{} built the code. The AI wrote the code. It also produced a preliminary draft of the
+        report, which I discarded; I wrote this report myself and verified all AI output. I executed the
+        timed runs in a terminal on the machine in \cref{tab:environment}, using the scripts
+        Claude Code wrote (\code{run.sh all}, then \code{SUSTAIN_GIB=60 run.sh device_state}, and later
+        \code{rerun_clean.sh lean} after \code{sudo fstrim -v /}). Claude Code ran no timed benchmark;
+        every number comes from those runs.
+  \item[What they helped generate] \code{blkbench.c} (the O\_DIRECT \code{libaio} benchmark), the
+        data-safety gate (\code{safety.sh}) and its tests (\code{validate.sh}), the experiment driver
+        (\code{run.sh}) with its CSV reduction, and the FIO job files and converter.
+  \item[What was independently modified, tested, or rejected] Concrete corrections:
+        \begin{enumerate}[nosep]
+          \item \emph{The wrong device was being tested.} The scratch directory defaulted to the in-repo
+                \code{data/scratch/}, which lives on the \qty{2}{\tera\byte} SATA \emph{HDD}, so the
+                first full dataset showed millisecond QD=1 latencies. The scratch path was made
+                overridable (\code{ACS_SCRATCH}) and pointed at the NVMe SSD. The AI's claim that
+                \enquote{the NVMe is read-only to us} was false, as a one-line write test showed. The
+                device check in \code{env.txt} was itself buggy: it stripped trailing digits from
+                \code{nvme0n1p3} and printed \code{rotational: ?}. It now resolves the partition to its
+                parent disk.
+          \item An early version measured \emph{submission} latency rather than \emph{completion}
+                latency; it now times each I/O to completion.
+          \item A convenience default left the page cache enabled and reported
+                \ensuremath{\sim}\num{2}~million IOPS. That case became the required pitfall
+                (\cref{sec:pitfall}), and \code{O_DIRECT} became the default.
+          \item The report claimed a \code{0xA5} write fill, but the timed write buffers were never
+                initialised. They are now filled once with an incompressible xorshift pattern, and
+                \code{make test} checks that it does not compress.
+          \item The report claimed \code{validate.sh} refused \code{/dev/nvme0n1} when it only tested
+                \code{/dev/sda}; it now tests both. It also claimed a direct-vs-buffered assertion that
+                did not exist; the assertion has been added.
+          \item An AI-drafted sentence said p99 \enquote{rises monotonically with write fraction}. The
+                table contradicts it (pure write is below 50/50), and the sentence was corrected.
+          \item The first version of the sustained-write summary defined \enquote{burst} as the median
+                of the first \qty{10}{\second}. On the real data, where the burst lasted only
+                \qty{3}{\second}, that reported a misleading \qty{66}{\mebi\byte\per\second} burst and a
+                spurious cliff at \qty{11}{\gibi\byte}. The definitions were fixed and the summary was
+                regenerated from the unchanged raw log (\code{run.sh reprocess}).
+          \item The earlier report attributed the small (\qty{3.1}{\gibi\byte}) cache to the run order.
+                The lean re-run on a trimmed, idle drive found \qty{3.8}{\gibi\byte}, so that
+                explanation was withdrawn (\cref{sec:device-state}). The summary column
+                \code{rand_steady_iops} is a byte-weighted phase average, and in the lean run a final
+                \qty{0.7}{\second} at SLC speed doubles it. Checked against the per-second log, the
+                text now quotes the per-second median of the eight full seconds as the steady value.
+          \item Claims carried over from the pilot data were re-checked against the final run and
+                corrected where the data disagreed: the QD 1$\to$4 scaling, the 26\,\% gain from QD 32 to
+                64 (15\,\%), the constant p99.9/p50 ratio, and the prediction that deep queues hide
+                fragmentation.
+        \end{enumerate}
+  \item[Validation] \code{make test} checks the safety gate (both block devices, a symlink to one,
+        \code{/etc/passwd}, \code{/}), the incompressible fill, physical orderings, the $L\le\text{QD}$
+        invariant, page-cache bypass and the FIO converter. FIO cross-checks \code{blkbench}
+        (\cref{sec:fio-check}). Every figure traces to a committed raw/processed file
+        (\cref{app:repro}).
+\end{description}

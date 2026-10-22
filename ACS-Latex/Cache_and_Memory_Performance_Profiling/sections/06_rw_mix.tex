@@ -1,0 +1,99 @@
+% !TeX root = ../main.tex
+\section{Read/Write Mix}\label{sec:rw-mix}
+
+\begin{hypothesis}
+  Every written line needs a read-for-ownership (RFO) and later a write-back, so it costs about two lines
+  of DRAM traffic plus bus turnarounds. Demand bandwidth should therefore fall as the write fraction grows
+  while DRAM traffic stays nearly constant, and loaded latency should be highest for write-heavy mixes,
+  whose write-backs compete with the probe's reads.
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & \qty{128}{\mebi\byte} per generator core; sequential; ordinary (write-allocate) full-line stores; \qty{4}{\kibi\byte} pages \\
+  Varied      & reads per 10 \emph{lines}: 10 (100/0), 7 (70/30), 5 (50/50), 0 (0/100); $T = 1$ and $9$ generator cores \\
+  Latency     & concurrent random pointer-chase probe on CPU~2 (\code{mem_loaded}); $T=0$ gives the unloaded value \\
+  Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh rw_mix} \\
+\end{knobs}
+
+\paragraph{Mix definition.} Of every 10 consecutive \qty{64}{\byte} lines, the first $R$ are read and
+the remaining $10-R$ are fully overwritten, so the ratio holds for the traffic the memory system sees.
+Mixing \qty{8}{\byte} elements instead is a trap: every source line is read \emph{and} every destination
+line written, so a nominal ``70/30'' moves about three lines per useful line (\cref{sec:ai-use}).
+
+\begin{figure}[tbp]
+  \centering
+  \begin{subfigure}[t]{0.49\linewidth}
+    \IfDataExists{rw_mix}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, height=0.72\linewidth, ymin=0, ymax=50, xtick={0,5,7,10},
+                   xticklabels={0/100,50/50,70/30,100/0}, xlabel={Read/write mix (lines)},
+                   ylabel={Bandwidth (GiB/s)},
+                   legend style={font=\scriptsize, inner sep=1pt, at={(0.5,1.03)}, anchor=south},
+                   legend columns=2]
+        \addplot+[blue, mark=*, mark options={fill=blue}, iqr bars] table[x=reads10, y=total_gib_s_median, iqr of=total_gib_s, only if={threads}{9}] {data/rw_mix.csv};
+        \addlegendentry{demand, $T=9$}
+        \addplot+[blue, mark=o, dashed] table[x=reads10, y=traffic_gib_s_median, only if={threads}{9}] {data/rw_mix.csv};
+        \addlegendentry{est.\ traffic, $T=9$}
+        \addplot+[blue!50!black, only marks, mark=x, mark size=3pt] table[x=reads10, y expr=\thisrow{imc_rd_gib_s_median}+\thisrow{imc_wr_gib_s_median}, only if={threads}{9}] {data/rw_mix.csv};
+        \addlegendentry{DRAM (IMC), $T=9$}
+        \addplot+[red, mark=square*, mark options={fill=red}, iqr bars] table[x=reads10, y=total_gib_s_median, iqr of=total_gib_s, only if={threads}{1}] {data/rw_mix.csv};
+        \addlegendentry{demand, $T=1$}
+        \addplot+[red, mark=square, dashed] table[x=reads10, y=traffic_gib_s_median, only if={threads}{1}] {data/rw_mix.csv};
+        \addlegendentry{est.\ traffic, $T=1$}
+        \addplot+[red!50!black, only marks, mark=+, mark size=3pt] table[x=reads10, y expr=\thisrow{imc_rd_gib_s_median}+\thisrow{imc_wr_gib_s_median}, only if={threads}{1}] {data/rw_mix.csv};
+        \addlegendentry{DRAM (IMC), $T=1$}
+      \end{axis}
+    \end{tikzpicture}}
+    \caption{Throughput.}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.49\linewidth}
+    \IfDataExists{rw_mix}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, height=0.72\linewidth, ymin=0, xtick={0,5,7,10},
+                   xticklabels={0/100,50/50,70/30,100/0}, xlabel={Read/write mix (lines)},
+                   ylabel={Probe latency (ns)}, legend pos=north east, legend style={font=\scriptsize}]
+        \addplot+[iqr bars] table[x=reads10, y=probe_ns_median, iqr of=probe_ns, only if={threads}{9}] {data/rw_mix.csv};
+        \addlegendentry{$T=9$}
+        \addplot+[iqr bars] table[x=reads10, y=probe_ns_median, iqr of=probe_ns, only if={threads}{1}] {data/rw_mix.csv};
+        \addlegendentry{$T=1$}
+      \end{axis}
+    \end{tikzpicture}}
+    \caption{Loaded latency of a random read.}
+  \end{subfigure}
+  \caption{Read/write mixes: throughput and concurrently measured latency. Demand: bytes the program reads
+  and writes; est.\ traffic: adds one RFO line per written line; DRAM (IMC): memory-controller read+write
+  count over the same windows. The unloaded probe latency
+  is \valqty{rw_unloaded_ns}{\nano\second}.}\label{fig:rw-mix}
+\end{figure}
+
+\subsection{Analysis}
+With nine generator cores, demand bandwidth is \valqty{rw_10_t9_gib}{\gibi\byte\per\second} for 100\%
+reads, \valqty{rw_7_t9_gib}{\gibi\byte\per\second} at 70/30, \valqty{rw_5_t9_gib}{\gibi\byte\per\second}
+at 50/50 and \valqty{rw_0_t9_gib}{\gibi\byte\per\second} for 100\% writes, falling with the write fraction as
+predicted. The memory-controller counters measure \valqty{rw_10_t9_imc}{\gibi\byte\per\second} to
+\valqty{rw_0_t9_imc}{\gibi\byte\per\second} across the mixes, within about 1\% of the RFO-counted estimate
+(\valqty{rw_10_t9_traffic}{\gibi\byte\per\second} to \valqty{rw_0_t9_traffic}{\gibi\byte\per\second}; idle
+background \valqty{cc_imc_rd_idle}{\gibi\byte\per\second}); for pure writes the controller reads
+\valqty{rw_0_t9_imcrd}{\gibi\byte\per\second} (the RFOs) and writes \valqty{rw_0_t9_imcwr}{\gibi\byte\per\second}.
+Total DRAM traffic stays at about \qty{30}{\gibi\byte\per\second} whatever the mix, as does MLC's
+peak-injection bandwidth (\valqty{mlc_pk_allreads_gib}{\gibi\byte\per\second} all reads,
+\valqty{mlc_pk_r31_gib}{\gibi\byte\per\second} at 3:1, \valqty{mlc_pk_r11_gib}{\gibi\byte\per\second} at 1:1).
+The cost of writes is the RFO, not a loss of controller efficiency.
+
+Probe latency rises from \valqty{rw_10_t9_ns}{\nano\second} (reads) to \valqty{rw_0_t9_ns}{\nano\second}
+(writes): at the same total DRAM traffic, pure writes double it (\val{rw_0_t9_ns_rel}$\times$) and the 70/30 and 50/50 mixes raise it by about a third
+(\val{rw_7_t9_ns_rel}$\times$, \val{rw_5_t9_ns_rel}$\times$): write-backs and RFOs share the probe's queues,
+and bus turnarounds lengthen every read's wait.
+
+One generator core ($T=1$) is not controller-bound: demand bandwidth falls only from
+\valqty{rw_10_t1_gib}{\gibi\byte\per\second} to \valqty{rw_0_t1_gib}{\gibi\byte\per\second} (perhaps because
+stores retire without waiting for their RFO; untested), while DRAM traffic grows from
+\valqty{rw_10_t1_imc}{\gibi\byte\per\second} to \valqty{rw_0_t1_imc}{\gibi\byte\per\second}. Here the counters
+read \val{rw_t1_imcest_min}--\val{rw_t1_imcest_max}$\times$ the RFO-counted estimate, even for pure reads, a
+gap we did not resolve; \emph{untested hypothesis:} the estimate counts lines still in the L3 from the
+previous pass, which a buffer many times the L3 would test. The probe barely notices one core
+(\val{rw_t1_ns_min}--\valqty{rw_t1_ns_max}{\nano\second}). On all ten cores, \code{copy} delivers
+\valqty{rw_ref_copy}{\gibi\byte\per\second} and \code{triad} \valqty{rw_ref_triad}{\gibi\byte\per\second}; copy reads
+\valqty{rw_ref_copy_imcrd}{\gibi\byte\per\second} and writes \valqty{rw_ref_copy_imcwr}{\gibi\byte\per\second}
+(2:1, source plus RFO), and triad reads \valqty{rw_ref_triad_imcrd}{\gibi\byte\per\second} and writes
+\valqty{rw_ref_triad_imcwr}{\gibi\byte\per\second} (3:1). Non-temporal stores (no RFO) were out of scope.

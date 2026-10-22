@@ -1,0 +1,18 @@
+% !TeX root = ../main.tex
+\section{Conclusion}\label{sec:conclusion}
+
+The hierarchy behaves as its capacities predict, and the counters show \emph{why} each step occurs.
+Zero-queue latency is \valqty{zq_L1_ns}{\nano\second} (\valnum{zq_L1_cyc}~cycles) in L1,
+\valqty{zq_L2_ns}{\nano\second} on the L2 plateau with \qty{4}{\kibi\byte} pages (L2 hit latency
+\valqty{zq_L2_hugens}{\nano\second} without conflict misses), \valqty{zq_L3_ns}{\nano\second} in L3 and
+\valqty{zq_DRAM_ns}{\nano\second} in DRAM, of which \valqty{zq_DRAM_walk_ns}{\nano\second} is page walking
+that \qty{2}{\mebi\byte} pages remove. Under load, bandwidth reaches \valqty{int_sat_gib}{\gibi\byte\per\second}
+at only \val{int_sat_ratio}$\times$ the unloaded latency; past that point more cores buy queueing, not
+bandwidth, as MLC confirms. Little's Law with measured latency separates the \valnum{int_L0max} lines the
+memory system serves from up to \valnum{int_Lmax} that queue; one core sustains at most
+\valnum{mlp_t1_Lmem_max} random demand misses; and counter-fitted AMAT shows random SAXPY paying
+\valqty{amat_rand_aD}{\nano\second} per DRAM miss (\valnum{amat_rand_mlp}-way overlap). Memory-controller
+counters confirm the RFO cost of writes and the adjacent-line cost of sparse reads. The lessons are about
+measurement discipline: out-size the LLC (\cref{sec:pitfall}), randomize latency chases, measure loaded
+latency, mix reads and writes per line, verify huge pages (\cref{sec:tlb}), and measure the clock
+(\cref{sec:anomalies}).

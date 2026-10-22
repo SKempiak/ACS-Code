@@ -1,0 +1,173 @@
+% !TeX root = ../main.tex
+\section{Block-Size Sweep}\label{sec:block-size}
+\rubric{Block-size and pattern sweeps}{35}{Complete matrix and clear interpretation of IOPS and MiB/s
+against latency.}
+
+\begin{hypothesis}
+  As the block grows from \qty{4}{\kibi\byte} to \qty{256}{\kibi\byte} at QD=1, small-block I/O should be
+  \emph{IOPS-limited} (throughput $=$ IOPS $\times$ block, rising with block size) and large-block I/O
+  should approach a \emph{throughput ceiling} where IOPS falls as $1/\text{block}$. Sequential should beat
+  random at every block size, with the gap largest at small blocks where per-op overhead dominates.
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & one job; \code{O_DIRECT}; 5 repetitions of \qty{4}{\second} for reads; 3 repetitions
+                capped at \qty{256}{\mebi\byte} each for writes, each write point after a \qty{15}{\second}
+                pause \\
+  Varied      & block size \qty{4}{\kibi\byte}--\qty{1}{\mebi\byte} (8 sizes); random vs.\ sequential;
+                100\% read vs.\ 100\% write; QD=1 (all four combinations) and QD=32 (sequential read and
+                write, random read) \\
+  Ceiling     & PCIe~3.0~$\times$4: \qty{3756}{\mebi\byte\per\second} raw (\cref{sec:method}) \\
+  Script      & \code{SSD_Performance_Profiling/scripts/run.sh block_size} \\
+\end{knobs}
+
+\pgfplotsset{bsplot/.style={acs, height=0.85\linewidth,
+  xtick={4096,16384,65536,262144,1048576}, xticklabels={4K,16K,64K,256K,1M},
+  xlabel={Block size (bytes)}, legend style={font=\scriptsize}}}
+\begin{figure}[!htbp]
+  \centering
+  \csvget\ssdHasBW{block_size}{mode=write,qd=1}{mibps_median}%
+  \IfDataExists{block_size}{%
+    \begin{subfigure}[t]{0.49\linewidth}
+      \begin{tikzpicture}
+        \begin{axis}[xmode=log, log basis x=2, bsplot, ylabel={Throughput (MiB/s)}, ymin=0, legend pos=north west]
+          \addplot+[iqr bars] table[x=bs, y=mibps_median, iqr of=mibps, only if={pattern}{rand}, only if={mode}{read}, only if={qd}{1}] {data/block_size.csv};
+          \addlegendentry{rand read}
+          \addplot+[iqr bars] table[x=bs, y=mibps_median, iqr of=mibps, only if={pattern}{seq}, only if={mode}{read}, only if={qd}{1}] {data/block_size.csv};
+          \addlegendentry{seq read}
+          \ifx\ssdHasBW\empty\else
+          \addplot+[dashed, iqr bars] table[x=bs, y=mibps_median, iqr of=mibps, only if={pattern}{rand}, only if={mode}{write}, only if={qd}{1}] {data/block_size.csv};
+          \addlegendentry{rand write}
+          \fi
+          \ifx\ssdHasBW\empty\else
+          \addplot+[dashed, iqr bars] table[x=bs, y=mibps_median, iqr of=mibps, only if={pattern}{seq}, only if={mode}{write}, only if={qd}{1}] {data/block_size.csv};
+          \addlegendentry{seq write}
+          \fi
+        \end{axis}
+      \end{tikzpicture}
+      \caption{QD=1 throughput.}
+    \end{subfigure}\hfill
+    \begin{subfigure}[t]{0.49\linewidth}
+      \begin{tikzpicture}
+        \begin{axis}[xmode=log, log basis x=2, bsplot, ymode=log, ylabel={Mean latency (\si{\micro\second})}]
+          \addplot+[iqr bars] table[x=bs, y=lat_mean_us_median, iqr of=lat_mean_us, only if={pattern}{rand}, only if={mode}{read}, only if={qd}{1}] {data/block_size.csv};
+          \addplot+[iqr bars] table[x=bs, y=lat_mean_us_median, iqr of=lat_mean_us, only if={pattern}{seq}, only if={mode}{read}, only if={qd}{1}] {data/block_size.csv};
+          \ifx\ssdHasBW\empty\else
+          \addplot+[dashed, iqr bars] table[x=bs, y=lat_mean_us_median, iqr of=lat_mean_us, only if={pattern}{rand}, only if={mode}{write}, only if={qd}{1}] {data/block_size.csv};
+          \fi
+          \ifx\ssdHasBW\empty\else
+          \addplot+[dashed, iqr bars] table[x=bs, y=lat_mean_us_median, iqr of=lat_mean_us, only if={pattern}{seq}, only if={mode}{write}, only if={qd}{1}] {data/block_size.csv};
+          \fi
+        \end{axis}
+      \end{tikzpicture}
+      \caption{QD=1 mean latency (same runs).}
+    \end{subfigure}%
+  }
+  \caption{QD=1 block-size sweep, reads (solid) and writes (dashed); medians with IQR bars. Random-read
+  throughput rises with block size because latency grows more slowly than the transfer size. Sequential
+  reads stay near \qty{1.45}{\gibi\byte\per\second} from 64 to \qty{256}{\kibi\byte} and reach
+  \qty{1.8}{\gibi\byte\per\second} at \qty{1}{\mebi\byte}, a single-request limit well below the
+  \qty{3756}{\mebi\byte\per\second} link. Writes stay at the
+  \ensuremath{\sim}\qty{1.05}{\gibi\byte\per\second} SLC ingest rate from \qty{64}{\kibi\byte} up, except
+  at \qty{128}{\kibi\byte} and \qty{256}{\kibi\byte}, where the random writes (and, less, the sequential
+  ones) met a cache-exhaustion episode (see text).}\label{fig:block-size}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \csvget\ssdHasQD{block_size}{qd=32}{mibps_median}%
+  \csvget\ssdHasW{block_size}{mode=write,qd=32}{mibps_median}%
+  \csvget\ssdHasRR{block_size}{pattern=rand,mode=read,qd=32}{mibps_median}%
+  \ifx\ssdHasQD\empty\acsmissing{data/block_size.csv (QD=32 rows)}\else
+    \begin{tikzpicture}
+      \begin{axis}[xmode=log, log basis x=2, bsplot, width=0.62\linewidth, height=0.42\linewidth, ylabel={Throughput (MiB/s)},
+                   ymin=0, ymax=4200, legend pos=outer north east]
+        \addplot+[iqr bars] table[x=bs, y=mibps_median, iqr of=mibps, only if={pattern}{seq}, only if={mode}{read}, only if={qd}{32}] {data/block_size.csv};
+        \addlegendentry{seq read, QD=32}
+        \ifx\ssdHasW\empty\else
+        \addplot+[dashed, iqr bars] table[x=bs, y=mibps_median, iqr of=mibps, only if={pattern}{seq}, only if={mode}{write}, only if={qd}{32}] {data/block_size.csv};
+        \addlegendentry{seq write, QD=32}
+        \fi
+        \ifx\ssdHasRR\empty\else
+        \addplot+[dashdotted, mark=triangle*, iqr bars] table[x=bs, y=mibps_median, iqr of=mibps, only if={pattern}{rand}, only if={mode}{read}, only if={qd}{32}] {data/block_size.csv};
+        \addlegendentry{rand read, QD=32}
+        \fi
+        \addplot+[densely dotted, mark=o, iqr bars] table[x=bs, y=mibps_median, iqr of=mibps, only if={pattern}{seq}, only if={mode}{read}, only if={qd}{1}] {data/block_size.csv};
+        \addlegendentry{seq read, QD=1}
+        \draw[red!60, thick, dashed] ({rel axis cs:0,0}|-{axis cs:4096,3756}) -- ({rel axis cs:1,0}|-{axis cs:4096,3756})
+          node[pos=0.02, anchor=south west, font=\scriptsize, text=red!60] {PCIe 3.0 $\times$4 raw: 3756 MiB/s};
+      \end{axis}
+    \end{tikzpicture}\fi
+  \caption{Sequential throughput at QD=32 against the measured-link ceiling (red), with the QD=1 read
+  curve for reference. Deep queues remove the per-request latency limit, so the remaining gap to the line
+  is the device's internal bandwidth plus protocol overhead.}\label{fig:block-size-qd}
+\end{figure}
+
+\subsection{Analysis}
+\textbf{Random reads at QD=1 are latency-bound, not size-bound.} From \qty{4}{\kibi\byte} to
+\qty{256}{\kibi\byte}, IOPS fall only from
+\csvq{block_size}{bs=4096,pattern=rand,mode=read,qd=1}{iops_median} to
+\csvq{block_size}{bs=262144,pattern=rand,mode=read,qd=1}{iops_median}, so throughput climbs from
+\csvq{block_size}{bs=4096,pattern=rand,mode=read,qd=1}{mibps_median} to
+\csvq{block_size}{bs=262144,pattern=rand,mode=read,qd=1}{mibps_median}\,MiB/s while latency grows only
+\csvget\ssdA{block_size}{bs=262144,pattern=rand,mode=read,qd=1}{lat_mean_us_median}%
+\csvget\ssdB{block_size}{bs=4096,pattern=rand,mode=read,qd=1}{lat_mean_us_median}%
+\ssdratio{\ssdA}{\ssdB}$\times$ for a $64\times$ larger block. We read this as
+$W(b)\approx W_0 + t_\text{xfer}(b)$: a fixed cost $W_0\approx\qty{50}{\micro\second}$ (NAND sense plus
+command overhead) plus a transfer term that grows sub-linearly while the controller stripes a request
+across dies. Beyond \qty{256}{\kibi\byte} latency doubles with size and throughput plateaus at
+\csvq{block_size}{bs=524288,pattern=rand,mode=read,qd=1}{mibps_median}--%
+\csvq{block_size}{bs=1048576,pattern=rand,mode=read,qd=1}{mibps_median}\,MiB/s.
+
+\textbf{Sequential reads at QD=1 hit a single-request limit.} Read-ahead cuts the \qty{4}{\kibi\byte}
+sequential read to \csvq[1]{block_size}{bs=4096,pattern=seq,mode=read,qd=1}{lat_mean_us_median}\,\si{\micro\second}
+(random: \csvq[1]{block_size}{bs=4096,pattern=rand,mode=read,qd=1}{lat_mean_us_median}). From 64 to
+\qty{256}{\kibi\byte} throughput is flat at
+\csvq{block_size}{bs=65536,pattern=seq,mode=read,qd=1}{mibps_median}--%
+\csvq{block_size}{bs=262144,pattern=seq,mode=read,qd=1}{mibps_median}\,MiB/s, reaching
+\csvq{block_size}{bs=1048576,pattern=seq,mode=read,qd=1}{mibps_median}\,MiB/s at \qty{1}{\mebi\byte},
+only \qty{49}{\percent} of the link: the limit is how fast the controller streams one command.
+
+\textbf{Deep queues do not reach the link ceiling} (\cref{fig:block-size-qd}). At QD=32 sequential reads
+flatten at \csvq{block_size}{bs=16384,pattern=seq,mode=read,qd=32}{mibps_median}--%
+\csvq{block_size}{bs=65536,pattern=seq,mode=read,qd=32}{mibps_median}\,MiB/s
+(\csvq{block_size}{bs=1048576,pattern=seq,mode=read,qd=32}{mibps_median}\,MiB/s at \qty{1}{\mebi\byte}),
+about \qty{56}{\percent} of the raw link, well below the \qtyrange{85}{90}{\percent} protocol overhead
+allows. The NAND/controller back end is the limit, consistent with Micron's \qty{2200}{MB/s} read and
+\qty{1070}{MB/s} write rating (\ensuremath{\approx}\num{2098} and \qty{1020}{\mebi\byte\per\second})
+\cite{micron2210brief}. QD=32 sequential writes are flat at
+\csvq{block_size}{bs=65536,pattern=seq,mode=write,qd=32}{mibps_median}\,MiB/s, the SLC ingest rate
+(\cref{sec:device-state}).
+
+\textbf{Random reads at QD=32} reach
+\csvq{block_size}{bs=4096,pattern=rand,mode=read,qd=32}{iops_median} IOPS at \qty{4}{\kibi\byte}, about
+the sequential rate at that size
+(\csvq{block_size}{bs=4096,pattern=seq,mode=read,qd=32}{iops_median}), plateau at
+\csvq{block_size}{bs=262144,pattern=rand,mode=read,qd=32}{mibps_median}\,MiB/s from
+\qty{128}{\kibi\byte} up and give
+\csvq{block_size}{bs=1048576,pattern=rand,mode=read,qd=32}{mibps_median}\,MiB/s at \qty{1}{\mebi\byte},
+against \csvq{block_size}{bs=1048576,pattern=seq,mode=read,qd=32}{mibps_median} for sequential: random
+placement costs about a quarter of the bandwidth even with 32 large requests in flight.
+
+\textbf{Writes at QD=1} post \csvq{block_size}{bs=4096,pattern=rand,mode=write,qd=1}{iops_median} IOPS at
+\qty{4}{\kibi\byte} (reads: \csvq{block_size}{bs=4096,pattern=rand,mode=read,qd=1}{iops_median}), and
+random and sequential curves coincide
+(\csvq{block_size}{bs=65536,pattern=rand,mode=write,qd=1}{mibps_median} vs.\
+\csvq{block_size}{bs=65536,pattern=seq,mode=write,qd=1}{mibps_median}\,MiB/s at \qty{64}{\kibi\byte}),
+flattening at the same \ensuremath{\sim}\qty{1.05}{\gibi\byte\per\second} ingest rate as at QD=32: the
+buffer acknowledges before the NAND program, so writes reach their ceiling with one request in flight.
+
+\textbf{A drive-state episode, not a block-size effect.} The QD=1 random writes ran from small to large
+blocks. During the \qty{128}{\kibi\byte} point, after about \qty{3.3}{\gibi\byte} of random writes in
+this step (plus its \qty{2}{\gibi\byte} preconditioning pass), the rate fell from
+\qty{1087}{} to \qty{132}{} and then \qty{66}{\mebi\byte\per\second}, and all three \qty{256}{\kibi\byte}
+repetitions ran at \qtyrange{61}{66}{\mebi\byte\per\second} with p99 of \qtyrange{34}{40}{\milli\second}:
+the direct-to-QLC rate of \cref{sec:device-state}. After the next \qty{15}{\second} pause the
+\qty{512}{\kibi\byte} and \qty{1}{\mebi\byte} points were back at
+\csvq{block_size}{bs=524288,pattern=rand,mode=write,qd=1}{mibps_median} and
+\csvq{block_size}{bs=1048576,pattern=rand,mode=write,qd=1}{mibps_median}\,MiB/s. The sequential writes,
+measured later, dipped less (\csvq{block_size}{bs=262144,pattern=seq,mode=write,qd=1}{mibps_median}\,MiB/s
+at \qty{256}{\kibi\byte}). Because larger blocks recovered, we read the collapse as the SLC cache running
+out of free blocks, which the \qty{60}{\gibi\byte} fill at the start of the run had left with little
+headroom (\cref{sec:device-state}), not as an effect of block size. Our first run showed the same collapse
+from \qty{256}{\kibi\byte} to \qty{1}{\mebi\byte}.

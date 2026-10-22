@@ -1,0 +1,110 @@
+% !TeX root = ../main.tex
+\section{Scalar vs.\ SIMD Baseline}\label{sec:baseline}
+\rubric{Baseline, correctness, reproducibility}{15}{Speedup and achieved throughput for every kernel
+across working-set sizes.}
+
+\begin{hypothesis}
+  For compute-friendly, unit-stride kernels (SAXPY, elementwise multiply, stencil) we expect the
+  \code{native} speedup to approach the float32 lane count ($8\times$) while data is L1/L2-resident,
+  and to fall toward $1\times$ once the working set is DRAM-resident and all variants share the same
+  bandwidth. \code{autovec} (\num{4} lanes) should track at roughly half the \code{native} speedup.
+  The dot product should barely speed up at any size because its reduction does not reassociate
+  (\cref{sec:vectorization}).
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & float32; unit stride; aligned arrays; one thread pinned to CPU~2 \\
+  Varied      & kernel; variant (scalar, autovec, native); $N = 2^{8} \ldots 2^{25}$ \\
+  Repetitions & 12 per point; median, IQR error bars \\
+  Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh baseline} \\
+\end{knobs}
+
+\begin{figure}[tbp]
+  \centering
+  \begin{minipage}[t]{0.49\linewidth}
+  \IfDataExists{baseline}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, xlabel={$N$ (elements)}, ylabel={Speedup over scalar},
+                   width=\linewidth, height=0.68\linewidth, legend style={font=\scriptsize, at={(0.98,0.98)}, anchor=north east}]
+        \addplot+[blue, mark=*, mark options={fill=blue}, iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{saxpy}, only if={variant}{native}] {data/baseline.csv};
+        \addlegendentry{SAXPY native}
+        \addplot+[blue, densely dashed, mark=o, mark options={solid}, iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{saxpy}, only if={variant}{autovec}] {data/baseline.csv};
+        \addlegendentry{SAXPY autovec}
+        \addplot+[red, mark=square*, mark options={fill=red}, iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{mul}, only if={variant}{native}] {data/baseline.csv};
+        \addlegendentry{multiply native}
+        \addplot+[brown!80!black, mark=triangle*, mark options={fill=brown!80!black}, iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{stencil}, only if={variant}{native}] {data/baseline.csv};
+        \addlegendentry{stencil native}
+        \addplot+[black, mark=diamond*, mark options={fill=black}, iqr bars] table[x=n, y=speedup_vs_scalar, speedup iqr, only if={kernel}{dot}, only if={variant}{native}] {data/baseline.csv};
+        \addlegendentry{dot native}
+        \acsvline{4096}{L1d}
+        \acsvline{32768}{L2}
+        \acsvline{2600000}{L3}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Speedup of the SIMD builds over scalar (median; error bars: range implied by the two
+  IQRs). Gains peak in cache and compress in DRAM; the dot product never benefits.}\label{fig:baseline-speedup}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.49\linewidth}
+  \IfDataExists{baseline}{%
+    \begin{tikzpicture}
+      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, xlabel={$N$ (elements)}, ylabel={Throughput (elements/s)},
+                   width=\linewidth, height=0.68\linewidth, legend pos=north east, legend style={font=\scriptsize}]
+        \addplot+[iqr bars] table[x=n, y=elems_per_s_median, iqr of=elems_per_s, only if={kernel}{saxpy}, only if={variant}{scalar}] {data/baseline.csv};
+        \addlegendentry{SAXPY scalar}
+        \addplot+[iqr bars] table[x=n, y=elems_per_s_median, iqr of=elems_per_s, only if={kernel}{saxpy}, only if={variant}{native}] {data/baseline.csv};
+        \addlegendentry{SAXPY native}
+        \acsvline{4096}{L1d}
+        \acsvline{32768}{L2}
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \caption{Achieved SAXPY throughput (median, IQR). Native drops to a DRAM-limited plateau;
+  scalar loses comparatively little outside cache.}\label{fig:baseline-throughput}
+  \end{minipage}
+\end{figure}
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{Achieved GFLOP/s (median) of every kernel and build at one $N$ per level: L1
+  ($N=\num{1024}$), L2 (\num{16384}), L3 (\num{524288}) and DRAM (\num{16777216}). The same points
+  appear in the roofline (\cref{fig:roofline}).}\label{tab:baseline-gflops}
+  \IfDataExists{baseline_gflops}{%
+    \pgfplotstabletypeset[
+      col sep=comma, string type,
+      columns={kernel,variant,L1,L2,L3,DRAM},
+      columns/kernel/.style={column name=Kernel},
+      columns/variant/.style={column name=Build},
+      columns/L1/.style={column type=r}, columns/L2/.style={column type=r},
+      columns/L3/.style={column type=r}, columns/DRAM/.style={column type=r},
+      every head row/.style={before row=\toprule, after row=\midrule},
+      every row no 3/.style={before row=\midrule}, every row no 6/.style={before row=\midrule},
+      every row no 9/.style={before row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/baseline_gflops.csv}%
+  }
+\end{table}
+
+\subsection{Analysis}
+At $N=\num{4096}$ (L1-resident) the \code{native} speedups are SAXPY $5.79\times$
+(\qty{20.2}{\giga\flop\per\second}), elementwise multiply $3.55\times$, stencil $3.49\times$
+(\qty{17.3}{\giga\flop\per\second}) and dot $1.01\times$; \code{autovec} reaches $3.02\times$,
+$2.54\times$ and $2.79\times$ for the first three. None reaches $8\times$ even in cache: native SAXPY
+needs \numrange{0.22}{0.28}~cycles per element in L1 (\cref{sec:locality}) against the
+$0.125$~cycles that two load ports and one store port would allow, so load/store issue, not FLOPs,
+limits it.
+
+\emph{Elementwise multiply} streams three arrays (\qty{12}{\byte}/element) and leaves L1 earlier
+($N\approx\num{2700}$); its speedup peaks at $5.54\times$ at $N=\num{2048}$. The \emph{stencil} does
+the most work per element (5~FLOP, reusing $x$) and keeps a $2.6$--$2.7\times$ advantage even in
+DRAM. Its cache-resident speedup is irregular: $3.3$--$3.5\times$ for
+$N=\num{1024}\ldots\num{16384}$ but $4.5$--$6.2\times$ for $N=\num{32768}\ldots\num{1048576}$
+(\cref{sec:anomalies}). The \emph{dot product}, the reduction case of \cref{sec:vectorization},
+stays at $\approx1\times$ (\qtyrange{1.33}{1.49}{\giga\flop\per\second}) at every size.
+
+By $N=\num{16777216}$ (\qty{128}{\mebi\byte}) every speedup has compressed
+(\cref{fig:baseline-speedup,tab:baseline-gflops}). \Cref{fig:baseline-throughput} shows the
+asymmetry: native SAXPY falls from \num{20.2} to \qty{4.7}{\giga\flop\per\second}, scalar only from
+about \num{3.5} to \qty{2.4}{\giga\flop\per\second}, because scalar SAXPY stays largely
+instruction-bound even in DRAM (\cref{sec:locality}). Other sweeps give $1.88\text{--}2.02\times$ for SAXPY at
+$N=2^{24}$--$2^{25}$.

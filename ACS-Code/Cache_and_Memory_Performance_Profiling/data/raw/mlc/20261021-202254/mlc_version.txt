@@ -1,0 +1,169 @@
+Intel(R) Memory Latency Checker - v3.13
+Invalid Argument: --version
+
+
+USAGE: Default and recommended usage is to just run the binary "./mlc". For specific analysis, there are six modes:
+./mlc --latency_matrix 		 prints a matrix of local and cross-socket memory latencies
+./mlc --bandwidth_matrix 	 prints a matrix of local and cross-socket memory bandwidths
+./mlc --peak_injection_bandwidth 		 prints peak memory bandwidths of the platform for various read-write ratios
+./mlc --idle_latency 		 prints the idle memory latency of the platform
+./mlc --loaded_latency 		 prints the loaded memory latency of the platform
+./mlc --c2c_latency 		 prints the cache to cache data transfer latency of the platform
+./mlc --c2c_bandwidth 		 prints cross-L3 cache-to-cache read bandwidth
+./mlc --concurrent_bandwidth 	 prints concurrent hot/cold memory bandwidth
+./mlc --delay_pointer_chase 	 measures pointer-chase latency with a configurable delay sub-chain
+	  Optional: --dchainN (single chain_len), --dsweepN (sweep 1..N, default 64),
+	            --dstrideN (slot stride, default 1), --dslotsN (slot count, default 31250000) or -b<size>,
+	            --ditersN (iterations, default 10000000), --dcore_mhzN (core freq for ratio),
+	            --doverheadN (per-node overhead cycles for adjusted output, default 4)
+./mlc --c2c_readerbw_matrix 	 prints an NxN matrix of cross-L3 reader bandwidth
+./mlc --memory_bandwidth_scan 		 prints memory bandwidth across entire memory for each 1GB address range
+./mlc --help 		 prints this usage description and exits
+
+./mlc [-e] [-r] [-X] [-v]
+	 -e h/w prefetcher state will not be modified
+	 -r random access to get latencies - needed when prefetchers can't be disabled by MLC
+	 -X only one thread from each core used
+	 -v verbose printout
+
+For custom analysis (example: getting the latency matrix with a larger buffer size), specify flags to override the defaults. Each usage mode supports the following flags:
+./mlc --latency_matrix [-a] [-bn] [-Dn] [-e] [-ln] [-L|-h] [-tn] [-r] [-tn] [-xn] [-X]
+./mlc --idle_latency [-bn] [-cn] [-Dn] [-e] [-fn] [-in] [-jn] [-Jn] [-ln] [-L|-h] [-r] [-tn] [-xn] [-X]
+./mlc --loaded_latency [-bn] [-B] [-cn] [-dn] [-Dn] [-e] [-g<filename>] [-in] [-I] [-jn] [-kn|-mn] [-Kn] [-ln]
+	[-L|-h] [-M<filename>] [-nn] [-o<filename] [-P] [-Q] [-r] [-R] [-tn] [-T] [-u] [-U] [-v] [-Wn] [-X] [-Y] [-Z]
+./mlc --bandwidth_matrix [-bn] [-e] [-ln]  [-L|-h] [-M<filename>] [-R] [-tn] [-Wn] [-X] [-Y] [-Z]
+./mlc --peak_injection_bandwidth [-bn] [-e] [-kn|-mn] [-ln] [-L|-h] [-M<filename>] [-tn] [-X] [-Y] [-Z]
+./mlc --max_bandwidth [-bn] [-e] [-kn|-mn] [-ln] [-L|-h] [-M<filename>] [-tn] [-X] [-Y] [-Z]
+./mlc --c2c_latency [-bn] [-cn] [-Cn] [-Dn] {-En] [-Gn] [-H] [-in] [-L|-h] [-r] [-Sn] [-wn] [-xn]
+./mlc --c2c_bandwidth [--c2cbw_reader=cpulist] [--c2cbw_writer=cpulist] [--c2cbw_sharer=cpulist]
+	[--c2cbw_ngroups=n] [--c2cbw_delay=n] [--c2cbw_stepped] [--c2cbw_pref|--c2cbw_nopref]
+	[--c2cbw_partial] [--c2cbw_auto_sharer] [--c2cbw_skip=KB] [--c2cbw_verbose]
+	[-bn] [-Cn] [-e] [-H] [-R] [-tn] [-Z]
+./mlc --c2c_readerbw_matrix [-bn] [-Cn] [-e] [-H] [-tn]
+./mlc --concurrent_bandwidth [-bn] [-kn|-mn] [-tn] [--conc_hotbufn] [--conc_hot_pctn] [-X]
+./mlc --delay_pointer_chase [-bn] [--dchainn] [--dsweepn] [--dstriden] [--dslotsn] [--ditersn] [--dcore_mhzn] [--doverheadn]
+./mlc --memory_bandwidth_scan [-jn] [-tn] [-Sn] [-qn] [-nn]
+
+  -a measure idle latencies on all available cpus; if -X is also specified, then only one thread in each core will be used
+  -b buffer size in KiB (default=100000)
+  -B print per-thread throughput
+  -c affinitize the latency measurement thread to core #n
+  -C window size in KB for c2c_latency(default=2000)
+  -d delay cycles injected between requests to memory (default-0), higher value lowers bandwidth
+  -D random access range for latency thread (default=4096)
+  -e do not modify the h/w prefetcher states
+  -E read extra n KB lines in writer thread in c2c_latency(default=0)
+  -f latency histogram bucket width as a power of two exponent, so the bucket
+  	 is 1 << n cycles wide (n=0 gives 1 cycle, n=6 gives 64). Maximum is 30
+  -g <input-file-name> specify input file with delays to inject, for loaded latency measurement
+  -G buffer size in KB for extra reads in reader thread in c2c_latency
+  -h HugePage (1GB) are to be used (on windows only for DAX file mapping w/ 1GB page)
+  -H Test cache to cache transfer latency for clean line transfers
+  -i initialize memory from core #n (determines where requested memory resides)
+  -I Check for data integrity on reads - valid only for all reads in loaded_latency mode
+  -j initialize memory from numa node #n - if specified, this overrides -i
+  -J specify a directory in which files for mmap will be created (by default no files are created) this option is mutually exclusive with -j
+  -k specify a list of core# (use '-' for range e.g 3-6,9-13,19,20 
+  -K option to control partial load/store to 64B lines: -K0 forces full
+     64 byte line access, -K1 and above force partial access. Left alone,
+     partial access is chosen automatically on parts that support specItoM
+  -l stride length in bytes (default=64)
+  -L large pages (2MB) are to be used (assuming they have been enabled)
+  -m mask in hex value of CPUs to run the throughput threads for bandwidth measurement. It is recommended -k option is used instead
+	latency thread always runs on core 0 and this should be excluded from the mask
+  -M <filename> initialize the memory with specific patterns 
+  -n random access range for random bandwidth generation. In --memory_bandwidth_scan mode
+  	 this specifies the numa node# where the cpu threads accessing memory will be running.
+  -o <input-file-name> specify input file with options for per-thread allocation
+   	 each row should contain thread_id, read/write ratio, random/seq, buffer size in KB, DDR4/pmem, remote node id
+  -O add start and stop timestamps to workload
+  -p list of the cores separated by comma, where a thread will be run to prevent the corresponding sockets from transitioning to package sleep states
+  -q # of iterations of each 1GB memory region where B/W is measured. Default is 10
+  -P CLFLUSH used to evict stores to persistent memory
+  -Q CLFLUSH used to evict stores to any memory
+  -r random access reads for latency thread
+  -R read-only load generated, if this is used, -W option should NOT be used 
+  -s specify a obj neame that can be triggerd by external application to synchornize the loaded latency traffic. ex: -s/test_flag 
+  -S affinitize 3rd thread in c2c_latency test to core #n. In --memory_bandwidth_scan mode
+  	 this indicates the bandwidth range for each bucket in terms of MB/sec. Default is 5000
+  -t time in seconds (default=2).  In --memory_bandwidth_scan mode
+  	 this specifies the # of cpu threads that will be used to access memory (default is all threads on that numa node)
+  -T throughput threads only, no latency measurement, -m or -k option can select all CPUs including core 0
+  -u same buffer is shared by all load generation threads in loaded_latency tests
+  -U random access for bandwidth generation (default: off, only sequential access)
+  -v print verbose output
+  -w affinitize hit/hitm writer thread to core #n
+  -Wn where n means
+	2  - 2:1 read-write ratio
+	3  - 3:1 read-write ratio
+	4  - 3:2 read-write ratio
+	5  - 1:1 read-write ratio
+	6  - 0:1 read-Non Temporal Write ratio
+	7  - 2:1 read-Non Temporal Write ratio
+	8  - 1:1 read-Non Temporal Write ratio
+	9  - 3:1 read-Non Temporal Write ratio
+	10 - 2:1 read-Non Temporal Write ratio (stream triad-like)
+		 Same as -W7 but the 2 reads are from 2 different buffers
+	11 - 3:1 read-Write ratio (stream triad-like with RFO)
+		 Same as -W3 but the 2 reads are from 2 different buffers
+	12 - 4:1 read-Write ratio
+	21 - 100% read with 2 addr streams - valid with only -o option
+	23 - 3:1 read-write ratio with 2 addr streams - valid with only -o option
+	27 - 2:1 read-NT write with 2 addr streams - valid with only -o option
+  -x number of iterations in #n millions - if specified, -t should not be specified (-x0 is overloaded case for 1 iteration)
+  -X use only 1 hyper-thread per core for bandwidth measurements
+  -Y use AVX2 32-byte load/store instructions
+  -Z use AVX-512 64-byte load/store instructions
+  -Zn same, but issue loads in bursts of n before the injected delay.
+	 n must be 1, 2 or 4, and applies only to 100% read traffic (-W1)
+
+c2c_bandwidth sub-options:
+  --c2cbw_reader=cpulist   specify reader core list (e.g. 168-223)
+  --c2cbw_writer=cpulist   specify writer core list (e.g. 0|56 for multi-group)
+  --c2cbw_sharer=cpulist   specify sharer core list (e.g. 1-12|57-68)
+  --c2cbw_ngroups=n        number of writer/reader groups (default 1)
+  --c2cbw_delay=n          delay cycles between writer iterations
+  --c2cbw_stepped          stepped mode: writers warm cache, then readers read
+  --c2cbw_pref             force-enable h/w prefetchers for c2c test
+  --c2cbw_nopref           force-disable h/w prefetchers for c2c test
+  --c2cbw_partial          use partial writes (single byte) instead of full-line
+  --c2cbw_auto_sharer      auto-place sharers on writer's L3 cluster
+  --c2cbw_skip=KB          skip first KB of buffer per epoch (for warmup)
+  --c2cbw_verbose          print per-epoch timing details
+
+  c2c_bandwidth examples:
+    # 1 group: 1 writer on core 0, 12 sharers on cores 1-12, 56 readers on cores 168-223
+    ./mlc --c2c_bandwidth --c2cbw_writer=0 --c2cbw_sharer=1-12 --c2cbw_reader=168-223 -t10
+    # 2 groups: writers on cores 0,56; sharers on 1-12,57-68; readers split across 168-195,196-223
+    ./mlc --c2c_bandwidth --c2cbw_ngroups=2 '--c2cbw_writer=0|56' \
+        '--c2cbw_sharer=1-12|57-68' '--c2cbw_reader=168-195|196-223' -t10
+    # 3 groups with auto-sharer placement and verbose output
+    ./mlc --c2c_bandwidth --c2cbw_ngroups=3 '--c2cbw_writer=0|56|112' \
+        '--c2cbw_reader=168-186|187-205|206-223' --c2cbw_auto_sharer --c2cbw_verbose -t10
+
+concurrent_bandwidth sub-options:
+  --conc_hotbuf=n          hot buffer size in KB
+  --conc_hot_pct=n         percentage of accesses to hot buffer (0-100)
+
+loaded_latency modifiers:
+  --fastdelay<d1,d2,...>    cycle through delay values (inline list)
+  --fastdelayfile<path>    load delay values from file
+  --fastdelayinterval<ms>  time per delay value (default: based on -t)
+  --fastdelayverbose       print fastdelay progress
+  --lat_hist_max_us=n      set latency histogram upper bound to n microseconds (idle_latency + -f)
+  --lat_hist_max_cycles=n  set latency histogram upper bound to n base-frequency cycles
+
+L3-domain modifiers (combine with a mode above):
+  --per_llc_cluster        run --loaded_latency or --bandwidth_matrix per-L3-cluster
+  --legacy_mode            skip the extended L3-domain tests in a default run
+  --full_l3_matrix         measure every pair of L3 domains in a default run, rather
+	                   than a representative sample. Only parts with a large
+	                   number of L3 domains are sampled; the rest already do
+	                   the full matrix and this changes nothing for them.
+
+Note that the tool uses the following terminology:
+'core' denotes logical core
+'socket' denotes processor socket/package/node 
+'memory node' denotes a distinct memory NUMA region, identifiable using numactl APIs
+Invalid Argument: --version
+

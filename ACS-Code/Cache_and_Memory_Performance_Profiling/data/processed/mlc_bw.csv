@@ -1,0 +1,11 @@
+mode,traffic,mb_s,gib_s
+peak_injection_bandwidth,ALL Reads,34102.0,31.75996243953705
+peak_injection_bandwidth,3:1 Reads-Writes,32229.0,30.015595257282257
+peak_injection_bandwidth,2:1 Reads-Writes,32281.3,30.064303427934647
+peak_injection_bandwidth,1:1 Reads-Writes,32857.0,30.600465834140778
+peak_injection_bandwidth,Stream-triad like,32296.1,30.078087002038956
+max_bandwidth,ALL Reads,34096.4,31.7547470331192
+max_bandwidth,3:1 Reads-Writes,32715.6,30.46877682209015
+max_bandwidth,2:1 Reads-Writes,32671.5,30.427705496549606
+max_bandwidth,1:1 Reads-Writes,33032.3,30.763726681470875
+max_bandwidth,Stream-triad like,33380.0,31.087547540664673

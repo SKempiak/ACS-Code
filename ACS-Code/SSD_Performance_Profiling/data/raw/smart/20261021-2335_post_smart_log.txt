@@ -1,0 +1,30 @@
+# Output of: sudo nvme smart-log /dev/nvme0
+# Captured by the author on 2026-10-21 (~23:35 EDT), about one hour after the lean re-run (20261021-220614) ended.
+Smart Log for NVME device:nvme0 namespace-id:ffffffff
+critical_warning            : 0
+temperature                : 35 °C (308 K, 95 °F)
+available_spare                : 100%
+available_spare_threshold        : 5%
+percentage_used                : 28%
+endurance group critical warning summary: 0
+informative warning            : 0
+Data Units Read                : 75902222 (38.86 TB)
+Data Units Written            : 141817272 (72.61 TB)
+host_read_commands            : 918779046
+host_write_commands            : 1681941126
+controller_busy_time            : 31731
+power_cycles                : 1393
+power_on_hours                : 20028
+unsafe_shutdowns            : 304
+media_errors                : 0
+num_err_log_entries            : 2105
+Warning Temperature Time        : 0
+Critical Composite Temperature Time    : 0
+Temperature Sensor 1            : 35 °C (308 K, 95 °F)
+Thermal Management T1 Trans Count    : 0
+Thermal Management T2 Trans Count    : 0
+Thermal Management T1 Total Time    : 0
+Thermal Management T2 Total Time    : 0
+Operational Lifetime Energy Consumed    : 0
+Interval Power Measurement Type        : NVM subsystem total power
+Interval Power Measurement        : -

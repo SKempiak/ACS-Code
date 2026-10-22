@@ -1,0 +1,67 @@
+% !TeX root = ../main.tex
+\section{Zero-Queue Baselines}\label{sec:zero-queue}
+
+\begin{hypothesis}
+  At QD=1 a single I/O is in flight, so latency is the full host-stack + controller + flash path. We
+  expect \qty{4}{\kibi\byte} random reads in the tens of microseconds (flash read dominates) and
+  \qty{128}{\kibi\byte} sequential transfers to be bandwidth-limited at a few hundred
+  \unit{\micro\second}. Writes should be \emph{faster} than reads at QD=1 because the SSD's DRAM/SLC
+  write buffer acknowledges them before the flash program completes.
+\end{hypothesis}
+
+\begin{knobs}
+  Fixed       & iodepth 1; one job; \code{O_DIRECT}; 5 repetitions of \qty{4}{\second} (write points also
+                stop at \qty{256}{\mebi\byte} and start after a \qty{120}{\second} pause) \\
+  Cases       & 4~KiB random read, 4~KiB random write, 128~KiB sequential read, 128~KiB sequential write \\
+  Order       & random read $\to$ random write $\to$ sequential re-fill of the file $\to$ sequential read
+                $\to$ sequential write (the re-fill keeps the sequential read independent of the random
+                writes; \cref{sec:layout}) \\
+  Script      & \code{SSD_Performance_Profiling/scripts/run.sh zero_queue} \\
+\end{knobs}
+
+\begin{table}[!htbp]
+  \centering\small
+  \caption{QD=1 performance on the Micron 2210 NVMe SSD: medians over repetitions, with the IQR in
+  brackets for IOPS and p99; latencies in \si{\micro\second}. Random reads pay the full flash-read
+  latency; random writes are faster because the write buffer absorbs them.}\label{tab:zero-queue}
+  \IfDataExists{zero_queue}{%
+    \ssdload{zero_queue}\def\ssdRows{}%
+    \pgfplotsforeachungrouped \ssdR in {0,...,\ssdLast}{%
+      \ssdstr{mode}\ssdM\ssdstr{pattern}\ssdP\ssdstr{bs}\ssdBS
+      \ssdiqr{iops}\ssdA\ssdget[1]{mibps_median}\ssdB\ssdget[1]{lat_mean_us_median}\ssdC
+      \ssdget[1]{lat_p50_us_median}\ssdD\ssdget[1]{lat_p95_us_median}\ssdE
+      \ssdiqr{lat_p99_us}\ssdF\ssdget{lat_p999_us_median}\ssdG
+      \eappto\ssdRows{\expandonce\ssdP\space\expandonce\ssdM & \noexpand\ssdbs{\ssdBS} &
+        \expandonce\ssdA & \expandonce\ssdB & \expandonce\ssdC & \expandonce\ssdD & \expandonce\ssdE &
+        \expandonce\ssdF & \expandonce\ssdG \noexpand\\}}%
+    \setlength{\tabcolsep}{4pt}%
+    \begin{tabular}{@{}llrrrrrrr@{}}
+      \toprule
+      Pattern & Block & IOPS [IQR] & MiB/s & Mean & p50 & p95 & p99 [IQR] & p99.9 \\
+      \midrule
+      \ssdRows
+      \bottomrule
+    \end{tabular}}
+\end{table}
+
+\subsection{Analysis}
+The QD=1 numbers identify an NVMe SSD, not a rotational disk: \qty{4}{\kibi\byte} random reads take
+\csvq[1]{zero_queue}{mode=read,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}, dominated by the
+NAND read plus the NVMe/\code{libaio} host path, with no seek. Random \emph{writes} take only
+\csvq[1]{zero_queue}{mode=write,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}
+(\csvq{zero_queue}{mode=write,pattern=rand}{iops_median} IOPS), because the controller acknowledges them
+from its write buffer (SLC cache plus SRAM) before the flash program finishes; a read has no such buffer.
+The \qty{128}{\kibi\byte} sequential
+read takes \csvq[0]{zero_queue}{mode=read,pattern=seq}{lat_mean_us_median}\,\si{\micro\second} per
+request (\csvq{zero_queue}{mode=read,pattern=seq}{mibps_median}\,MiB/s): one outstanding request leaves
+the device idle between transfers, which \cref{sec:block-size,sec:queue-depth} remove. The p99.9 column
+already shows background flush and GC outliers (\cref{sec:tail}).
+
+The \qty{128}{\kibi\byte} sequential write runs at
+\csvq{zero_queue}{mode=write,pattern=seq}{mibps_median}\,MiB/s, the SLC ingest rate of
+\cref{sec:block-size}, and is stable (IOPS IQR
+\csvq{zero_queue}{mode=write,pattern=seq}{iops_q25}--\csvq{zero_queue}{mode=write,pattern=seq}{iops_q75}).
+In our first run, where it followed the \qty{2}{\gibi\byte} re-fill without a pause, two of five
+repetitions stalled below \num{900} IOPS; after the \qty{120}{\second} pause none did. The re-fill itself
+exists because a discarded pilot that read sequentially right after the random writes got only a fraction
+of the sequential-read rate (\cref{sec:layout}).
