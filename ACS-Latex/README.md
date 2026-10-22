@@ -1,7 +1,7 @@
 # ACS-Latex
 
-Reports for the ECSE 4320/6320 Advanced Computer Systems class-wide projects (due October 16, 2026).
-Code, raw data and experiment scripts live in [ACS-Code](https://github.com/SKempiak/ACS-Code).
+Reports for the ECSE 4320/6320 Advanced Computer Systems class-wide projects (due October 23, 2026, after a one-week extension).
+Code, raw data and experiment scripts live in [`../ACS-Code`](../ACS-Code) in this same repository.
 
 | Report | Directory |
 |---|---|
