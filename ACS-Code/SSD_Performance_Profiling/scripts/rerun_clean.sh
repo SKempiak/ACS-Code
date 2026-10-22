@@ -14,7 +14,10 @@
 #                  (WS_REVERSE=1, WS_REPS=3 per pass)                         [span not confounded with time]
 #   3 tail         after IDLE_BEFORE_TAIL_MIN idle, on a freshly preconditioned 2 GiB file
 #                                                                             [tails without GC backlog]
-#   4 zero_queue   QD=1 baselines again                                       [unstable seq-write row]
+#   4 zero_queue   after REST_MIN; QD=1 baselines, SLOW_GAP_S pause before each write point
+#                                                                             [unstable seq-write row]
+#   4b rw_mix      after REST_MIN; read/write mixes, SLOW_GAP_S pause before each mix with writes
+#                                                                             [mixes on an idle drive]
 #   5 block_size   after REST_MIN; now with QD=32 random reads; WRITE_GAP_S pause before
 #                  every write point                                          [clean >=256 KiB rand writes]
 #   6 queue_depth  after REST_MIN; read + write curves, gaps before writes   [knee rule incl. QD=8 point]
@@ -63,17 +66,18 @@ export WRITE_GAP_S="${WRITE_GAP_S:-15}" WS_REVERSE="${WS_REVERSE:-1}" WS_REPS="$
 IDLE_AFTER_FILL_MIN="${IDLE_AFTER_FILL_MIN:-20}"
 IDLE_BEFORE_TAIL_MIN="${IDLE_BEFORE_TAIL_MIN:-10}"
 REST_MIN="${REST_MIN:-5}"
-STEPS="${STEPS:-sustained working_set tail zero_queue block_size queue_depth fio_check}"
+SLOW_GAP_S="${SLOW_GAP_S:-120}"   # longer write gap for zero_queue/rw_mix, whose 2 GiB re-fills precede writes
+STEPS="${STEPS:-sustained working_set tail zero_queue rw_mix block_size queue_depth fio_check}"
 IDLE_MAX_WRITE_MIB="${IDLE_MAX_WRITE_MIB:-32}"   # idle check: max MiB written in 10 s
 IDLE_MAX_BUSY_PCT="${IDLE_MAX_BUSY_PCT:-2}"      # idle check: max % of time the disk was busy
 
 RUN_SH_LIB=1 source "$(dirname "$0")/run.sh"     # defines the experiments; cds to the project
 
 # ---- estimates (GiB written / minutes), per step --------------------------------------
-declare -A EST_GIB=( [sustained]=72 [working_set]=6 [tail]=2 [zero_queue]=7 [block_size]=24
+declare -A EST_GIB=( [sustained]=72 [working_set]=6 [tail]=2 [zero_queue]=7 [rw_mix]=4 [block_size]=24
                      [queue_depth]=14 [fio_check]=10 )
 declare -A EST_MIN=( [sustained]=22 [working_set]=$((IDLE_AFTER_FILL_MIN+5)) [tail]=$((IDLE_BEFORE_TAIL_MIN+3))
-                     [zero_queue]=2 [block_size]=$((REST_MIN+23)) [queue_depth]=$((REST_MIN+9))
+                     [zero_queue]=$((REST_MIN+9)) [rw_mix]=$((REST_MIN+9)) [block_size]=$((REST_MIN+23)) [queue_depth]=$((REST_MIN+9))
                      [fio_check]=$((REST_MIN+6)) )
 declare -A EST_MAX=()
 if [ "$LEAN" = 1 ]; then   # expected / max GiB written and minutes
@@ -86,7 +90,8 @@ declare -A NOTE=(
   [sustained]="${SUSTAIN_GIB} GiB fill + <=8 GiB random + 60 s idle + <=4 GiB recovery (fill time depends on SLC size; capped at ${SUSTAIN_MAX_S}s)"
   [working_set]="idle ${IDLE_AFTER_FILL_MIN} min, then spans fwd+rev, ${WS_REPS} reps/pass; deletes the large file"
   [tail]="idle ${IDLE_BEFORE_TAIL_MIN} min, precondition 2 GiB, QD 8/32/64/128 reads"
-  [zero_queue]="precondition + QD=1 baselines (write points capped)"
+  [zero_queue]="rest ${REST_MIN} min; precondition + QD=1 baselines; ${SLOW_GAP_S}s gap before each write point"
+  [rw_mix]="rest ${REST_MIN} min; precondition + 4 mixes at QD=16; ${SLOW_GAP_S}s gap before each mix with writes"
   [block_size]="rest ${REST_MIN} min; 56 points incl. QD=32 random reads; ${WRITE_GAP_S}s gap before each write point"
   [queue_depth]="rest ${REST_MIN} min; reads + writes QD 1-256; ${WRITE_GAP_S}s gap before each write point"
   [fio_check]="rest ${REST_MIN} min; 7 points x ${REPS} reps x 2 engines, order alternating" )
@@ -233,7 +238,10 @@ step() {
     working_set) rest "$IDLE_AFTER_FILL_MIN" "let the fill's fold/GC backlog drain"
                  if [ -f "$BIG" ]; then BIG_FILLED=1 exp_working_set; else exp_working_set; fi ;;
     tail)        rm -f -- "$BIG"; rest "$IDLE_BEFORE_TAIL_MIN" "drain before tail"; precondition; exp_tail ;;
-    zero_queue)  precondition; exp_zero_queue ;;
+    zero_queue)  rest "$REST_MIN" "drain"; precondition
+                 g="$WRITE_GAP_S"; WRITE_GAP_S="$SLOW_GAP_S"; exp_zero_queue; WRITE_GAP_S="$g" ;;
+    rw_mix)      rest "$REST_MIN" "drain"; precondition
+                 g="$WRITE_GAP_S"; WRITE_GAP_S="$SLOW_GAP_S"; exp_rw_mix; WRITE_GAP_S="$g" ;;
     block_size)  rest "$REST_MIN" "drain"; precondition; exp_block_size ;;
     queue_depth) rest "$REST_MIN" "drain"; precondition; exp_queue_depth ;;
     fio_check)   rest "$REST_MIN" "drain"; if have_fio; then precondition; fi; exp_fio_check ;;

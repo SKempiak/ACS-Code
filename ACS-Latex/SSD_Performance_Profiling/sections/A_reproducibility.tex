@@ -1,8 +1,7 @@
 % !TeX root = ../main.tex
 \section{Reproducibility}\label{app:repro}
 
-Code, scripts, raw data and this report live in one repository: \code{ACS-Code/} holds the code and data,
-and \code{ACS-Latex/} holds the reports. The exact commit is \code{e33345f7874f}.
+Code and data live in \code{ACS-Code/}, the reports in \code{ACS-Latex/}, at commit \code{e33345f7874f}.
 
 \begin{lstlisting}[language=bash]
 gh repo clone SKempiak/ACS-Code ACS && cd ACS
@@ -17,88 +16,17 @@ SSD_Performance_Profiling/scripts/run.sh dryrun        # device, link, temperatu
 SSD_Performance_Profiling/scripts/run.sh all           # 2 GiB-file sweeps + fio_check (~23 min measured)
 SUSTAIN_GIB=60 SSD_Performance_Profiling/scripts/run.sh device_state  # sustained + working set (needs 70 GiB free)
 scripts/sync_data.sh SSD_Performance_Profiling
+sudo fstrim -v /                              # lean re-run: 21:34:54, then idle >= 30 min
+SSD_Performance_Profiling/scripts/rerun_clean.sh lean    # 20261021-220614, 22:06-22:32 EDT
+scripts/sync_data.sh SSD_Performance_Profiling
 cd ../ACS-Latex && make ssd
 \end{lstlisting}
-
-\paragraph{Clean re-run.} Several results of the original run were shaped by the run order: \code{all}
-followed directly by \code{device_state}, with no TRIM and no idle (\cref{sec:method}). The full clean
-re-run below has not been run; the lean version after it has.
-\code{scripts/rerun_clean.sh} repeats the affected experiments in an order that avoids these confounds.
-It first checks free space (at least \code{SUSTAIN_GIB}$+$\qty{10}{\gibi\byte}), drive idleness
-(\code{/sys/block/nvme0n1/stat} over \qty{10}{\second}) and recent-TRIM evidence in the journal. It then
-runs:
-\begin{enumerate}[nosep]
-  \item the \qty{60}{\gibi\byte} sustained fill on the fresh drive;
-  \item a \qty{20}{\minute} idle, then the working set with spans forward and reverse;
-  \item a \qty{10}{\minute} idle, then tail on a freshly preconditioned file;
-  \item zero-queue;
-  \item block-size, now with QD=32 random reads and a \qty{15}{\second} pause before each write point;
-  \item queue-depth;
-  \item \code{fio_check} with alternating engine order.
-\end{enumerate}
-Steps 5--7 each follow a \qty{5}{\minute} rest. The upper bound is \ensuremath{\sim}\qty{135}{\gibi\byte}
-written in \ensuremath{\sim}\qty{2}{\hour}; peak space in use is \qty{60}{\gibi\byte}.
-\begin{lstlisting}[language=bash]
-sudo fstrim -v /                 # then leave the machine idle >= 30 min
-export ACS_SCRATCH="$HOME/acs_ssd_scratch"
-SSD_Performance_Profiling/scripts/rerun_clean.sh dryrun
-SSD_Performance_Profiling/scripts/rerun_clean.sh
-scripts/sync_data.sh SSD_Performance_Profiling
-\end{lstlisting}
-
-\paragraph{Lean re-run.} \code{rerun_clean.sh lean} is a shorter version of the clean re-run:
-\ensuremath{\sim}\qty{35}{\gibi\byte} written expected, \qty{55}{\gibi\byte} at most, in about
-\qtyrange{35}{50}{\minute}. Its steps are:
-\begin{enumerate}[nosep]
-  \item The sustained fill, first, that \emph{stops at the cliff}: 10 seconds after throughput stays
-        below \qty{30}{\percent} of the burst median, capped at \qty{40}{\gibi\byte}. With no cliff by
-        then, the result is reported as a lower bound on the cache size. A short random phase, a
-        \qty{60}{\second} idle and a recovery probe follow, and the large file is deleted.
-  \item A \qty{10}{\minute} rest, then tail on a freshly preconditioned file.
-  \item The working set over 1, 2 and \qty{4}{\gibi\byte}, forward and reverse.
-  \item QD=32 random reads, then the $\geq$\qty{256}{\kibi\byte} random writes again after a rest.
-  \item Write queue depths 4--32.
-  \item FIO write points with alternating engine order.
-\end{enumerate}
-It also takes an NVMe SMART snapshot before and after, when \code{nvme smart-log} works without root.
-Partial re-measurements replace only the matching configurations of the 2026-10-21 run, and figure
-captions say which run each point comes from.
-
-The lean re-run reported here has the timestamp \code{20261021-220614}. It was run on 2026-10-21 as
-follows. \code{sudo fstrim -v /} ran at 21:34:54, the machine was then left idle for at least
-\qty{30}{\minute}, and the script's idle and TRIM checks passed. The run lasted from 22:06 to
-22:32:17 EDT, with the governor at \code{performance}, turbo off, SMT off and ACPI GPE~0x42 masked. Its
-complete console output, including the free-space, TRIM-evidence and idle checks, the plan table and
-the per-minute temperature during the rests, is in
-\code{ACS-Code/SSD_Performance_Profiling/data/raw/rerun_clean_20261021-220614.log}. The automatic SMART
-snapshots taken before and after the run (in \code{data/raw/smart/}) hold only the hwmon temperature,
-because \code{nvme smart-log} needs root. The author therefore ran \code{sudo nvme smart-log /dev/nvme0}
-about one hour after the run; its output is in \code{data/raw/smart/} (file
-\code{20261021-2335_post_smart_log.txt}).
-A second log, \code{rerun_clean_20261021-220544.log}, holds
-only the preflight lines of a start \qty{30}{\second} earlier that did not proceed to any
-measurement.
-\begin{lstlisting}[language=bash]
-sudo fstrim -v /                 # 21:34:54; then idle >= 30 min
-export ACS_SCRATCH="$HOME/acs_ssd_scratch"
-SSD_Performance_Profiling/scripts/rerun_clean.sh lean dryrun
-SSD_Performance_Profiling/scripts/rerun_clean.sh lean   # 20261021-220614, 22:06-22:32 EDT
-scripts/sync_data.sh SSD_Performance_Profiling
-\end{lstlisting}
-
-\code{ACS_SCRATCH} selects the device under test, and the \code{safety.sh} gate is identical wherever it
-points: a plain disposable file inside the scratch directory, never a device or mountpoint, and the
-scratch directory itself must be a user-owned directory that is not \code{/}, \code{\$HOME} or the root
-of a mounted filesystem. Without
-\code{ACS_SCRATCH}, the in-repo \code{data/scratch/} filesystem is profiled instead (an HDD on the test
-host). Knobs (\code{REPS}, \code{RUNTIME}, \code{WRITE_CAP_MIB}, \code{SUSTAIN_GIB}, \code{ENGINE=fio},
-\dots) are documented at the top of \code{run.sh}. \code{run.sh reprocess} rebuilds every processed CSV
-from the newest raw run of each experiment.
-
-The timed runs reported here were executed by the author in a terminal on the test machine, with the
-CPU governor set to \code{performance}, turbo off and SMT off. \code{run.sh all} started at 10:32 and
-\code{SUSTAIN_GIB=60 run.sh device_state} followed immediately at 10:54 on 2026-10-21; the lean re-run
-followed at 22:06 the same day.
+\code{rerun_clean.sh} (\cref{sec:method,tab:lean}) first checks free space, drive idleness and recent-TRIM
+evidence; its full, non-lean mode has not been run. The lean run's console output is in \code{data/raw/rerun_clean_20261021-220614.log}, and the later root SMART log in
+\code{data/raw/smart/20261021-2335_post_smart_log.txt}. Without \code{ACS_SCRATCH}, the in-repo
+\code{data/scratch/} (an HDD here) is profiled; the safety gate applies either way. Knobs (\code{REPS},
+\code{RUNTIME}, \code{WRITE_CAP_MIB}, \code{SUSTAIN_GIB}, \code{ENGINE=fio}, \dots) are documented in
+\code{run.sh}.
 
 \begin{table}[h]
   \centering\small
@@ -125,11 +53,5 @@ followed at 22:06 the same day.
   \end{tabularx}
 \end{table}
 
-Each raw directory holds \code{raw.csv} (one row per repetition or per second, with full configuration
-metadata and the NVMe temperature) and \code{env.txt}. \code{env.txt} contains the
-\code{collect_env.sh} snapshot plus the scratch filesystem's parent disk, its \code{rotational} flag,
-model, firmware, PCIe link, scheduler, temperature and thresholds, and the knob values. FIO runs also
-keep each JSON result under \code{fio/}. \code{tools/summarize} reduces the raw files to the processed
-CSVs plotted here, and \code{scripts/sync_data.sh} copies them into this report's \code{data/}. Tables and
-quoted numbers are read from those CSVs when the report is compiled, so every number traces to one of
-these files.
+Each raw directory holds \code{raw.csv} and \code{env.txt}; \code{tools/summarize} reduces them to the
+CSVs in \code{data/}, from which every table and quoted number is read at compile time.

@@ -15,12 +15,12 @@ thermal and garbage-collection effects (with \cref{sec:device-state}).}
   Varied      & iodepth 8 (mid), 32 and 64 (bracketing the knee of \cref{sec:queue-depth}), 128 (past
                 it) \\
   Drive state & lean re-run: after the short sustained fill, the large file was deleted, the drive
-                rested \qty{10}{\minute}, and a fresh \qty{4}{\gibi\byte} test file was preconditioned
+                was idle for \qty{10}{\minute}, and a fresh \qty{4}{\gibi\byte} test file was preconditioned
                 sequentially; reads cover its first \qty{2}{\gibi\byte} \\
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh tail} (inside \code{rerun_clean.sh lean}) \\
 \end{knobs}
 
-\begin{figure}[tbp]
+\begin{figure}[!htbp]
   \centering
   \IfDataExists{tail}{%
     \begin{tikzpicture}
@@ -35,58 +35,41 @@ thermal and garbage-collection effects (with \cref{sec:device-state}).}
     \end{tikzpicture}%
   }
   \caption{Latency percentiles at a mid queue depth (8), around the knee (32, 64) and past it (128);
-  medians with IQR bars (\ssdfromall). Measured after a \qty{10}{\minute} rest on a freshly
+  medians with IQR bars (\ssdfromall). Measured after a \qty{10}{\minute} idle period on a freshly
   preconditioned file. The upper tail widens faster than the median as QD grows: p99.9/p50 rises from
   \ssdtailratio{8}{p999}$\times$ at QD=8 to \ssdtailratio{128}{p999}$\times$ at QD=128.}\label{fig:tail}
 \end{figure}
 
 \subsection{Analysis}
-On a rested drive the tail widens with queue depth roughly as hypothesised, but modestly:
-\begin{itemize}[nosep]
-  \item QD=8: p50~\csvq{tail}{qd=8}{lat_p50_us_median}, p99~\csvq{tail}{qd=8}{lat_p99_us_median},
-        p99.9~\csvq{tail}{qd=8}{lat_p999_us_median}\,\si{\micro\second}; p99.9/p50 $=\ssdtailratio{8}{p999}\times$.
-  \item QD=32: p50~\csvq{tail}{qd=32}{lat_p50_us_median}, p99~\csvq{tail}{qd=32}{lat_p99_us_median},
-        p99.9~\csvq{tail}{qd=32}{lat_p999_us_median}\,\si{\micro\second}; $\ssdtailratio{32}{p999}\times$.
-  \item QD=64: p50~\csvq{tail}{qd=64}{lat_p50_us_median}, p99.9~\csvq{tail}{qd=64}{lat_p999_us_median}\,\si{\micro\second};
-        $\ssdtailratio{64}{p999}\times$.
-  \item QD=128: p50~\csvq{tail}{qd=128}{lat_p50_us_median}, p99.9~\csvq{tail}{qd=128}{lat_p999_us_median}\,\si{\micro\second};
-        $\ssdtailratio{128}{p999}\times$.
-\end{itemize}
+On an idle drive the tail widens with queue depth as hypothesised, but modestly.
+QD=8: p50~\csvq{tail}{qd=8}{lat_p50_us_median}, p99~\csvq{tail}{qd=8}{lat_p99_us_median},
+p99.9~\csvq{tail}{qd=8}{lat_p999_us_median}\,\si{\micro\second} (p99.9/p50 $=\ssdtailratio{8}{p999}\times$);
+QD=32: \csvq{tail}{qd=32}{lat_p50_us_median}, \csvq{tail}{qd=32}{lat_p99_us_median},
+\csvq{tail}{qd=32}{lat_p999_us_median}\,\si{\micro\second} ($\ssdtailratio{32}{p999}\times$);
+QD=64: p50~\csvq{tail}{qd=64}{lat_p50_us_median}, p99.9~\csvq{tail}{qd=64}{lat_p999_us_median}\,\si{\micro\second}
+($\ssdtailratio{64}{p999}\times$); QD=128: p50~\csvq{tail}{qd=128}{lat_p50_us_median},
+p99.9~\csvq{tail}{qd=128}{lat_p999_us_median}\,\si{\micro\second} ($\ssdtailratio{128}{p999}\times$).
 From QD=8 to 32 the median grows $2.4\times$ and p99.9 $3.0\times$; from 32 to 64, $1.6\times$ and
-$2.3\times$. IOPS meanwhile barely grow past the knee
-(\csvq{tail}{qd=64}{iops_median}$\to$\csvq{tail}{qd=128}{iops_median}). Past the knee every added
-request waits in a queue, and a request queued behind one of the drive's occasional slow reads waits
-longer. That stretches the upper percentiles more than the median. The p99/p50 ratio follows the same
-trend (\ssdtailratio{8}{p99}$\times$ at QD=8 to \ssdtailratio{128}{p99}$\times$ at QD=128).
-
-These tail runs agree with the original queue-depth read sweep wherever both measured the same depth:
-\csvq{tail}{qd=32}{iops_median} vs.\ \csvq{queue_depth}{qd=32,mode=read}{iops_median} IOPS at QD=32,
-and \csvq{tail}{qd=128}{iops_median} vs.\ \csvq{queue_depth}{qd=128,mode=read}{iops_median} at QD=128.
-The exception is QD=8, where the rested drive is faster
-(\csvq{tail}{qd=8}{iops_median} vs.\ \csvq{queue_depth}{qd=8,mode=read}{iops_median} IOPS) and has a
-much lower p99 (\csvq{tail}{qd=8}{lat_p99_us_median} vs.\
-\csvq{queue_depth}{qd=8,mode=read}{lat_p99_us_median}\,\si{\micro\second}). The original sweep's p99
-sat near \qty{0.5}{\milli\second} at every depth from 4 to 16. We suspect that it, too, met some
-background flash work left by the earlier write experiments, but we did not test this.
+$2.3\times$, while IOPS barely grow past the knee
+(\csvq{tail}{qd=64}{iops_median}$\to$\csvq{tail}{qd=128}{iops_median}). Every added request waits, and
+one queued behind an occasional slow read waits longer, so the upper percentiles stretch more than the
+median; p99/p50 follows the same trend (\ssdtailratio{8}{p99}$\times$ to
+\ssdtailratio{128}{p99}$\times$). IOPS match the original queue-depth sweep at QD=32
+(\csvq{tail}{qd=32}{iops_median} vs.\ \csvq{queue_depth}{qd=32,mode=read}{iops_median}) and QD=128
+(\csvq{tail}{qd=128}{iops_median} vs.\ \csvq{queue_depth}{qd=128,mode=read}{iops_median}). At QD=8 the idle
+drive is faster (\csvq{tail}{qd=8}{iops_median} vs.\ \csvq{queue_depth}{qd=8,mode=read}{iops_median} IOPS)
+with a much lower p99 (\csvq{tail}{qd=8}{lat_p99_us_median} vs.\
+\csvq{queue_depth}{qd=8,mode=read}{lat_p99_us_median}\,\si{\micro\second}); we suspect, without testing,
+that the original sweep met background work from earlier writes.
 
 \textbf{The tail depends on recent writes.} The original tail run (\code{tail/20261021-103201}) started
-immediately after the queue-depth \emph{write} sweep, which wrote \ensuremath{\sim}\qty{11}{\gibi\byte}
-of random \qty{4}{\kibi\byte} data, with no idle gap. At QD=32 it delivered \num{64475} IOPS, half the
-rested value, at a median of \qty{385}{\micro\second}, and its p99.9/p50 ratio rose from $4.1\times$ at
-QD=8 to $24\times$ at QD=128 (p99.9 \qty{16.0}{\milli\second}). Its temperature,
-\qtyrange{50.9}{52.9}{\celsius}, was no higher than that of the lean tail run
-(\qtyrange{39.9}{52.9}{\celsius} per-point medians), so the difference is not thermal. The two runs
-differ in more than drive state, including the file size (\qty{2}{\gibi\byte} vs.\
-\qty{4}{\gibi\byte}) and the time of day. The likely cause is still foreground reads competing with the
-background folding and garbage collection of freshly written data. A read that arrives during a program,
-erase or GC burst waits milliseconds, and deeper queues hold more requests behind each such stall. The
-tail ratio is therefore a sensitive detector of background flash activity. Queueing alone keeps it at
-3--6$\times$, while a recent heavy write load pushes it to $24\times$.
-
-These are the numbers that govern provisioning for a latency-SLA service, not the mean. At QD=32 one read
-in a thousand takes \csvq{tail}{qd=32}{lat_p999_us_median}\,\si{\micro\second} on a rested drive, but
-took \qty{2.6}{\milli\second} right after heavy writes. The knee from \cref{sec:queue-depth} is
-therefore a latency decision as much as a throughput one: past it, almost no IOPS are gained and these
-tails inflate fastest. Over both runs the NVMe composite temperature stayed at
-\qtyrange{31.9}{61.9}{\celsius}, far below the \qty{86.85}{\celsius} warning threshold
-(\cref{sec:device-state}).
+right after \ensuremath{\sim}\qty{11}{\gibi\byte} of random writes with no idle period. At QD=32 it
+delivered \num{64475} IOPS, half the idle-drive value, at a median of \qty{385}{\micro\second}, and its
+p99.9/p50 rose from $4.1\times$ at QD=8 to $24\times$ at QD=128 (p99.9 \qty{16.0}{\milli\second}). It was
+no hotter (\qtyrange{50.9}{52.9}{\celsius} vs.\ \qtyrange{39.9}{52.9}{\celsius}), and although file size
+and time of day also differed, the likely cause is reads waiting behind background folding and garbage
+collection. Queueing alone keeps the tail ratio at 3--6$\times$; recent heavy writes push it to $24\times$.
+For a latency SLA these percentiles matter more than the mean: at QD=32 one read in a thousand takes
+\csvq{tail}{qd=32}{lat_p999_us_median}\,\si{\micro\second} on an idle drive but took
+\qty{2.6}{\milli\second} after heavy writes, and past the knee these tails inflate fastest for almost no
+IOPS.

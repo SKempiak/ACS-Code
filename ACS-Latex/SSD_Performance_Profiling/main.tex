@@ -5,6 +5,10 @@
 \input{../common/macros}
 \input{../common/system_info}
 \input{ssd_macros}
+% Let floats share pages with text instead of leaving half-empty float pages.
+\renewcommand{\topfraction}{0.9}\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.07}\renewcommand{\floatpagefraction}{0.8}
+\setcounter{topnumber}{3}\setcounter{bottomnumber}{2}\setcounter{totalnumber}{4}
 
 \title{Project 3: SSD Performance Profiling}
 \author{\acsauthor\\[2pt]\small\acscourse\\\small\href{mailto:\acsemail}{\acsemail}}
@@ -15,37 +19,27 @@
 
 \begin{abstract}
   We profile a Micron 2210 \qty{512}{\giga\byte} QLC NVMe SSD on a PCIe~3.0~$\times$4 link with
-  \code{O_DIRECT} I/O against disposable files, using a \code{libaio} benchmark as the primary engine
-  and FIO as a cross-check. At QD=1, \qty{4}{\kibi\byte} random reads take
+  \code{O_DIRECT} I/O against disposable files, using a \code{libaio} benchmark cross-checked against FIO.
+  At QD=1, \qty{4}{\kibi\byte} random reads take
   \csvq[1]{zero_queue}{mode=read,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}
   (\csvq{zero_queue}{mode=read,pattern=rand}{iops_median} IOPS) and writes
   \csvq[1]{zero_queue}{mode=write,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}, because the
-  write buffer hides the flash program. With one request in flight, sequential reads stay near
-  \csvq{block_size}{bs=262144,pattern=seq,mode=read,qd=1}{mibps_median}\,MiB/s from 64 to
-  \qty{256}{\kibi\byte} and reach only
-  \csvq{block_size}{bs=1048576,pattern=seq,mode=read,qd=1}{mibps_median}\,MiB/s at \qty{1}{\mebi\byte},
-  under half the link rate. That limit comes from per-request latency, not the interface. At QD=32 they top out at
-  \csvq{block_size}{bs=65536,pattern=seq,mode=read,qd=32}{mibps_median}\,MiB/s, only
-  \qty{57}{\percent} of the \qty{3756}{\mebi\byte\per\second} raw PCIe link ceiling, so the NAND back
-  end sets the limit.
-  Random-read IOPS saturate at QD~\csvq{queue_depth_knee}{mode=read}{knee_qd}
-  (\csvq{queue_depth_knee}{mode=read}{knee_iops} IOPS) under a stated knee criterion, and Little's Law
-  serves as a consistency check on the closed-loop harness. Writes land in an SLC cache at
-  \csvval{sustained_summary}{burst_mibps}\,MiB/s. In a lean re-run on a freshly trimmed, idle drive,
-  that cache absorbed only \csvval[1]{sustained_summary}{cliff_gib}\,GiB of a sequential fill, far
-  less than the \ensuremath{\sim}\qty{20}{\gibi\byte} we expected and consistent with a dynamic SLC
-  cache sized by the drive's free space. Past it, sequential writes fall to
-  \csvval{sustained_summary}{steady_mibps}\,MiB/s and 4\,KiB random writes to about \num{15}k IOPS.
-  On a rested drive, read tails widen with queue depth to a p99.9 of
-  \ssdtailratio{128}{p999}$\times$ the median at QD=128; in an earlier run that followed heavy writes
-  they reached 24$\times$. Sequential reads of randomly written data run 6--9$\times$ slower. The
-  required misleading setup, dropping
-  \code{O_DIRECT}, over-reports throughput
+  write buffer hides the flash program. With one request in flight, sequential reads reach only
+  \csvq{block_size}{bs=1048576,pattern=seq,mode=read,qd=1}{mibps_median}\,MiB/s even at
+  \qty{1}{\mebi\byte}; at QD=32 they peak at
+  \csvq{block_size}{bs=65536,pattern=seq,mode=read,qd=32}{mibps_median}\,MiB/s, \qty{57}{\percent} of
+  the \qty{3756}{\mebi\byte\per\second} link, so the NAND back end is the ceiling. Random-read IOPS
+  saturate at QD~\csvq{queue_depth_knee}{mode=read}{knee_qd}, and Little's Law confirms that the harness
+  keeps the queue full. On a trimmed, idle drive the SLC cache absorbed only
+  \csvval[1]{sustained_summary}{cliff_gib}\,GiB at \csvval{sustained_summary}{burst_mibps}\,MiB/s before
+  sequential writes fell to \csvval{sustained_summary}{steady_mibps}\,MiB/s. Read p99.9 reaches
+  \ssdtailratio{128}{p999}$\times$ the median at QD=128 (24$\times$ after heavy writes), and randomly
+  written data reads 6--9$\times$ slower sequentially. Dropping \code{O_DIRECT} over-reports throughput
   \csvget\ssdBuf{pitfall}{mode=read-buffered}{iops_median}\csvget\ssdDir{pitfall}{mode=read}{iops_median}%
   \ssdratio[0]{\ssdBuf}{\ssdDir}$\times$ because it measures the page cache.
 \end{abstract}
 
-\ifacsdraft\tableofcontents\clearpage\fi
+\ifacsdraft\setcounter{tocdepth}{1}{\small\tableofcontents}\clearpage\fi
 
 \input{sections/01_introduction}
 \input{sections/02_methodology_safety}

@@ -317,9 +317,11 @@ sum_sustained() {
 exp_zero_queue() {
   start_experiment zero_queue
   blk --experiment zero_queue --bs 4096   --qd 1 --pattern rand --rwmix 10 --runtime "$RUNTIME" --reps "$REPS" $(hdr)
+  wgap
   blk --experiment zero_queue --bs 4096   --qd 1 --pattern rand --rwmix 0  --runtime "$RUNTIME" --reps "$REPS" --max-bytes "$WCAP"
   relayout   # the random writes above scatter the file's physical layout; restore it
   blk --experiment zero_queue --bs 131072 --qd 1 --pattern seq  --rwmix 10 --runtime "$RUNTIME" --reps "$REPS"
+  wgap       # let the re-fill drain from the SLC cache before the sequential-write baseline
   blk --experiment zero_queue --bs 131072 --qd 1 --pattern seq  --rwmix 0  --runtime "$RUNTIME" --reps "$REPS" --max-bytes "$WCAP"
   end_experiment; sum_zero_queue "$RAW"
 }
@@ -354,6 +356,7 @@ exp_rw_mix() {
     if [ "$m" = 10 ]; then
       blk --experiment rw_mix --bs 4096 --qd 16 --pattern rand --rwmix "$m" --runtime "$RUNTIME" --reps "$REPS" $(hdr)
     else
+      wgap
       blk --experiment rw_mix --bs 4096 --qd 16 --pattern rand --rwmix "$m" --runtime "$RUNTIME" --reps "$REPS" --max-bytes "$WCAP" $(hdr)
     fi
   done
@@ -557,7 +560,8 @@ merge_lean() {
 sum_with_lean() {
   local e="$1" d l tmp; d="$(latest_raw "$e")"; l="$(latest_raw "${e}_lean")"
   [ -n "$d" ] && [ -s "$d/raw.csv" ] || { [ -n "$l" ] && d="$l" || return 0; }
-  if [ -n "$l" ] && [ -s "$l/raw.csv" ] && [ "$l" != "$d" ]; then
+  # a lean run only patches the full run it followed; a newer full run supersedes it
+  if [ -n "$l" ] && [ -s "$l/raw.csv" ] && [ "$l" != "$d" ] && [[ "$(basename "$l")" > "$(basename "$d")" ]]; then
     tmp="$(mktemp)"; merge_lean "$d/raw.csv" "$l/raw.csv" > "$tmp"
     echo "reprocess $e <- $d + $l (lean rows replace matching configurations)"
   else tmp="$(mktemp)"; cp "$d/raw.csv" "$tmp"; echo "reprocess $e <- $d"; fi

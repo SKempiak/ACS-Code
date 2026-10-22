@@ -38,7 +38,7 @@
 \newcommand{\qdlean}[1]{% {latency metric}
   \addplot[only marks, mark=diamond*, mark size=3pt, draw=black, fill=yellow!85!black, nodes near coords={}]
     table[x=iops_median, y=#1_median, meta=qd, only if={mode}{write}, lean qd] {data/queue_depth.csv};}
-\begin{figure}[tbp]
+\begin{figure}[!htbp]
   \centering
   \IfDataExists{queue_depth}{%
     \begin{subfigure}[t]{0.49\linewidth}
@@ -74,60 +74,43 @@
 
 \subsection{Knee}
 We define the knee as \emph{the smallest QD whose doubling raises median IOPS by less than
-\qty{10}{\percent}}. Past that point, most of any extra concurrency becomes added latency rather than
-throughput.
+\qty{10}{\percent}}: past it, most extra concurrency becomes latency rather than throughput.
 
 \textbf{Reads.} The rule gives QD~\csvq{queue_depth_knee}{mode=read}{knee_qd}
 (\csvq{queue_depth_knee}{mode=read}{knee_iops} IOPS,
 \csvq[0]{queue_depth_knee}{mode=read}{knee_lat_us}\,\si{\micro\second} mean). Doubling to
 QD~\csvq{queue_depth_knee}{mode=read}{next_qd} adds only
-\csvq[1]{queue_depth_knee}{mode=read}{gain_pct}\,\% IOPS. The preceding doubling, QD 32$\to$64, still
-gained \qty{15}{\percent}. The grid doubles at each step, so the knee lies between 32 and 64.
+\csvq[1]{queue_depth_knee}{mode=read}{gain_pct}\,\% IOPS, while QD 32$\to$64 still gained
+\qty{15}{\percent}, so the knee lies between 32 and 64.
 
-\textbf{Writes.} The write points at QD 4--32 come from the lean re-run, each after a
-\qty{15}{\second} pause; QD 1, 2 and 64--256 are from the original run. The rule gives
-QD~\csvq{queue_depth_knee}{mode=write}{knee_qd}
+\textbf{Writes.} QD 4--32 come from the lean re-run (diamonds in \cref{fig:queue-depth}b), the rest
+from the original run. The rule gives QD~\csvq{queue_depth_knee}{mode=write}{knee_qd}
 (\csvq{queue_depth_knee}{mode=write}{knee_iops} IOPS,
-\csvq[1]{queue_depth_knee}{mode=write}{knee_lat_us}\,\si{\micro\second} mean), and doubling to
+\csvq[1]{queue_depth_knee}{mode=write}{knee_lat_us}\,\si{\micro\second} mean); doubling to
 QD~\csvq{queue_depth_knee}{mode=write}{next_qd} changes IOPS by
-\csvq[1]{queue_depth_knee}{mode=write}{gain_pct}\,\%. Write IOPS rise from
-\csvq{queue_depth}{qd=1,mode=write}{iops_median} (QD=1) through
-\csvq{queue_depth}{qd=4,mode=write}{iops_median} (QD=4) and
-\csvq{queue_depth}{qd=8,mode=write}{iops_median} (QD=8) to the QD=16 peak, then stay at
+\csvq[1]{queue_depth_knee}{mode=write}{gain_pct}\,\%. IOPS rise from
+\csvq{queue_depth}{qd=1,mode=write}{iops_median} at QD=1 to the QD=16 peak and stay at
 \csvq{queue_depth}{qd=32,mode=write}{iops_median}--\csvq{queue_depth}{qd=256,mode=write}{iops_median}
-out to QD=256. The dip at QD=32 is not significant: its IQR
-(\csvq{queue_depth}{qd=32,mode=write}{iops_q25}--\csvq{queue_depth}{qd=32,mode=write}{iops_q75})
-overlaps that of QD=16
-(\csvq{queue_depth}{qd=16,mode=write}{iops_q25}--\csvq{queue_depth}{qd=16,mode=write}{iops_q75}). The QD=4
-point is the least stable (IQR
-\csvq{queue_depth}{qd=4,mode=write}{iops_q25}--\csvq{queue_depth}{qd=4,mode=write}{iops_q75}).
-In the original run the QD=8 write point caught a buffer-flush stall (\num{16884} IOPS, p99
-\qty{27.9}{\milli\second}). The knee rule then returned QD=4, and the text had to override it. After the
-pauses of the lean re-run, the stall did not recur, and the rule's answer agrees with the shape of the
-curve. The write knee is nonetheless \emph{indicative only}. The QD=16 and QD=32 IQRs overlap, so the
-step that the rule turns on is not resolved by five repetitions, and the curve joins two runs: QD 4--32
-from the rested lean re-run (diamonds in \cref{fig:queue-depth}b) and QD 1, 2 and 64--256 from the
-original run, taken on a drive in a different state. The write plateau of \ensuremath{\sim}\num{250}k IOPS $\times$ \qty{4}{\kibi\byte}
-$\approx$ \qty{0.97}{\gibi\byte\per\second} matches the SLC ingest rate measured in
-\cref{sec:block-size}. Writes saturate the buffer's intake, not the NAND parallelism that limits reads.
+beyond; the QD=32 dip is within the overlapping IQRs
+(\csvq{queue_depth}{qd=32,mode=write}{iops_q25}--\csvq{queue_depth}{qd=32,mode=write}{iops_q75} vs.\
+\csvq{queue_depth}{qd=16,mode=write}{iops_q25}--\csvq{queue_depth}{qd=16,mode=write}{iops_q75}). In the
+original run a flush stall at QD=8 (\num{16884} IOPS, p99 \qty{27.9}{\milli\second}) made the rule
+return QD=4; it did not recur after the lean pauses. The write knee is only indicative, since the curve
+joins two drive states. The plateau of \ensuremath{\sim}\num{250}k IOPS $\times$ \qty{4}{\kibi\byte}
+$\approx$ \qty{0.97}{\gibi\byte\per\second} is the SLC ingest rate: writes saturate the buffer's intake,
+not the NAND parallelism that limits reads.
 
 \subsection{Little's Law as a consistency check}
-Little's Law \cite{little1961proof} relates the mean number of requests in a system $L$, the throughput
-$\lambda$ and the mean time in system $W$: $L=\lambda W$. In a \emph{closed-loop} harness it holds
-\emph{by construction}. There are exactly QD request slots, and each completion is resubmitted
-immediately, so $\lambda W = \text{QD}\cdot W/(W+g)$, where $g$ is the host-side gap between reaping a
-completion and resubmitting it. Matching QD therefore does not show that the device behaves in a
-particular way. It shows that the timers are consistent, that no slot is lost, and that the host keeps
-up ($g\ll W$). A ratio $L/\text{QD}$ clearly below 1 would mean the issuing thread, not the device, is
-the bottleneck. On a tmpfs control, where I/O completes synchronously inside \code{io_submit},
-\code{make test} (run with \code{ACS_SCRATCH} on \code{/dev/shm}, so the SSD is not touched) measured
-$L=4.56$, i.e.\ $L/\text{QD}\approx0.57$, at QD=8 in a single \qty{1.5}{\second} run
-(\code{data/raw/validate_tmpfs/20261021-231433.txt}); the harness itself flags this as a host-side
-gap. Note also that $W$ is measured from
-submission, so $L$ counts requests in the kernel block layer and driver as well as in the device; the
-true device-queue occupancy can only be lower.
+Little's Law \cite{little1961proof} states $L=\lambda W$ for the mean number in system $L$, throughput
+$\lambda$ and mean time in system $W$. In a closed loop it holds by construction:
+$\lambda W = \text{QD}\cdot W/(W+g)$, where $g$ is the host gap between reaping and resubmitting. So
+$L/\text{QD}\approx1$ shows that the timers are consistent and the host keeps up ($g\ll W$), while a
+clearly lower ratio would expose a host bottleneck. As a control, \code{make test} on tmpfs, where I/O
+completes inside \code{io_submit}, measured $L/\text{QD}\approx0.57$ ($L=4.56$ at QD=8;
+\code{data/raw/validate_tmpfs/20261021-231433.txt}), which the harness flags. $L$ includes time in the
+kernel block layer, so device-queue occupancy can only be lower.
 
-\begin{table}[tbp]
+\begin{table}[!htbp]
   \centering\small
   \caption{Little's Law per queue depth: $\lambda$ (IOPS) and $W$ (mean latency, \si{\micro\second}) are
   medians with the IQR in brackets; $L=\lambda W$ is computed per repetition and then summarized.
@@ -151,48 +134,31 @@ true device-queue occupancy can only be lower.
     \end{tabular}}
 \end{table}
 
-\paragraph{Inference: internal parallelism.} Little's Law can also be applied to the \emph{device}, as
-an inference rather than a measurement. At saturation the drive completes
-$\lambda_{\max}\approx\csvq{queue_depth_knee}{mode=read}{max_iops}$ reads/s. If an isolated
-\qty{4}{\kibi\byte} read occupies the flash back end for roughly its unloaded service time $S$, the mean
-number of reads \emph{in service} is $L_\text{busy}=\lambda_{\max} S$. Taking $S$ between
-\qty{40}{\micro\second} (the QD=1 latency minus \ensuremath{\sim}\qty{10}{\micro\second} of host and
-transfer overhead) and \csvq[0]{queue_depth}{qd=1,mode=read}{lat_mean_us_median}\,\si{\micro\second}
-(the whole QD=1 latency) gives $L_\text{busy}\approx 6$--$8$. So of the 64--256 requests outstanding past
-the knee, only about 6--8 are being served by the NAND at any moment, and the rest wait in queues. That
-is the queueing-delay component of the latency growth in \cref{fig:queue-depth}. Micron does not
-publish the die or channel count for the 2210. A \qty{512}{\giga\byte} drive built from 1-Tbit QLC dies
-would have 4 dies, in which case 6--8 concurrent reads would mean about two reads in flight per die
-(multi-plane or independent-plane reads). This is a plausibility argument with an assumed $S$, not a
-measured die count.
+\paragraph{Inference: internal parallelism.} Applied to the device, with
+$\lambda_{\max}\approx\csvq{queue_depth_knee}{mode=read}{max_iops}$ reads/s and an assumed service time $S$
+between \qty{40}{\micro\second} and the QD=1 latency
+(\csvq[0]{queue_depth}{qd=1,mode=read}{lat_mean_us_median}\,\si{\micro\second}), only
+$L_\text{busy}=\lambda_{\max} S\approx 6$--$8$ reads are in service at once; of the 64--256 outstanding
+past the knee, the rest wait in queues. With 1-Tbit dies (4 in a \qty{512}{\giga\byte} drive; Micron
+does not publish this) that is about two reads per die, a plausibility argument only.
 
 \subsection{Analysis}
 Read IOPS climb from \csvq{queue_depth}{qd=1,mode=read}{iops_median} at QD=1 to
 \csvq{queue_depth}{qd=16,mode=read}{iops_median} at QD=16 and
 \csvq{queue_depth}{qd=32,mode=read}{iops_median} at QD=32, then flatten at
 \csvq{queue_depth}{qd=64,mode=read}{iops_median}--\csvq{queue_depth}{qd=256,mode=read}{iops_median}.
-Scaling is sub-linear from the start. Successive doublings from QD=1 add 56, 39, 60, 47, 34, 15, 4.5 and
-1.8\,\%, with no distinct regime of linear scaling. The pilot run's impression that QD 1$\to$4 scaled
-unusually poorly did not reproduce: here it scaled $2.2\times$. Beyond the knee, mean latency doubles
-with each doubling of QD
+Scaling is sub-linear from the start. Beyond the knee mean latency doubles with each doubling of QD
 (\csvq[0]{queue_depth}{qd=64,mode=read}{lat_mean_us_median}$\to$%
 \csvq[0]{queue_depth}{qd=128,mode=read}{lat_mean_us_median}$\to$%
-\csvq[0]{queue_depth}{qd=256,mode=read}{lat_mean_us_median}\,\si{\micro\second}), which is the textbook
-saturation signature. With $\lambda$ flat, $L=\lambda W$ can follow QD only if $W$ grows in proportion,
-so every added request simply waits.
+\csvq[0]{queue_depth}{qd=256,mode=read}{lat_mean_us_median}\,\si{\micro\second}), the textbook
+saturation signature: with $\lambda$ flat, every added request simply waits.
 
-For reads, $L/\text{QD}$ stays between 0.987 and 0.998 at every depth up to 256
-(\cref{tab:littles-law}). The single \code{libaio} thread keeps the queue full, and the saturation
-belongs to the device. For writes the ratio is 0.95--0.997. The lowest value, 0.95 at QD=128, comes
-with a p99.9 of \csvq[0]{queue_depth}{qd=128,mode=write}{lat_p999_us_median}\,\si{\micro\second},
-a flush-stall-sized tail. That tail is not unique to QD=128, though: QD=256 has a slightly larger p99.9
-(\csvq[0]{queue_depth}{qd=256,mode=write}{lat_p999_us_median}\,\si{\micro\second}) and still keeps
-$L/\text{QD}=0.995$. A stall alone therefore does not explain the dip. With five repetitions, and an
-$L$ IQR at QD=128 that reaches 0.996 of QD
+For reads $L/\text{QD}$ stays at 0.987--0.998 up to QD=256 (\cref{tab:littles-law}), so the single
+\code{libaio} thread keeps the queue full and the saturation is the device's. For writes it is
+0.95--0.997; the low 0.95 at QD=128 has an $L$ IQR reaching 0.996 of QD
 (\csvq[1]{queue_depth}{qd=128,mode=write}{littles_l_q25}--\csvq[1]{queue_depth}{qd=128,mode=write}{littles_l_q75}),
-we cannot say whether the low median reflects stalled completions, a host-side gap or noise.
+so we cannot tell a stall from noise.
 
-The practical reading for reads: QD\,$\approx$\,32--64 extracts nearly all the throughput at a quarter
-to half a millisecond, and deeper queues only buy latency. Writes need only QD\,$\approx$\,16, as long as
-the SLC cache has room. Once it does not, write throughput is set by QLC programming, whatever the queue
-depth (\cref{sec:device-state}).
+In practice, reads need QD\,$\approx$\,32--64 for nearly all the throughput at a quarter to half a
+millisecond; deeper queues only add latency. Writes need only QD\,$\approx$\,16 while the SLC cache has
+room; once it is full, QLC programming sets the rate at any depth (\cref{sec:device-state}).

@@ -2,45 +2,25 @@
 \section{Validation and Sanity Checks}\label{sec:validation}
 
 The microbenchmarks have no reference output to diff, so \code{scripts/validate.sh} (also
-\code{make test}) gates them against physical invariants that must hold on any sane hierarchy.
-\code{run.sh} executes it immediately before every experiment and stores the full output as
-\code{validate.txt} in that experiment's raw directory, so each dataset carries its own evidence that the
-checks passed on the machine state it was measured in. The checks are:
-\begin{itemize}
-  \item \textbf{Monotone levels.} Random pointer-chase latency grows strictly across levels:
-        L1 $<$ L2 $<$ L3 $<$ DRAM (measured values in \cref{tab:zero-queue}).
-  \item \textbf{Prefetcher check.} Sequential DRAM ``latency'' is more than $2\times$ below random DRAM
-        latency, confirming the stream prefetcher is engaged for sequential access and defeated by the
-        randomized chase.
-  \item \textbf{Bandwidth ceiling.} Single-core L1-resident read bandwidth exceeds the DRAM-resident rate,
-        and ten threads exceed one thread.
-  \item \textbf{Loaded $>$ unloaded.} The \code{mem_loaded} probe is slower under four streaming cores
-        than on an idle memory system---the minimum requirement for a loaded-latency instrument.
-  \item \textbf{Frequency plausibility.} The in-process add-chain probe lands in
-        \qtyrange{1}{6}{\giga\hertz}. This is only a coarse check: cycle conversions use the fixed
-        \qty{2.8}{\giga\hertz} clock, which the cycle counter confirms (\cref{sec:method}).
-  \item \textbf{Instrumentation (reported, not gating).} User-space counters open and return values;
-        a \qty{2}{\mebi\byte}-page request is actually granted (\code{AnonHugePages} $>0$) and the
-        \qty{4}{\kibi\byte} policy yields none.
-\end{itemize}
+\code{make test}) gates them against physical invariants of any sane hierarchy. \code{run.sh} executes it immediately
+before every experiment and stores the output as \code{validate.txt} with that dataset. The checks are:
+(i)~\textbf{monotone levels:} random-chase latency grows strictly, L1 $<$ L2 $<$ L3 $<$ DRAM
+(\cref{tab:zero-queue}); (ii)~\textbf{prefetcher:} sequential DRAM ``latency'' is more than $2\times$ below
+random, so the prefetcher is engaged for sequential access and defeated by the randomized chase;
+(iii)~\textbf{bandwidth ceiling:} L1-resident read bandwidth exceeds the DRAM-resident rate, and ten threads
+exceed one; (iv)~\textbf{loaded $>$ unloaded:} the \code{mem_loaded} probe is slower under four streaming
+cores than idle; (v)~\textbf{frequency plausibility:} the add-chain probe lands in
+\qtyrange{1}{6}{\giga\hertz} (coarse only; conversions use the fixed clock). Reported but not gating:
+counters open and return values, and a \qty{2}{\mebi\byte}-page request is granted (\code{AnonHugePages}
+$>0$) while the \qty{4}{\kibi\byte} policy yields none.
 
-\paragraph{External cross-check: Intel MLC.} \code{run.sh mlc} runs Intel MLC v3.13 with the latency
-thread on CPU~2 and load threads on the other nine cores, using \code{-e -r}: without root MLC cannot
-switch off the prefetchers, so its latency thread uses random access. \Cref{tab:zero-queue} compares its
-idle latency with ours level by level, and \cref{sec:intensity} compares its loaded-latency sweep with our
-knee. Agreement is close where the methods measure the same thing; the differences are explained by how
-the two tools walk memory (\cref{sec:zero-queue}).
+\paragraph{External cross-check: Intel MLC.} \code{run.sh mlc} runs MLC v3.13 (\code{-e -r}) with its
+latency thread on CPU~2 and load threads on the other nine cores. \Cref{tab:zero-queue} compares its idle
+latency with ours and \cref{sec:intensity} its loaded-latency sweep with our knee.
 
-\paragraph{Additional internal checks.} Every zero-queue size is measured twice: the primary ring is built
-with a 32-bit LCG and timed with \code{CLOCK_MONOTONIC_RAW}; a second ring is built with xorshift64* (a
-different permutation, seed and range reduction) and timed with \code{rdtscp}. On the DRAM plateau they
-differ by \val{zq_DRAM_xdiff}\%, and \code{validate.sh} fails if they differ by more than 15\%. The $T=0$
-point of \code{mem_loaded} measures unloaded DRAM latency with a separately written, pointer-based ring
-in a different binary: \valqty{int_w0_ns}{\nano\second}, against \valqty{zq_DRAM256_ns}{\nano\second} from
-\code{mem_latency} at the same \qty{256}{\mebi\byte} size.
-
-An L1 latency of \valnum{zq_L1_cyc}~cycles also matches the published 4--5 cycle load-to-use latency of
-this core, anchoring the ns$\to$cycle conversion.
-
-Timer and loop overhead are bounded by calibrating every timed interval to tens of milliseconds
-(\cref{sec:method}); the chase loop body is a single dependent load, so no overhead subtraction is needed.
+\paragraph{Additional internal checks.} Every zero-queue size is measured twice: an LCG ring timed with
+\code{CLOCK_MONOTONIC_RAW} and an xorshift64* ring timed with \code{rdtscp}; on the DRAM plateau they differ by
+\val{zq_DRAM_xdiff}\% (\code{validate.sh} fails above 15\%). The separately written pointer ring of
+\code{mem_loaded} gives \valqty{int_w0_ns}{\nano\second} unloaded, against \valqty{zq_DRAM256_ns}{\nano\second}
+from \code{mem_latency} at \qty{256}{\mebi\byte}. The L1 latency of \valnum{zq_L1_cyc}~cycles matches this
+core's published 4--5 cycle load-to-use latency, anchoring the ns$\to$cycle conversion.

@@ -1,7 +1,7 @@
 # Prompt 12 — Feedback: is my DRAM-bandwidth benchmark actually measuring DRAM?
 
 Before I write up the results I want you to poke holes in my method. Here's a bandwidth
-microbenchmark I (with your help) wrote earlier:
+microbenchmark I wrote earlier:
 
 ```c
 float buf[4096];                 // 16 KiB

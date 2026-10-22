@@ -1,23 +1,10 @@
 % !TeX root = ../main.tex
 \section{Conclusion}\label{sec:conclusion}
 
-On this AVX2 machine SIMD pays off handsomely only when two conditions hold at once: the data fits in
-cache and the kernel is not a serial reduction. Under those conditions \code{-march=native} gives
-SAXPY, elementwise multiply and the stencil roughly $3.5$--$5.8\times$ over scalar at
-$N=\num{4096}$ (the generic SSE build gets $2.5$--$3.0\times$), below the $8\times$ lane count
-because load/store issue, not the FMA units, limits the vector loop. Once the working set spills to
-DRAM the vector builds run \emph{at} the independently measured bandwidth roof, and the advantage
-compresses to $1.88$--$2.02\times$ for SAXPY, $1.5$--$1.6\times$ for multiply and $2.6$--$2.8\times$ for the
-stencil. What remains is not extra SIMD throughput but
-the scalar loops' own instruction cost, which at the fixed \qty{2.8}{\giga\hertz} clock still
-exceeds the memory time; it would shrink further at a higher clock. Data type scales the
-cache-resident gain through lane count (float64 usually keeps about half of it, though the stencil
-at $N=\num{16384}$ keeps $3.02\times$ versus $3.44\times$) and through operation cost (SSE2 int32
-multiply: $1.86\times$ versus $3.53\times$ for float32), and access pattern dominates everything
-else: any non-unit stride or a gather erases the SIMD benefit outright, and AVX2's hardware gather is
-even slower than the scalar loop on this mitigated CPU. The single most important lesson for writing
-and benchmarking vectorized code is that ``the loop vectorized'' is not ``the loop is fast''. Our
-memory-bound SAXPY gains nothing from more lanes, and our non-reassociated dot product, though it
-compiles to genuine SIMD, runs at exactly the \num{0.5}~FLOP/cycle its dependency chain allows. Only
-a controlled sweep across working-set size, plus disassembly, hardware counters and a measured
-roofline, reveals why.
+On this AVX2 machine SIMD pays off handsomely only when the data fits in cache and the kernel is
+not a serial reduction: \code{-march=native} then gives $3.5$--$5.8\times$ at $N=\num{4096}$,
+limited by load/store issue rather than the FMA units. In DRAM the vector builds run \emph{at} the independently
+measured bandwidth roof, and what remains ($1.88$--$2.02\times$ for SAXPY) is the scalar loops' own
+instruction cost at the fixed clock. Float64 keeps about half the cache-resident gain, and any
+non-unit stride or gather erases it. The main lesson: ``the loop vectorized'' is not ``the loop
+is fast''.

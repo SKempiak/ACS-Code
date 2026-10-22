@@ -4,11 +4,10 @@
 demonstration (with \cref{sec:ai-use}).}
 
 \begin{hypothesis}
-  A ``DRAM bandwidth'' benchmark that re-streams a buffer small enough to live in cache will report a
-  number several times higher than the real memory bandwidth, because every pass after the first hits
-  the cache instead of DRAM. We expect a buffer that fits in L1/L2 to report tens of
-  \unit{\gibi\byte\per\second} and a DRAM-resident buffer to settle near the
-  single-core streaming figure from \cref{sec:pattern}.
+  A ``DRAM bandwidth'' benchmark that re-streams a cache-sized buffer will report several times the real
+  memory bandwidth, because every pass after the first hits in cache. We expect an L1/L2-resident buffer to
+  report tens of \unit{\gibi\byte\per\second} and a DRAM-resident one to settle near the single-core
+  streaming figure of \cref{sec:pattern}.
 \end{hypothesis}
 
 \begin{knobs}
@@ -22,7 +21,7 @@ demonstration (with \cref{sec:ai-use}).}
   \centering
   \IfDataExists{pitfall}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, xmode=log, log basis x=2, width=0.78\linewidth,
+      \begin{axis}[acs, xmode=log, log basis x=2, width=0.75\linewidth, height=0.36\linewidth,
                    xlabel={Streamed working-set size (bytes)}, ylabel={Reported read BW (GiB/s)},
                    ymin=0, legend pos=north east]
         \addplot+[iqr bars] table[x=wss_bytes, y=gib_s_median, iqr of=gib_s] {data/pitfall.csv};
@@ -43,14 +42,10 @@ demonstration (with \cref{sec:ai-use}).}
 At \valqty{pit_small_kib}{\kibi\byte} the kernel reports \valqty{pit_small_gib}{\gibi\byte\per\second},
 falling as the set spills L1 and L2; once the set is \qty{64}{\mebi\byte} or larger---genuinely
 DRAM-resident---it settles at \val{pit_dram_lo}--\valqty{pit_dram_hi}{\gibi\byte\per\second}, a
-\val{pit_ratio}$\times$ overstatement for the small buffer. (This kernel is the scalar unit-stride read of
-\cref{sec:pattern}; its DRAM figure is window-limited and is not the single-core peak.) The inflated small-buffer number is not DRAM bandwidth at all: it
-is L1/L2 bandwidth, reported by a loop that re-reads the same cached lines. An AI-generated bandwidth
-microbenchmark very easily falls into this trap, because a \qty{16}{\kibi\byte} array is a perfectly
-natural default and the resulting tens of \unit{\gibi\byte\per\second} look like a plausible
-``memory'' number. Two cheap detectors flag it: (1) the reported bandwidth \emph{changes with buffer size}, which a
-true DRAM measurement must not once the set exceeds the LLC; and (2) the small-buffer figure from \emph{one} core matches or
-exceeds what the whole memory system delivers to \emph{all} cores (\valqty{int_peak_gib}{\gibi\byte\per\second}, \cref{sec:intensity}). Our methodology avoids the pitfall by sizing every
-bandwidth and latency point explicitly against the cache capacities (\cref{sec:method}) and, for the DRAM
-claims, using working sets at least $3\times$ the LLC so the first-touch pass cannot leave the data
-cached.
+\val{pit_ratio}$\times$ overstatement. (This is the scalar unit-stride read of \cref{sec:pattern}, so its
+DRAM figure is not the single-core peak.) The small-buffer number is L1/L2 bandwidth from a loop that
+re-reads the same cached lines. An AI-generated bandwidth microbenchmark easily falls into this trap,
+because a \qty{16}{\kibi\byte} array is a natural default and tens of \unit{\gibi\byte\per\second} look
+plausible. Two cheap detectors flag it: (1) the result \emph{changes with buffer size} beyond the LLC, and (2) one
+core reports as much as the whole memory system delivers to \emph{all} cores (\valqty{int_peak_gib}{\gibi\byte\per\second}, \cref{sec:intensity}). We avoid the pitfall by sizing every point against the cache capacities and using DRAM working sets
+at least $3\times$ the LLC.

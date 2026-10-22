@@ -3,95 +3,34 @@
 \rubric{Report quality}{10}{Clear plots, concise writing, honest anomalies and thoughtful limitations.}
 
 \subsection{Unexpected results}
+The dot product, the DRAM gap and the losing AVX2 gather are explained in
+\cref{sec:vectorization,sec:locality,sec:stride}. Three anomalies remain open:
 \begin{itemize}
-  \item \textbf{Dot product never speeds up.} We expected a reduction to vectorize at $\approx8\times$
-        like the other float32 kernels. Instead native dot stays at $\approx1\times$ across all sizes.
-        Hypothesis: without \code{-ffast-math} the compiler may not reassociate floating-point
-        addition, so it vectorizes the multiply but keeps a serial scalar sum. Tested: the
-        disassembly shows \code{vmulps} on \code{ymm} followed by a chain of scalar \code{vaddss}
-        (\cref{sec:vectorization}), confirming the hypothesis. We chose not to enable
-        \code{-ffast-math} so that all variants remain bit-reproducible against the reference.
-  \item \textbf{Native SAXPY speedup varies within L1.} It is $5.6\text{--}5.9\times$ at
-        $N=\num{1024}$, \num{2048}, \num{3072} and \num{4096}, but $6.86\times$ at $N=\num{1536}$
-        (locality sweep) and $6.32\times$ at $N=512$ (baseline). Scalar time is flat across these
-        sizes and L1D misses stay below \num{0.0011} per element below $N=\num{4096}$; the peak is
-        native needing \num{0.22} instead of \numrange{0.26}{0.28}~cycles per element. Per-call
-        overhead cannot explain it, since it \emph{lowers} small-$N$ speedups
-        (\cref{sec:alignment}). Untested hypothesis: the relative placement of \code{x} and
-        \code{y} (4K aliasing, as for the stencil below), testable with the same distance sweep.
-  \item \textbf{Stencil keeps a $2.6\text{--}2.8\times$ advantage in DRAM} while SAXPY and
-        multiply fall to $1.88\text{--}2.02\times$ and $1.5\text{--}1.6\times$. Its native build is
-        just as bandwidth-bound as theirs: it runs at \SI{101}{\percent} of the DRAM roof
-        (\cref{sec:roofline}). Its scalar build, however, needs
-        \num{5}~FLOP per element of serial \code{mulss}/\code{addss} work and reaches only
-        \qtyrange{4.0}{5.0}{\giga\flop\per\second} at every size (\qty{4.0}{\giga\flop\per\second},
-        \SI{37}{\percent} of the roof, in DRAM). The retained
-        ratio is again scalar's instruction cost, as for SAXPY (\cref{sec:locality}), just larger.
-  \item \textbf{Cache-resident stencil is slower than L3-resident stencil.} Native stencil delivers
+  \item \textbf{Cache-resident stencil is slower than L3-resident stencil}:
         \qtyrange{16.6}{17.3}{\giga\flop\per\second} for $N=\num{1024}\ldots\num{16384}$ but
-        \qtyrange{19.9}{20.7}{\giga\flop\per\second} for $N=\num{65536}\ldots\num{1048576}$, and
-        \num{31.4} and \qty{27.4}{\giga\flop\per\second} at the isolated sizes $N=512$ and
-        \num{32768}. The pattern reproduces exactly across separate runs; scalar stencil stays at \qtyrange{4.0}{5.0}{\giga\flop\per\second}. A cache
-        effect would make the rate fall monotonically with $N$; this does not. Hypothesis (untested): 4K aliasing. The small \code{x} and \code{y}
-        allocations sit at addresses whose difference makes a store to \code{y[i]} look like it
-        conflicts with the load of \code{x[i+1]} in the low 12 address bits, which stalls the load;
-        large allocations come from fresh pages with a different relative offset. It would be confirmed by a
-        sweep of the \code{x}--\code{y} distance modulo \qty{4}{\kibi\byte} at fixed $N$, showing
-        the slow rate only at small distances, together with the core's 4K-alias counter
-        (\code{ld_blocks_partial.address_alias}). We ran neither.
-  \item \textbf{Scalar and SIMD SAXPY do not converge in DRAM.} We expected one shared bandwidth
-        plateau; native stays $1.88\text{--}2.02\times$ ahead because scalar SAXPY is still largely
-        instruction-bound there (\num{2.34}~cycles per element at IPC \num{3.0}) while native sits on
-        the roof (IPC \num{0.6}); the cycle ratio, $1.88$, is the measured speedup
-        (\cref{sec:locality}).
-  \item \textbf{Same code, different process, $N=\num{32768}$.} Scalar SAXPY is stable across
-        processes elsewhere (\qtyrange{0.650}{0.653}{\nano\second} per element at all \num{9}
-        locality sizes from $N=\num{65536}$ to \num{1048576}), but where the two arrays exactly fill
-        the \qty{256}{\kibi\byte} L2 two measurements of the same machine code differ by
-        \SI{1}{\percent} (scalar) and \SI{14}{\percent} (native); page placement is the untested
-        hypothesis (\cref{sec:stride}).
-  \item \textbf{Hardware gather loses to scalar.} The explicit \code{vgatherdps} kernel takes
-        \qty{3.23}{\nano\second} per element at $N=\num{32768}$ versus \num{2.16} (native scalar
-        loop) and \qty{2.02}{\nano\second} (scalar build), i.e.\ $1.5\text{--}1.6\times$
-        \emph{slower}, and it is \SI{7}{\percent} slower in DRAM. Hypothesis: the Gather Data
-        Sampling microcode mitigation, which this CPU runs (\cref{sec:stride}) and which is known
-        to make \code{vgatherdps} much slower, plus the eight scalar
-        stores that AVX2 cannot vectorize. Confirming it would need a boot without the mitigation,
-        which requires root.
+        \qtyrange{19.9}{20.7}{\giga\flop\per\second} for $N=\num{65536}\ldots\num{1048576}$,
+        reproducibly, which no monotonic cache effect explains. Untested hypothesis: 4K aliasing
+        between stores to \code{y[i]} and loads of \code{x[i+1]}; sweeping the \code{x}--\code{y}
+        distance modulo \qty{4}{\kibi\byte} with the \code{ld_blocks_partial.address_alias} counter
+        would test it.
+  \item \textbf{Native SAXPY peaks within L1} ($6.86\times$ at $N=\num{1536}$, $6.32\times$ at
+        $N=512$, else $5.6\text{--}5.9\times$); the same placement hypothesis applies.
+  \item \textbf{Same code, different process, $N=\num{32768}$}: \SI{1}{\percent} (scalar) and
+        \SI{14}{\percent} (native) apart. Untested hypothesis: the two arrays exactly fill the
+        \qty{256}{\kibi\byte} L2, so conflict misses depend on physical page placement.
 \end{itemize}
 
 \subsection{Limitations}
 \begin{itemize}
-  \item \textbf{Core-PMU counters only.} The SIMD locality counters are core-PMU, user-space
-        events of the benchmark thread (\cref{sec:ceilings-method}): cycles, instructions, generic LLC
-        misses and L1D read misses. We did not count DRAM traffic for SIMD. The machine can do it:
-        the companion Cache \& Memory report, run on the same machine the same day with
-        \code{perf_event_paranoid}~$=0$, reads the memory-controller (\code{uncore_imc}) counters
-        and finds IMC traffic matching its streaming estimate to within about \SI{1}{\percent}. TLB
-        events were not recorded either. The generic LLC-miss event's treatment of hardware-prefetch
-        requests is model-specific, so we use misses per element as a relative measure between
-        builds rather than as exact DRAM traffic. Counting IMC bytes per element for scalar and
-        native SAXPY would turn the roofline's traffic assumption into a measurement.
-  \item \textbf{Fixed clock.} All reported experiments were run on 2026-10-21 with governor
-        \sysGovernor{}, turbo \sysTurbo{} and SMT off; the cycle counter confirms
-        \qtyrange{2.78}{2.79}{\giga\hertz} for every locality and ceilings configuration
-        (\cref{sec:method}). The fixed clock makes the results reproducible, but it is not how the
-        CPU normally runs. With turbo the compute-bound numbers scale up by roughly the clock ratio
-        ($1.72\text{--}1.75\times$ in our turbo sweep) while DRAM bandwidth does not, so the
-        DRAM-resident SAXPY speedups reported here ($1.88\text{--}2.02\times$) are larger than at turbo
-        ($1.32\text{--}1.44\times$, \cref{sec:method}).
-  \item \textbf{One machine, one compiler.} All results are from a single i9-10900F with GCC
-        \sysGCC{}. Clang was used only to confirm the build compiles. No AVX-512 part was available,
-        so the \qty{512}{bit} regime is out of scope.
-  \item \textbf{THP always-on; no core isolation.} Transparent huge pages are \code{always}, and
-        the pinned core is not isolated from the scheduler (no \code{isolcpus}). Neither is controlled
-        for; the lock file only serializes cooperating jobs, so the shared-core checks of
-        \cref{sec:method} (repetition spread $\le1.36\times$, apparent clock
-        \qtyrange{2.78}{2.79}{\giga\hertz}) are what guard the reported data.
-  \item \textbf{Discarded sessions.} Earlier sessions the same day were discarded: those before the
-        GPE storm was masked (\cref{sec:method}), and a first clean session during which another
-        agent's unlocked smoke tests briefly shared CPU~2 ($\approx2\times$ slowdowns in some
-        repetitions).
-  \item \textbf{Report build backend.} Without \code{biber}, \code{biblatex} uses the BibTeX
-        backend, so the single reference is sorted by name/year to avoid a spurious rerun warning.
+  \item \textbf{Core-PMU counters only}: no DRAM-traffic or TLB events, and the generic LLC-miss
+        event's prefetch handling is model-specific, so we only compare it between builds. IMC bytes
+        per element (as read by the companion Cache \& Memory report) would turn the roofline's
+        traffic assumption into a measurement.
+  \item \textbf{Fixed clock}: reproducible but not normal operation; at turbo, DRAM-resident SAXPY
+        speedups shrink to $1.32\text{--}1.44\times$ (\cref{sec:method}).
+  \item \textbf{One machine, one compiler} (i9-10900F, GCC \sysGCC{}), no AVX-512 part.
+  \item \textbf{THP always-on, no core isolation, unshuffled sweep order}; the shared-core checks of
+        \cref{sec:method} guard the data.
+  \item \textbf{Discarded sessions}: earlier sessions that day, before the GPE storm was masked and
+        while another agent's unlocked smoke tests briefly shared CPU~2.
 \end{itemize}

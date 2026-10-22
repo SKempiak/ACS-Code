@@ -18,9 +18,8 @@ and explained (with \cref{sec:ai-use}).}
 \end{knobs}
 
 \subsection{Evidence}
-The SAXPY loop at \code{kernels.c:29} is confirmed vectorized at \qty{256}{bit} with FMA by both the
-compiler report and the disassembly in \cref{sec:vectorization}. Yet its speedup over scalar falls
-with size:
+The SAXPY loop at \code{kernels.c:29} is vectorized at \qty{256}{bit} with FMA
+(\cref{sec:vectorization}), yet its speedup over scalar falls with size:
 \begin{center}\small
   \begin{tabular}{@{}rrrrr@{}}
     \toprule
@@ -36,31 +35,18 @@ with size:
     \bottomrule
   \end{tabular}
 \end{center}
-``\% of roof'' is native GFLOP/s over $B_\ell \cdot I$ with the measured triad roof of the level the
-data lives in (\cref{sec:roofline}); at \qty{32}{\mebi\byte} the working set straddles L3 and DRAM.
-The other SAXPY sweeps agree (\cref{sec:baseline}).
+``\% of roof'': native GFLOP/s over $B_\ell \cdot I$ for the level holding the data
+(\cref{sec:roofline}); \qty{32}{\mebi\byte} straddles L3 and DRAM.
 
 \subsection{Explanation}
-The hypothesis was half right. The $\approx6\times$ seen in L1 indeed does not survive in DRAM, but
-the speedup does not fall to ``almost none''. It settles at $1.92\text{--}1.95\times$ in this sweep. Both parts have
-measured causes. (i) The loop is genuinely vectorized (disassembly), so this is not a failure to
-use SIMD. (ii) The kernel's arithmetic intensity (\qty{0.167}{\flop\per\byte},
-\cref{tab:roofline-inputs}) puts it deep in the bandwidth-bound region, and native SAXPY runs at
-\SIrange{104}{120}{\percent} of the DRAM roof $B_{\text{DRAM}}\cdot I = \qty{4.35}{\giga\flop\per\second}$.
-$B_{\text{DRAM}}$ is measured by a separate triad benchmark, not by SAXPY. The LLC-miss counter
-gives \numrange{0.122}{0.128} misses per element for native, the compulsory $2/16$
-(\cref{sec:locality}). The vector loop is waiting on memory and moving no more data than it must.
-\emph{No} wider vector, AVX-512 included, could make it faster. (iii) The remaining
-$\approx1.9\times$ is not a SIMD gain in the memory-bound sense: scalar SAXPY is still
-largely instruction-bound in DRAM (\num{2.34}~cycles per element at IPC \num{3.0}, versus
-\num{1.53} with all data in L1), and the ratio of its cycles to native's (\num{1.25}) is the
-measured speedup. That
-ratio depends on the clock: with turbo the DRAM-resident speedup was only $1.32\text{--}1.44\times$
-(\cref{sec:method}). (iv) The same kernel \emph{does} reach $5.6\times$ when the array fits in
-L1, so the hardware is capable of the speedup; in DRAM only bandwidth withholds it.
+The hypothesis was half right: the $\approx6\times$ of L1 does not survive in DRAM, but the speedup
+settles at $1.92\text{--}1.95\times$, not ``almost none''. The loop genuinely uses SIMD, but at
+\qty{0.167}{\flop\per\byte} it is deep in the bandwidth-bound region: native SAXPY runs at \SIrange{104}{120}{\percent} of the separately measured
+DRAM roof with the compulsory \numrange{0.122}{0.128} LLC misses per element (\cref{sec:locality}).
+\emph{No} wider vector, AVX-512 included, could make it faster. The remaining $\approx1.9\times$ is
+the scalar loop's instruction cost (\num{2.34} vs \num{1.25} cycles per element), which shrinks at
+turbo clocks (\cref{sec:method}).
 
-A second, subtler misleading case appears in the dot product (\cref{sec:vectorization}): its loop
-reports ``vectorized'' and the disassembly shows a \qty{256}{bit} \code{vmulps}, so a reader who
-stops at the compiler report would claim success---yet the serial, non-reassociated reduction leaves
-the real speedup at $\approx1\times$. Both cases carry the same lesson for AI-assisted benchmarking:
-``it compiled to SIMD'' is necessary but not sufficient evidence that a kernel is actually faster.
+The dot product is subtler: it reports ``vectorized'' and uses a \qty{256}{bit} \code{vmulps},
+yet the serial reduction leaves $\approx1\times$. Both carry the same lesson for AI-assisted benchmarking: ``it compiled to SIMD'' is necessary but not
+sufficient evidence that a kernel is faster.

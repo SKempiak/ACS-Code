@@ -2,17 +2,12 @@
 \section{Reproducibility}\label{app:repro}
 
 \newcommand{\acscommit}{\detokenize{e33345f7874f}}
-Code, scripts, raw data and this report live in one repository: \code{ACS-Code/} holds the code and
-data (this project in \code{ACS-Code/SIMD_Advantage_Profiling/}, shared helpers in
-\code{ACS-Code/common/} and \code{ACS-Code/tools/}), \code{ACS-Latex/} the reports (this one in
-\code{ACS-Latex/SIMD_Advantage_Profiling/}). The timed runs (2026-10-21, 20:38--20:54) predate
-their commit; they were measured with the tree committed as \texttt{b00db66}, and the measurement
-code (kernels, timing harness, ceilings, \code{run.sh}) is unchanged since, except an opt-in
-error print in the validation path of \code{main.c} that is inactive in timed runs. Later commits
-changed only post-processing scripts, the correctness log and this text. This report corresponds to
-commit \texttt{\acscommit}. From the repository root:
+Code, data (\code{ACS-Code/}) and reports (\code{ACS-Latex/}) live in one repository. The timed runs (2026-10-21, 20:38--20:54) used the tree committed as \texttt{b00db66}; the
+measurement code is unchanged since, except an opt-in error print in the validation path of
+\code{main.c} that is inactive in timed runs. This report corresponds to commit
+\texttt{\acscommit}. From the repository root:
 
-\begin{lstlisting}[language=bash]
+\begin{lstlisting}[language=bash, basicstyle=\ttfamily\scriptsize]
 gh repo clone SKempiak/ACS-Code ACS && cd ACS
 git checkout e33345f7874f
 cd ACS-Code
@@ -26,22 +21,18 @@ SIMD_Advantage_Profiling/scripts/run.sh all     # ceilings, baseline, locality, 
 scripts/sync_data.sh SIMD_Advantage_Profiling   # -> ACS-Latex/SIMD_Advantage_Profiling/data/
 cd ../ACS-Latex && make simd                    # -> SIMD_Advantage_Profiling.pdf
 \end{lstlisting}
-Before timing, as root: governor \code{performance}, turbo off
-(\code{intel_pstate/no_turbo}~$=1$), SMT off, and on this machine the ACPI event storm masked with
-\code{echo disable > /sys/firmware/acpi/interrupts/gpe42}. None of these settings persists across
-a reboot (\cref{sec:method}). The SIMD hardware counters (core-PMU, user-space events) need no root as long as
-\code{perf_event_paranoid}~$\le 2$; with
-\code{COUNTERS=0}, or where they cannot be opened, \code{run.sh} skips the counter outputs.
-\code{run.sh derive} recomputes the derived tables (roofline points and roofs, per-level bandwidth,
-stride, data-type and GFLOP/s summaries) from the processed CSVs without measuring.
+Before timing, as root: governor \code{performance}, \code{intel_pstate/no_turbo}~$=1$, SMT off,
+and \code{echo disable > /sys/firmware/acpi/interrupts/gpe42} (none persists across a reboot).
+\code{run.sh derive} recomputes the derived tables without measuring. Each raw directory
+(\cref{tab:raw-data}) holds \code{raw.csv} and \code{env.txt}; the turbo comparison traces to
+commit \code{73f8fb8}.
 
 \begin{table}[h]
-  \centering\small
-  \caption{Raw data behind each figure (directories under
-  \code{ACS-Code/SIMD_Advantage_Profiling/data/raw/}).}\label{tab:raw-data}
+  \centering\footnotesize
+  \caption{Raw data behind each figure and table.}\label{tab:raw-data}
   \begin{tabularx}{\linewidth}{@{}lX@{}}
     \toprule
-    Figure / table & Raw run directory \\
+    Figure / table & Raw run directory (under \code{ACS-Code/SIMD_Advantage_Profiling/data/raw/}) \\
     \midrule
     \Cref{fig:baseline-speedup,fig:baseline-throughput} & \code{baseline/20261021-203854} \\
     \Cref{fig:locality,fig:locality-bw,fig:locality-counters}, \cref{tab:locality-bw} & \code{locality/20261021-204801} \\
@@ -56,10 +47,3 @@ stride, data-type and GFLOP/s summaries) from the processed CSVs without measuri
     \bottomrule
   \end{tabularx}
 \end{table}
-
-Each timed-run raw directory holds \code{raw.csv} (one row per repetition, with full configuration metadata)
-and \code{env.txt} (a snapshot of \code{collect_env.sh}); the processed CSVs plotted above are
-produced from them by \code{tools/summarize} plus this project's post-processing scripts
-(\code{speedup_iqr.awk}, \code{roofline.sh}, \code{tables.sh}) and copied into this report's
-\code{data/} by \code{scripts/sync_data.sh}. Every number from the 2026-10-21 runs traces to a
-committed file; the turbo-clock comparison figures trace to commit \code{73f8fb8} (\cref{sec:method}).

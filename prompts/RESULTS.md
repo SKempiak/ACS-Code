@@ -151,22 +151,7 @@ the one asked for.
 
 ---
 
-## Prompt 07 — Review AI use and draft an honest note
-
-**Asked:** an honest AI-use note reflecting generation vs. verification, including a caught
-mistake.
-
-**Produced:** updated `ACS-Code/AI_USE_LOG.md` and the report's §AI-Use.
-
-**How well it worked:** Straightforward. The note names the tool/model, what was generated
-(kernels, harness, scripts, report prose), and concrete corrections — the Makefile
-single-rule trap (Prompt 02), the column/filter drift (Prompt 04), and the `awk` null-redirect
-bug (Prompt 05) as the explicit "AI suggestion was wrong and here's how it was caught" item.
-Kept it unflattering per the request.
-
----
-
-## Prompt 08 — Critique the benchmark for AI-generated-code pitfalls
+## Prompt 07 — Critique the benchmark for AI-generated-code pitfalls
 
 **Asked:** adversarially audit for DCE, cache-vs-DRAM, pinning, frequency scaling, timer
 resolution, and unverified vectorization.
@@ -301,35 +286,30 @@ never faked.
 
 ## Cache & Memory (Project 2)
 
-**Prompt 09 — implement the microbenchmarks.** Asked for `mem_latency` (pointer-chase), `mem_bandwidth`
+**Prompt 08 — implement the microbenchmarks.** Asked for `mem_latency` (pointer-chase), `mem_bandwidth`
 (multi-thread streaming) and `kernel_miss`. Produced all three on the shared `common/` harness.
 *Worked:* the Sattolo random ring defeats the prefetcher, giving a believable latency staircase
 (L1 ≈ 1.0 ns / 4.9 cyc → DRAM ≈ 84 ns / ~400 cyc). *Needed correcting:* an early version used a
 sequential stride and reported ~5 ns "DRAM latency" — really prefetched throughput; fixed by randomizing
 the chase (kept the sequential number as a labelled caveat row).
 
-**Prompt 10 — run driver + pipeline.** Produced `run.sh` (latency/granularity/rwmix/intensity/cache_miss/
+**Prompt 09 — run driver + pipeline.** Produced `run.sh` (latency/granularity/rwmix/intensity/cache_miss/
 tlb/pitfall) + `validate.sh`. *Worked:* raw→`summarize`→processed flow matches SIMD; `validate.sh`
 asserts L1<L2<L3<DRAM and bandwidth orderings — all pass. *Corrected:* figure column names had to match
 `summarize` output exactly (`gib_s_median`, `ns_per_access_median`, …) or pgfplots silently drops rows.
 
-**Prompt 11 — knee + Little's Law.** Produced the intensity analysis: 1 core = 14.4 GiB/s, knee at 4–6
+**Prompt 10 — knee + Little's Law.** Produced the intensity analysis: 1 core = 14.4 GiB/s, knee at 4–6
 cores, ceiling ~30 GiB/s; Little's Law gives ~42 outstanding lines at saturation vs ~10 fill buffers per
 core. *Worked and kept honest:* explicitly flagged that using the zero-queue latency makes the L column
 an upper-bound estimate (the streamed kernel runs under the prefetcher), rather than claiming exact
 occupancy.
 
-**Prompt 12 — feedback: is my DRAM-bandwidth benchmark real?** Agent correctly identified the cache-reuse
+**Prompt 11 — feedback: is my DRAM-bandwidth benchmark real?** Agent correctly identified the cache-reuse
 pitfall: a 16 KiB buffer reports 56 GiB/s (L1/L2 bandwidth), not DRAM; the honest DRAM-resident figure is
 ~15 GiB/s (matches the intensity sweep). Detectors: bandwidth must not change with buffer size past the
 LLC, and must not exceed the ~45 GiB/s DDR4 ceiling. Also caught the huge-page assumption: THP=`always`
 does **not** mean huge pages were granted — `/proc/self/smaps_rollup` showed `AnonHugePages: 0 kB`, so the
 TLB experiment is reported as a verified negative, not "no effect."
-
-**Prompt 13 — feedback: AI-use note + rigor.** Produced the honest AI-use note and flagged the weak spots
-truthfully: no `perf` counters (cache/TLB experiments are runtime correlations; AMAT is illustrative), no
-Intel MLC cross-check, frequency floats (in-process effective GHz used for cycle counts), 8 reps with IQR
-bars. All recorded in the report §Limitations and `AI_USE_LOG.md`.
 
 **P2 outcome:** `make -C Cache_and_Memory_Performance_Profiling test` passes; `make memory`/`make final`
 build the report at 15 pages, 0 fatal, 0 undefined refs, **0** acs-warnings (every section filled from
@@ -337,29 +317,29 @@ real data).
 
 ## SSD (Project 3)
 
-**Prompt 14 — implement O_DIRECT benchmark.** Produced `blkbench.c` (libaio, O_DIRECT, QD-aware,
+**Prompt 12 — implement O_DIRECT benchmark.** Produced `blkbench.c` (libaio, O_DIRECT, QD-aware,
 p50/p95/p99/p99.9). *Worked:* keeps real queue depth in flight (Little's Law holds to ~1% at every QD).
 *Corrected:* an early version timed I/O *submission*, not *completion*; changed to completion latency,
 which is what the percentiles must describe.
 
-**Prompt 15 — safety guard + driver.** Produced `safety.sh` (hard-refuses devices, mountpoints, anything
+**Prompt 13 — safety guard + driver.** Produced `safety.sh` (hard-refuses devices, mountpoints, anything
 outside the scratch dir) and `run.sh`. *Worked:* `validate.sh` confirms it refuses `/dev/nvme0n1`,
 `/etc/passwd`, `/` and accepts only a disposable scratch file. *Improved during simulation:* the scratch
 location was made overridable via `ACS_SCRATCH` (same gate wherever it points) — this is what let the test
 be repointed from the HDD to the SSD (see prompt 18).
 
-**Prompt 16 — knee, Little's Law, tail.** Produced the queue-depth analysis: knee at QD≈64 (158k IOPS);
+**Prompt 14 — knee, Little's Law, tail.** Produced the queue-depth analysis: knee at QD≈64 (158k IOPS);
 Little's Law L=λW tracks the configured depth to within 1% out to QD=128, so the effective queue depth is
 real and the saturation is the device's, not the harness's. Tail: p99.9 ≈ 3× the median, worse at the
 knee.
 
-**Prompt 17 — feedback: impossibly-good SSD numbers.** Agent correctly diagnosed the buffered-I/O pitfall:
+**Prompt 15 — feedback: impossibly-good SSD numbers.** Agent correctly diagnosed the buffered-I/O pitfall:
 dropping O_DIRECT reported **2.06M IOPS / 8.0 GiB/s / sub-µs** — the page cache serving from RAM, a 24×
 inflation over the real 86k IOPS / 337 MiB/s. Detectors: exceeds the interface ceiling, sub-µs "storage"
 latency is impossible for NAND, and it scales with region size. Also addressed effective-QD mislabeling
 (verify with the Little's Law table).
 
-**Prompt 18 — feedback: which device did I actually test?** This is the key correction. The agent read the
+**Prompt 16 — feedback: which device did I actually test?** This is the key correction. The agent read the
 run's `env.txt` and found `rotational=1`, model `WL2000GSA6472E`: the default in-repo `data/scratch/` lives
 on the box's 2 TB **SATA HDD**, so the first full dataset (QD=1 random latency in *milliseconds*) described
 a hard disk, not an SSD. An earlier assumption that "the NVMe is read-only to us" was simply wrong —

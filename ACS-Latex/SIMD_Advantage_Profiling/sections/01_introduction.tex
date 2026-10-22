@@ -2,14 +2,11 @@
 \section{Introduction}\label{sec:intro}
 
 Single-instruction-multiple-data (SIMD) units let one instruction operate on a whole vector of
-elements. On the Intel Core i9-10900F studied here the widest available unit is AVX2 with FMA, a
-\qty{256}{bit} register that holds \num{8} float32 or \num{4} float64 lanes, so the \emph{ideal}
-speedup over scalar code is $8\times$ (float32) or $4\times$ (float64). Real kernels rarely reach
-that ceiling: loads and stores, loop prologue/epilogue handling, reduction dependencies, and---above
-all---finite memory bandwidth cap the benefit. The purpose of this report is to measure where the
-benefit appears, by how much it falls short of the lane count, and exactly when it disappears.
-
-This report answers:
+elements. On the Intel Core i9-10900F studied here the widest unit is AVX2 with FMA: a
+\qty{256}{bit} register holds \num{8} float32 or \num{4} float64 lanes, so the \emph{ideal} speedup
+over scalar code is $8\times$ or $4\times$. Loads and stores, loop tails, reduction dependencies
+and, above all, memory bandwidth keep real kernels below that. We measure where the benefit
+appears, how far it falls short of the lane count, and when it disappears:
 \begin{enumerate}
   \item How much faster are auto-vectorized builds than scalar builds for each kernel, and how does
         that change from cache-resident to DRAM-resident working sets? (\cref{sec:baseline,sec:locality})
@@ -17,14 +14,3 @@ This report answers:
   \item Where do these kernels sit in a roofline model of this machine? (\cref{sec:roofline})
   \item When does the expected SIMD benefit fail to appear? (\cref{sec:negative})
 \end{enumerate}
-
-In brief: SIMD helps most when data fits in L1/L2, where \code{native} gives roughly $5.8\times$ for
-SAXPY and the cache feeds the vector units fast enough to approach the lane count; the advantage
-shrinks step-by-step as the working set crosses L2 and L3 and falls to $1.88\text{--}2.02\times$ for SAXPY
-in DRAM ($1.5\text{--}1.6\times$ multiply, $2.6\text{--}2.8\times$ stencil), where the vector build runs at the memory-bandwidth roof and only the scalar build's own
-instruction cost keeps the ratio above $1\times$. Data type matters through lane count (float64
-usually keeps about half the gain) and through the cost of the vector operation (SSE2 int32
-multiply), and access pattern matters even more (any stride~$\ge2$ removes the SIMD
-advantage; gather, even with AVX2 \code{vgatherdps}, never gains). Two cases show the limits of ``it vectorized, so it
-must be faster'': memory-bound SAXPY (\cref{sec:negative}) and the dot-product reduction
-(\cref{sec:vectorization}).

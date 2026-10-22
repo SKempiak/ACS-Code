@@ -2,23 +2,17 @@
 \section{Stride and Gather Access}\label{sec:stride}
 
 \begin{hypothesis}
-  Unit stride lets each \qty{64}{\byte} cache line serve \num{16} consecutive float32 elements, so
-  SIMD helps. As the stride grows, each vector still needs \num{8} elements but they come from
-  further apart: once the stride reaches \num{16} elements (\qty{64}{\byte}) every element sits in its
-  own cache line and effective bandwidth drops by up to $16\times$. We therefore expect time per
-  processed element to rise roughly linearly with stride until it saturates at one cache line per
-  element, and we expect the SIMD advantage to vanish for any non-unit stride, because the compiler
-  must gather lanes individually. Gather (random permutation) should be the worst case.
+  Unit stride lets each \qty{64}{\byte} line serve \num{16} float32 elements; at stride \num{16} each
+  element needs its own line. Time per processed element should rise roughly linearly with stride
+  until it saturates at one line per element, and the SIMD advantage should vanish for any
+  non-unit stride, because lanes must be loaded individually. Gather should be the worst case.
 \end{hypothesis}
-
 \begin{hypothesis}
-  (For the extended sweep.) The explicit AVX2 gather
-  (\code{vgatherdps}, \cref{sec:vectorization}) loads eight lanes per instruction but still needs one
-  cache line per element and eight scalar stores, so we expect it to be at best modestly faster than
-  the scalar gather in cache and no faster in DRAM. On this CPU the \enquote{Gather Data Sampling}
-  microcode mitigation is active (\code{/sys/devices/system/cpu/vulnerabilities/gather_data_sampling}:
-  \enquote{Mitigation: Microcode}), which is reported to slow \code{vgatherdps} considerably, so it
-  may even lose to the scalar loop.
+  (For the extended sweep.) The explicit AVX2 gather (\code{vgatherdps}, \cref{sec:vectorization})
+  still needs one line per element and eight scalar stores, so it should be at best modestly faster
+  than the scalar gather in cache. This CPU runs the \enquote{Gather Data Sampling} microcode
+  mitigation (\code{/sys/devices/system/cpu/vulnerabilities/gather_data_sampling}), reported to slow
+  \code{vgatherdps} considerably, so it may even lose.
 \end{hypothesis}
 
 \begin{knobs}
@@ -38,7 +32,7 @@
   \IfDataExists{stride}{%
     \begin{subfigure}[t]{0.49\linewidth}
       \begin{tikzpicture}
-        \begin{axis}[acs, height=0.85\linewidth, xmode=log, log basis x=2, ymode=log, xlabel={Stride (elements)},
+        \begin{axis}[acs, height=0.56\linewidth, xmode=log, log basis x=2, ymode=log, xlabel={Stride (elements)},
                      ylabel={Time per processed element (ns)}, legend pos=north west, legend style={font=\scriptsize},
                      ytick={0.1,0.2,0.5,1,2,5,10}, yticklabels={0.1,0.2,0.5,1,2,5,10}]
           \acsvariantlegend
@@ -51,7 +45,7 @@
     \end{subfigure}\hfill
     \begin{subfigure}[t]{0.49\linewidth}
       \begin{tikzpicture}
-        \begin{axis}[acs, height=0.85\linewidth, xmode=log, log basis x=2, ymode=log, xlabel={Stride (elements)},
+        \begin{axis}[acs, height=0.56\linewidth, xmode=log, log basis x=2, ymode=log, xlabel={Stride (elements)},
                      ylabel={Time per processed element (ns)},
                      ytick={0.1,0.2,0.5,1,2,5,10}, yticklabels={0.1,0.2,0.5,1,2,5,10}]
           \addplot+[var scalar, forget plot, iqr bars] table[x=stride, y=ns_per_elem_median, iqr of=ns_per_elem, only if={access}{stride}, only if={variant}{scalar}, only if={n}{4194304}] {data/stride.csv};
@@ -90,50 +84,24 @@
 \end{table}
 
 \subsection{Analysis}
-\Cref{tab:stride} makes the pattern stark. Only unit stride lets \code{native} beat \code{scalar}:
-$3.6\text{--}4.1\times$ at $N=\num{32768}$ and $2.35\times$ in DRAM. The range at $N=\num{32768}$
-comes from two measurements of the same configuration. The table's \emph{unit} row (plain
-\code{saxpy_f32}: scalar \num{0.636}, native \qty{0.178}{\nano\second}, $3.57\times$) and the
-stride-1 point of \cref{fig:stride}a (\code{saxpy_f32_stride} with $s=1$: scalar \num{0.645},
-native \qty{0.156}{\nano\second}, $4.13\times$) run the identical machine code: the scalar loops
-match instruction for instruction, and the native stride kernel takes the same vectorized path
-when $s=1$ (checked in the disassembly). They also use the same allocation. The
-differences (\SI{1}{\percent} for scalar, \SI{14}{\percent} for native) are therefore
-process-to-process variation. Untested hypothesis: at this $N$ the two arrays fill exactly the
-\qty{256}{\kibi\byte} L2, so conflict misses depend on which physical pages each process gets.
-Repeating the configuration in many processes, either on 2~MiB huge pages (fixed physical
-contiguity) or with the physical addresses recorded via \code{/proc/self/pagemap} (root), would
-confirm or refute it (\cref{sec:anomalies}). At stride~2 and beyond the three
-builds agree within \numrange{0.98}{1.03}$\times$ (native vs.\ scalar) at both sizes; \code{autovec}
-is within \SI{10}{\percent} of them everywhere, as expected since its strided loop is equally
-scalar. Two things happen at once. First, the effective bandwidth collapses. In DRAM the time per
-processed element grows from stride~2 to~4 to~8 to~16 as \num{1.13} $\to$ \num{1.85} $\to$
-\num{3.61} $\to$ \qty{7.34}{\nano\second} (native), approaching a doubling per step. Converted to
-bandwidth (\code{stride_bw.csv}; useful $=\qty{12}{\byte}$ per processed element, fetched $=3\times
-\min(4s,64)$~\unit{\byte}: a line of $x$ and of $y$ read and the dirty $y$ line written back), the
-useful bandwidth falls from \num{9.9} to \num{6.0}, \num{3.1} and \qty{1.5}{\gibi\byte\per\second},
-while the fetched line traffic is \num{19.8}, \num{24.1}, \num{24.8} and
-\qty{24.4}{\gibi\byte\per\second}---from stride~4 on, exactly the DRAM triad roof
-(\qty{24.3}{\gibi\byte\per\second}). The memory system is saturated, but with lines of which only
-$4s/64$ is used ($1/16$ at stride~16). With $N=\num{32768}$ the span stays in L2/L3 and the
-progression is milder (\num{0.78} $\to$ \num{1.06} $\to$ \num{1.85} $\to$
-\qty{3.54}{\nano\second}): useful \num{14.3} $\to$ \qty{3.2}{\gibi\byte\per\second}, fetched
-\num{28.5} $\to$ \num{42.1} $\to$ \num{48.3} $\to$ \qty{50.5}{\gibi\byte\per\second}, reaching the
-L3 roof (\qty{48.6}{\gibi\byte\per\second}) at stride~8. The cost per element is set by the cache
-lines touched, not by arithmetic. Second, the SIMD advantage disappears. The vectorized body exists only
-for $s=1$ (GCC's run-time loop versioning, \cref{sec:vectorization}); every $s>1$ runs the scalar
-copy of the loop, so no build has vector lanes to offer. Gather is the worst pattern:
-\qty{10.2}{\nano\second} per element in DRAM (native), $31\times$ slower than unit stride, because
-the random permutation also defeats the hardware prefetcher. Even at $N=\num{32768}$ it costs
-\qty{2.2}{\nano\second}, $12\times$ unit stride.
+Only unit stride lets \code{native} beat \code{scalar} (\cref{tab:stride}): $3.6\text{--}4.1\times$
+at $N=\num{32768}$ and $2.35\times$ in DRAM. The range comes from two runs of identical machine
+code in different processes (the table's \emph{unit} row and the stride-1 point of
+\cref{fig:stride}a; \cref{sec:anomalies}).
 
-\emph{Hardware gather.} The explicit AVX2 kernel takes \num{3.23} and \qty{10.91}{\nano\second} per
-element at $N=\num{32768}$ and \num{4194304}. That is $1.59\times$ and $1.07\times$ the time of the
-scalar build's gather, i.e.\ \emph{slower}, decisively so when the data is cache-resident. The
-hypothesis above anticipated this. Each 8-lane step issues two \code{vgatherdps}, which the active
-Gather Data Sampling microcode mitigation is known to make expensive, followed by eight scalar
-stores. In DRAM the random line fetches dominate either way and the difference shrinks to
-\SI{7}{\percent}. We could not run without the mitigation (that needs a reboot with root), so the
-attribution remains a hypothesis (\cref{sec:anomalies}). Either way, a SIMD gather does not recover
-the unit-stride advantage. The practical lesson is that access pattern, not vector width, is the
-first-order knob for these kernels.
+At stride~2 and beyond the builds agree within \numrange{0.98}{1.03}$\times$, because every $s>1$
+runs the scalar copy of the versioned loop (\cref{sec:vectorization}), and cost follows the cache
+lines touched. In DRAM native time per element grows \num{1.13} $\to$ \num{1.85} $\to$ \num{3.61}
+$\to$ \qty{7.34}{\nano\second} from stride~2 to~16. Counting fetched traffic as
+$3\times\min(4s,64)$~\unit{\byte} per element (\code{stride_bw.csv}), useful bandwidth falls from
+\num{9.9} to \qty{1.5}{\gibi\byte\per\second} while fetched traffic stays at
+\numrange{24.1}{24.8}~\unit{\gibi\byte\per\second} from stride~4 on, the DRAM triad roof: memory is
+saturated with lines of which only $4s/64$ is used. Gather is the worst pattern:
+\qty{10.2}{\nano\second} per element in DRAM, $31\times$ unit stride, because random order also
+defeats the prefetcher.
+
+\emph{Hardware gather.} The explicit AVX2 kernel takes $1.59\times$ (\qty{3.23}{\nano\second},
+$N=\num{32768}$) and $1.07\times$ (\qty{10.91}{\nano\second}, DRAM) the time of the scalar build's
+gather, as the second hypothesis anticipated: two mitigated \code{vgatherdps} plus eight scalar
+stores per step. Testing without the mitigation needs a reboot as root. Access pattern, not vector
+width, is the first-order knob for these kernels.

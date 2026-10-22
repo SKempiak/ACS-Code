@@ -1,16 +1,13 @@
 % !TeX root = ../main.tex
 \section{Introduction}\label{sec:intro}
 
-Every memory reference on this machine is served by one of four levels that differ by more than two
-orders of magnitude in latency: a \qty{32}{\kibi\byte} per-core L1 data cache, a \qty{256}{\kibi\byte}
-per-core L2, a \qty{20}{\mebi\byte} shared L3, and DDR4 DRAM. Which level a kernel hits---and how many
-independent references it keeps in flight---decides its performance far more than its instruction count.
-This report measures that hierarchy on the Intel i9-10900F with purpose-built microbenchmarks, reads
-user-space hardware counters through \code{perf_event_open}, and interprets the numbers with AMAT and
-Little's Law.
-
-This report answers:
-\begin{enumerate}
+Every memory reference on this machine is served by one of four levels that differ by two orders of
+magnitude in latency: a \qty{32}{\kibi\byte} L1d and \qty{256}{\kibi\byte} L2 per core, a
+\qty{20}{\mebi\byte} shared L3, and DDR4 DRAM. Which level a kernel hits, and how many references it keeps in
+flight, decides its performance far more than its instruction count. We measure this hierarchy on an Intel
+i9-10900F with purpose-built microbenchmarks and hardware counters, interpret the results with AMAT and
+Little's Law, and answer:
+\begin{enumerate}[nosep]
   \item What is the zero-queue access latency of each level, and how do latency and bandwidth change with
         access pattern, access size and read/write mix? (\cref{sec:zero-queue,sec:pattern,sec:rw-mix})
   \item Where does added concurrency stop buying throughput and start costing latency, and does Little's
@@ -20,25 +17,5 @@ This report answers:
   \item Which benchmark mistake produces misleading numbers? (\cref{sec:pitfall})
 \end{enumerate}
 
-\paragraph{Summary of findings.} Every number below is generated from the processed data
-(\code{data/summary.csv}, \cref{app:repro}). Zero-queue latency is \valqty{zq_L1_ns}{\nano\second}
-(\valnum{zq_L1_cyc}~cycles) in L1, \valqty{zq_L2_ns}{\nano\second} (\valnum{zq_L2_cyc}~cycles) on the
-L2 plateau with \qty{4}{\kibi\byte} pages, which includes conflict misses (L2 hit latency with
-\qty{2}{\mebi\byte} pages: \valqty{zq_L2_hugens}{\nano\second}), \valqty{zq_L3_ns}{\nano\second} in L3 and \valqty{zq_DRAM_ns}{\nano\second}
-(\valnum{zq_DRAM_cyc}~cycles) in DRAM. Intel MLC agrees on L2 and measures lower L1, L3 and DRAM
-latency (\valqty{zq_DRAM_mlcns}{\nano\second}), because its random walk stays within \qty{4}{\kibi\byte}
-windows. Under load, bandwidth reaches 95\% of its \valqty{int_peak_gib}{\gibi\byte\per\second} ceiling
-with only \val{int_sat_ratio}$\times$ the unloaded latency; beyond that, extra cores buy no bandwidth while
-latency doubles and nearly triples. MLC's loaded-latency sweep shows the same ceiling and knee. Little's Law
-with the measured loaded latency gives \valnum{int_sat_L} lines in flight at the knee and up to
-\valnum{int_Lmax} beyond it, of which the controller serves only \valnum{int_L0max}. A single core keeps at most \valnum{mlp_t1_Lmem_max} random
-demand misses in flight---below its fill-buffer count---so
-several cores are needed to fill the pipe. Random SAXPY runs \valnum{cm_rand_span}$\times$ slower per element once
-its footprint reaches DRAM, versus \valnum{cm_seq_span}$\times$ for sequential order, and an AMAT model
-fitted to the counters attributes this to DRAM misses whose effective cost is
-\valqty{amat_rand_aD}{\nano\second} each---the zero-queue latency divided by \valnum{amat_rand_mlp}-way
-memory-level parallelism. Memory-controller counters match the read-for-ownership model of writes within 1\% at full load
-(4--5.5\% below it with one core), and show that the adjacent-line prefetcher doubles DRAM traffic for sparse strided reads.
-Finally, a one-line change of working-set size turns a
-\valqty{pit_dram_lo}{\gibi\byte\per\second} DRAM result into a fictitious
-\valqty{pit_small_gib}{\gibi\byte\per\second} ``bandwidth'' that is really L1 reuse (\cref{sec:pitfall}).
+Every number in the text is generated from the processed data (\code{data/summary.csv},
+\cref{app:repro}); the conclusion (\cref{sec:conclusion}) summarises the findings.

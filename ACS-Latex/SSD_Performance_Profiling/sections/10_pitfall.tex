@@ -17,7 +17,7 @@ analysis (with \cref{sec:ai-use}).}
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh pitfall} \\
 \end{knobs}
 
-\begin{table}[tbp]
+\begin{table}[!htbp]
   \centering\small
   \caption{Same \qty{4}{\kibi\byte} sequential-read workload, direct vs.\ buffered: medians of 5
   repetitions with the IQR in brackets. Only the \code{O_DIRECT} flag differs.}\label{tab:pitfall}
@@ -38,28 +38,17 @@ analysis (with \cref{sec:ai-use}).}
 The buffered run reports \csvq{pitfall}{mode=read-buffered}{iops_median} IOPS at
 \csvq{pitfall}{mode=read-buffered}{mibps_median}\,MiB/s and sub-microsecond latency, a
 \ssdratio[0]{\ssdBuf}{\ssdDir}$\times$ inflation over the correct
-\csvq{pitfall}{mode=read}{iops_median} IOPS. None of it is a storage measurement. After the first pass
-the \qty{64}{\mebi\byte} region lives entirely in the page cache, so every later read is a
-\code{memcpy} from RAM. The MiB/s figure is memory-copy bandwidth, and the latency is a cache hit, not an
-NVMe access.
-
-This is the easiest way to publish an impossibly fast SSD number, and an AI-generated benchmark falls
-into it readily because omitting \code{O_DIRECT} is the \emph{default} behaviour of \code{open()}. Two
-cheap detectors flag it in our data, and a third is expected to:
+\csvq{pitfall}{mode=read}{iops_median} IOPS. None of it is a storage measurement: after the first pass the
+\qty{64}{\mebi\byte} region lives in the page cache, so every later read is a \code{memcpy} from RAM. Omitting \code{O_DIRECT} is the default behaviour of \code{open()}, so an AI-generated benchmark falls into
+this readily. Two cheap detectors flag it in our data, and a third is expected to:
 \begin{enumerate}
   \item The throughput exceeds the \qty{3756}{\mebi\byte\per\second} PCIe~3.0~$\times$4 link ceiling
-        measured from sysfs (\cref{sec:method}). No device result can do that.
+        (\cref{sec:method}), which no device result can do.
   \item Sub-microsecond \enquote{storage} latency is physically impossible for NAND flash.
-  \item \emph{Proposed, not demonstrated here:} the number should depend on the \emph{region size},
-        collapsing towards device speed once the region no longer fits in free RAM, which a true device
-        result would not do. We ran the buffered path only on a \qty{64}{\mebi\byte} region, far below
-        the host's \qty{63}{\gibi\byte} of RAM, so this detector is an expectation that we did not test.
+  \item \emph{Untested:} it should collapse to device speed once the region exceeds free RAM
+        (\qty{63}{\gibi\byte} here).
 \end{enumerate}
-
-The methodology avoids the trap by construction. \code{O_DIRECT} is the default for every real run, and
-the buffered path exists only to produce this comparison. \code{make test} also asserts that buffered
-re-reads are more than $5\times$ faster than direct ones on the scratch filesystem, which proves the
-cache is actually bypassed. Two related traps are covered elsewhere. A wrong effective queue depth is
-caught by $L/\text{QD}$ in \cref{tab:littles-law}. Insufficient or wrong-order preconditioning, which
-cut a \enquote{sequential} read to a sixth of its true speed in our pilot, is covered in
-\cref{sec:layout}.
+The methodology avoids the trap by construction: \code{O_DIRECT} is the default for every real run, and
+\code{make test} asserts that buffered re-reads are more than $5\times$ faster than direct ones. Related
+traps are a wrong effective queue depth, caught by $L/\text{QD}$ (\cref{tab:littles-law}), and
+wrong-order preconditioning (\cref{sec:layout}).

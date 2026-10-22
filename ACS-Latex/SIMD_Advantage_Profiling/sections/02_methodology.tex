@@ -9,12 +9,10 @@ reproducible scripts and a documented environment (with \cref{sec:correctness,se
 thread, and no other pinning/isolation is used.}
 \input{../common/environment_table}
 
-This CPU (Comet Lake, client Skylake core) implements SSE/AVX/AVX2 and FMA but \emph{not}
-AVX-512, so the widest usable vector register is \qty{256}{bit} (\code{ymm}): \num{8} lanes of
-float32 or \num{4} of float64. With \code{-march=native} GCC targets AVX2+FMA and prefers
-\qty{256}{bit} vectors; the default (generic \code{x86-64}) target only guarantees SSE2, so the
-plain auto-vectorized build emits \qty{128}{bit} (\code{xmm}) code. That 256-vs-128-bit gap is the
-main reason we keep \code{autovec} and \code{native} as separate variants (\cref{tab:variants}).
+This Comet Lake core implements AVX2 and FMA but \emph{not} AVX-512, so the widest vector is
+\qty{256}{bit} (\code{ymm}). \code{-march=native} targets AVX2+FMA; the generic \code{x86-64}
+target only guarantees SSE2, so the plain auto-vectorized build emits \qty{128}{bit} (\code{xmm})
+code. That gap is why \code{autovec} and \code{native} are separate variants (\cref{tab:variants}).
 
 \subsection{Kernels}
 \begin{table}[tbp]
@@ -31,11 +29,14 @@ main reason we keep \code{autovec} and \code{native} as separate variants (\cref
     \bottomrule
   \end{tabular}
 \end{table}
-We count a multiply and an add as one FLOP each, so a fused multiply--add is two FLOPs; SAXPY and
-the dot product are therefore 2~FLOP/element (one FMA), elementwise multiply is 1, and the stencil
-is 5 (three multiplies, two adds). All four kernels from the project brief are implemented and
-validated; SAXPY is used as the representative kernel for the locality, alignment and stride
-studies because it has the simplest unit-stride access and a well-known arithmetic intensity.
+A multiply and an add count as one FLOP each, so an FMA is two. All four kernels are implemented
+and validated; SAXPY, with the simplest unit-stride access, is the representative kernel for the
+locality, alignment and stride studies. Inputs are a fixed-seed linear-congruential sequence in
+$[-0.5, 0.5)$ (no denormals, NaNs or overflow); the gather uses a Fisher--Yates permutation of
+$[0,N)$. Float32 SAXPY touches \qty{8}{\byte} per element, so its working set crosses the
+\qty{32}{\kibi\byte} L1d near $N\approx\num{4096}$, the \qty{256}{\kibi\byte} L2 near
+$N\approx\num{32768}$ and the \qty{20}{\mebi\byte} L3 near $N\approx\num{2.6e6}$; plots mark these
+boundaries.
 
 \subsection{Build variants}
 \begin{table}[tbp]
@@ -54,109 +55,64 @@ studies because it has the simplest unit-stride access and a well-known arithmet
     \bottomrule
   \end{tabularx}
 \end{table}
-The primary compiler is GCC \sysGCC{}. The reference implementation additionally uses
-\code{-O2 -fno-tree-vectorize -ffp-contract=off} so it evaluates each expression in strict,
-non-fused order and stays a trustworthy oracle. We deliberately do \emph{not} pass
-\code{-ffast-math} to any variant: this keeps float results reproducible but, as
-\cref{sec:vectorization,sec:negative} show, it also prevents the compiler from reassociating the
-dot-product reduction---an effect we wanted to measure rather than hide.
+The compiler is GCC \sysGCC{}. The reference is built with
+\code{-O2 -fno-tree-vectorize -ffp-contract=off}, so it evaluates each expression in strict,
+non-fused order. No variant uses \code{-ffast-math}: results stay reproducible, but the compiler
+cannot reassociate the dot-product reduction, an effect we measure rather than hide
+(\cref{sec:vectorization,sec:negative}).
 
-\subsection{Data collection and hypotheses}
-All measurements were collected on \textbf{2026-10-21} on an idle machine, with the settings
-checked before each run (governor \code{performance}, turbo off, SMT off, pinned to CPU~2) and
-runs serialized with other benchmark jobs through a lock file: \code{baseline} at 20:38 and the
-other six experiments back to back from 20:47 to 20:54 (raw directories in \cref{tab:raw-data}).
-Before this session the user masked an ACPI general-purpose-event storm (GPE~0x42) that the
-companion Cache \& Memory project's wall-clock check had found stealing $\approx\SI{13}{\percent}$
-of wall time; this root-only setting does not survive a reboot (\cref{app:repro}). Two shared-core
-checks guard the reported data: no configuration varies by more than $1.36\times$ between its
-fastest and slowest repetition (a single DRAM-resident alignment configuration; all others
-$\le1.32\times$), and the user-space cycle counter, which would show a shared core as a lower
-apparent clock, reads \qtyrange{2.78}{2.79}{\giga\hertz} for every counted configuration.
-
-Each experiment section opens with a hypothesis derived from first principles (lane counts, cache
-sizes, port counts). Some were drafted after an earlier, superseded turbo-clock sweep and may have
-been influenced by it, so we present them only as predictions compared against the data, and we
-state where the data contradicted them.
-
-\subsection{Timing and statistics}
+\subsection{Data collection, timing and hypotheses}
+All measurements were taken on \textbf{2026-10-21} on an idle machine, settings checked before each
+run and jobs serialized through a lock file: \code{baseline} at 20:38, the other six experiments
+from 20:47 to 20:54 (\cref{tab:raw-data}). Beforehand the user masked an ACPI event storm
+(GPE~0x42) that had stolen $\approx\SI{13}{\percent}$ of wall time in the companion Cache \& Memory
+project; the mask does not survive a reboot (\cref{app:repro}). Governor \sysGovernor{}, turbo
+\sysTurbo{} and SMT off (\cref{tab:environment}) fix the core at \qty{2.8}{\giga\hertz}. Two checks
+guard against a shared core: no configuration varies by more than $1.36\times$ between its fastest
+and slowest repetition (all but one $\le1.32\times$), and the user-space cycle counter, where stolen
+time would show as a lower clock, reads \qtyrange{2.78}{2.79}{\giga\hertz} for all \num{96} locality
+and \num{123} ceilings configurations.
 \begin{itemize}
-  \item Timer: \code{clock_gettime(CLOCK_MONOTONIC_RAW)} (resolution \qty{1}{\nano\second} on this
-        host, from \code{simd_bench --info}). Each repetition times a calibrated batch of kernel
-        invocations lasting at least \qty{25}{\milli\second}, i.e.\ roughly $2.5\times10^{7}$ timer
-        ticks, so timer resolution and call overhead are negligible.
-  \item Warm-up: 3 untimed invocations per configuration; repetitions: 12 per configuration.
-  \item Reported statistic: median; error bars show the interquartile range (IQR) across the 12
-        repetitions. The median resists an occasional scheduler outlier better than the mean.
-        Speedup error bars span the range implied by the two IQRs,
+  \item Timer: \code{CLOCK_MONOTONIC_RAW} (\qty{1}{\nano\second} resolution); each repetition times
+        a calibrated batch of at least \qty{25}{\milli\second}, so resolution and call overhead are
+        negligible. 3 warm-up invocations, 12 repetitions; median with interquartile-range (IQR)
+        error bars. Speedup error bars span
         $[\,q_{25}(\text{SIMD})/q_{75}(\text{scalar}),\; q_{75}(\text{SIMD})/q_{25}(\text{scalar})\,]$
-        (\code{scripts/speedup_iqr.awk}), a conservative bound.
-  \item Pinning, SMT, governor and turbo: \cref{tab:environment}. For the reported runs the
-        governor is \sysGovernor{}, turbo is \sysTurbo{} and SMT is off, which fixes the core at its
-        \qty{2.8}{\giga\hertz} base clock. We do not just assume the clock: the cycle counter
-        (\cref{sec:ceilings-method}) gives a per-configuration median of \qtyrange{2.78}{2.79}{\giga\hertz}
-        for all \num{96} locality and \num{123} ceilings configurations. The clock is user-mode
-        cycles over wall time, so stolen time would show up as a lower value.
-  \item Effect of the fixed clock: an earlier sweep (2026-10-12, governor \code{powersave}, turbo
-        on) is not used for any result; its data is no longer in the working tree but remains in the
-        repository history (commit \code{73f8fb8}, raw directory \code{20261012-182813}). There, every
-        cache-resident rate at $N=\num{1024}$ was $1.72\text{--}1.75\times$ the fixed-clock value
-        (dot product: \qtyrange{2.43}{2.49}{\giga\flop\per\second} in cache at its latency bound of
-        $0.5$~FLOP/cycle, i.e.\ $\approx\qty{4.9}{\giga\hertz}$), while DRAM bandwidth does not scale
-        with the clock. Its DRAM-resident SAXPY speedups were therefore smaller,
-        $1.32\text{--}1.44\times$ ($N\ge2^{24}$, baseline, locality and negative-case sweeps); this is
-        the single turbo figure we quote (\cref{sec:locality}).
-  \item Every kernel result is written through a \code{volatile} sink (\code{acs_consume_*}) and the
-        kernels live in their own translation unit, so no loop is eliminated as dead code.
-  \item Configuration order: the sweep is run as nested loops over size and variant
-        (\code{scripts/run.sh}); it is not shuffled, which we note as a limitation.
+        (\code{scripts/speedup_iqr.awk}).
+  \item Results pass through a \code{volatile} sink and kernels live in their own translation unit,
+        so no loop is dead-code eliminated. The sweep (\code{scripts/run.sh}) is not shuffled.
+  \item An earlier turbo-on sweep (2026-10-12, commit \code{73f8fb8}, raw directory
+        \code{20261012-182813}) is not used for any result. Its cache-resident rates were
+        $1.72\text{--}1.75\times$ the fixed-clock values (dot product
+        \qtyrange{2.43}{2.49}{\giga\flop\per\second} at $0.5$~FLOP/cycle, i.e.\
+        $\approx\qty{4.9}{\giga\hertz}$), while DRAM bandwidth does not scale, so its DRAM-resident
+        SAXPY speedups were only $1.32\text{--}1.44\times$, the single turbo figure we quote.
 \end{itemize}
+Each experiment opens with a hypothesis from first principles (lane counts, cache sizes, port
+counts). Some were drafted after the superseded turbo sweep, so we treat them as predictions and
+state where the data contradicts them.
 
 \subsection{Machine ceilings and hardware counters}\label{sec:ceilings-method}
-The roofline (\cref{sec:roofline}) needs a peak FLOP rate and memory bandwidths that are
-\emph{not} derived from the kernels it is used to explain. A separate program,
-\code{build/ceilings/ceilings} (\code{src/ceilings.c}, \code{run.sh ceilings}), measures them:
+The roofline (\cref{sec:roofline}) needs ceilings \emph{not} derived from the kernels it explains;
+a separate program (\code{src/ceilings.c}, \code{run.sh ceilings}) measures them:
 \begin{itemize}
-  \item \emph{Peak FLOP rate}: a register-only loop of \num{12} independent accumulators updated as
-        $a \leftarrow a\,m + c$. FMA (and multiply/add) latency is \num{4} cycles on this core and two
-        ports execute them, so at least $4\times2=8$ independent chains are needed to saturate both
-        ports; \num{12} leaves headroom while staying in registers. Variants: scalar
-        \code{mulss}+\code{addss} (the ceiling of our \code{scalar} build), scalar FMA, SSE
-        \code{mulps}+\code{addps} on \code{xmm} (the ceiling of \code{autovec}, which has no FMA),
-        and AVX2 \code{vfmadd231ps}/\code{pd} on \code{ymm} (the ceiling of \code{native}).
-  \item \emph{Bandwidth}: STREAM-style \emph{read} ($s \mathrel{+}= a_i$), \emph{copy}
-        ($b_i = a_i$) and \emph{triad} ($a_i = b_i + s\,c_i$) written with AVX2 loads/stores, at a
-        total footprint inside each level (L1 \qty{16}{\kibi\byte}, L2 \qty{128}{\kibi\byte},
-        L3 \qty{8}{\mebi\byte}, DRAM \qty{512}{\mebi\byte}) and over a fine footprint sweep from
-        \qty{4}{\kibi\byte} to \qty{512}{\mebi\byte}. Bytes are counted STREAM-style
-        (explicit loads + stores) and, separately, including the write-allocate read that a store to
-        a line not in L1 costs. The roofline uses the \emph{actual} traffic of each level: explicit
-        bytes in L1, where every store hits an already-cached line, and bytes including
-        write-allocate in L2, L3 and DRAM; kernel intensities are counted the same way
-        (\cref{tab:roofline-inputs}). The read stream keeps only \num{4} accumulators, so its
-        \num{4}-cycle add chain caps it at one \qty{32}{\byte} load per cycle
-        (\qty{89}{\gibi\byte\per\second}): in L1 and L2 it measures that latency, not the cache, and
-        we never use it as a roof.
+  \item \emph{Peak FLOP rate}: \num{12} independent register accumulators $a \leftarrow a\,m + c$
+        (with \num{4}-cycle latency and two FMA ports, $4\times2=8$ chains saturate the ports), as
+        scalar \code{mulss}+\code{addss} (\code{scalar}'s ceiling), scalar FMA, SSE
+        \code{mulps}+\code{addps} (\code{autovec}, no FMA) and AVX2 \code{vfmadd231ps}/\code{pd}
+        (\code{native}).
+  \item \emph{Bandwidth}: STREAM-style \emph{read}, \emph{copy} and \emph{triad}
+        ($a_i = b_i + s\,c_i$) with AVX2 loads/stores, at a footprint inside each level (L1
+        \qty{16}{\kibi\byte}, L2 \qty{128}{\kibi\byte}, L3 \qty{8}{\mebi\byte}, DRAM
+        \qty{512}{\mebi\byte}) and over a \qty{4}{\kibi\byte}--\qty{512}{\mebi\byte} sweep. Roofs and
+        kernel intensities count actual traffic: explicit loads and stores in L1, where stores hit,
+        plus the write-allocate read in L2, L3 and DRAM (\cref{tab:roofline-inputs}). The read
+        stream's add chain caps it at one \qty{32}{\byte} load per cycle
+        (\qty{89}{\gibi\byte\per\second}), so it is never a roof.
 \end{itemize}
-\emph{Hardware counters.} The AI agent that ran the benchmarks had no root. The user applied
-the root-only settings: governor, turbo, SMT, the GPE mask, and \code{perf_event_paranoid}, which
-was \sysPerfParanoid{} for the reported session. The SIMD benchmark deliberately counts only
-\emph{core-PMU} events of its own thread with the kernel excluded, which works unprivileged up to
-\code{perf_event_paranoid}~$=2$. Doing so from inside the benchmark lets us bracket exactly the
-timed repetitions. \code{src/perfctr.c} therefore calls \code{perf_event_open(2)} directly
-for cycles, instructions, LLC misses and L1D read misses (kernel time excluded), enabled only around
-each timed repetition; an event that cannot be opened is reported as \code{NA} instead of failing.
-The locality sweep records them (\cref{sec:locality}) and the ceilings record cycles, from which the
-effective clock and FLOP/cycle follow.
-
-\subsection{Data initialization and working-set sizes}
-Inputs are filled with a deterministic linear-congruential sequence in $[-0.5, 0.5)$ (fixed seed),
-which avoids denormals, NaNs and overflow; SAXPY's in-place update grows $y$ only linearly in the
-repetition count, so it never overflows float32. The gather pattern uses a Fisher--Yates
-permutation of $[0,N)$ so every element is touched exactly once with no locality.
-
-Each kernel streams two or three arrays, so the bytes touched are (arrays)$\times$(element
-size)$\times N$. For float32 SAXPY (two arrays, \qty{8}{\byte}/element) the working set crosses
-this machine's \qty{32}{\kibi\byte} L1d near $N\approx\num{4096}$, the \qty{256}{\kibi\byte} L2 near
-$N\approx\num{32768}$, and the \qty{20}{\mebi\byte} L3 near $N\approx\num{2.6e6}$; beyond that it is
-DRAM-resident. These boundaries are annotated on the locality plot (\cref{sec:locality}).
+\emph{Hardware counters.} The AI agent that ran the benchmarks had no root; the user applied the
+root-only settings (governor, turbo, SMT, GPE mask, \code{perf_event_paranoid}~$=$~\sysPerfParanoid{}).
+\code{src/perfctr.c} opens the thread's own user-space core-PMU events (cycles, instructions, LLC
+misses, L1D read misses) with \code{perf_event_open(2)}, unprivileged up to
+\code{perf_event_paranoid}~$=2$, enabled only around each timed repetition (\code{NA} if
+unavailable).

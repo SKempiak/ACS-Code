@@ -10,123 +10,84 @@ environment documentation.}
 CPU-bound, below the host-saturation queue depths of \cref{sec:queue-depth})}
 \newcommand{\acsenvextra}{%
   SSD       & Micron 2210 \code{MTFDHBA512QFD}, \qty{512}{\giga\byte} QLC NVMe \cite{micron2210brief},
-              firmware \code{P6MA001} (from \code{/sys/class/nvme/nvme0}; SMART log taken with root after the run, \cref{sec:anomalies}) \\
-  Interface & PCIe link \qty{8.0}{GT/s} $\times$4 (Gen3), both current and maximum, read from
-              \code{current_link_speed}/\code{current_link_width} in sysfs. Raw ceiling
+              firmware \code{P6MA001} (SMART log taken with root after the run, \cref{sec:anomalies}) \\
+  Interface & PCIe \qty{8.0}{GT/s} $\times$4 (Gen3), current and maximum, from sysfs. Raw ceiling
               $8\,\text{GT/s}\times4\times\tfrac{128}{130}=\qty{3.94}{\giga\byte\per\second}$
-              (128b/130b line coding \cite{pcisig_pcie3})
-              (\qty{3756}{\mebi\byte\per\second}), roughly \qtyrange{3.2}{3.5}{\giga\byte\per\second}
-              after TLP/DLLP overhead \\
+              (\qty{3756}{\mebi\byte\per\second}; 128b/130b coding \cite{pcisig_pcie3}), roughly
+              \qtyrange{3.2}{3.5}{\giga\byte\per\second} after TLP/DLLP overhead \\
   Block layer & scheduler \code{none}, \code{nr_requests} 1023, 16 I/O queues, volatile write cache
-              reported as \enquote{write back} \\
-  Target    & disposable files on the SSD's ext4 \code{/} partition (\code{nvme0n1p3}, mounted
-              \code{relatime}, no online discard), reached via \code{ACS_SCRATCH}: a \qty{2}{\gibi\byte}
-              test file for the sweeps, and a \qty{60}{\gibi\byte} file for the original device-state runs.
-              The lean re-run used a \qty{4}{\gibi\byte} test file, with random offsets over its first
-              \qty{2}{\gibi\byte} as before, and a fill file capped at \qty{40}{\gibi\byte} \\
-  Temperature & NVMe composite sensor \code{/sys/block/nvme0n1/device/hwmon*/temp1_input}, readable
-              without root, logged per repetition and every second in the sustained runs \\
+              \enquote{write back} \\
+  Target    & disposable files on the SSD's ext4 \code{/} partition (\code{nvme0n1p3}, \code{relatime},
+              no online discard) via \code{ACS_SCRATCH}: a \qty{2}{\gibi\byte} test file for the sweeps
+              and a \qty{60}{\gibi\byte} file for the original device-state runs; the lean re-run used a
+              \qty{4}{\gibi\byte} test file (random offsets over its first \qty{2}{\gibi\byte}) and a
+              fill file capped at \qty{40}{\gibi\byte} \\
+  Temperature & NVMe composite sensor (\code{hwmon*/temp1_input}), logged per repetition and every
+              second in the sustained runs \\
 }
 \input{../common/environment_table}
 
-The machine has two drives: this Micron NVMe SSD and a \qty{2}{\tera\byte} SATA HDD (\code{/dev/sda},
-mounted at \code{/data}). The scratch directory is placed on the SSD's filesystem. Each run's
-\code{env.txt} resolves the scratch filesystem's partition to its parent disk
-(\code{nvme0n1p3}$\to$\code{nvme0n1}) and records that disk's \code{rotational} flag (0), model,
-firmware, PCIe link and temperature, so a run can never be silently mislabelled
-(\cref{sec:ai-use} describes how this check once failed).
+The machine also has a SATA HDD (\code{/dev/sda}); each run's \code{env.txt} resolves the scratch
+partition to its parent disk and records its \code{rotational} flag, model, firmware, link and
+temperature, so a run cannot be silently mislabelled (\cref{sec:ai-use} describes how this check once
+failed).
 
 \subsection{Data-loss safeguards}
 \begin{itemize}
-  \item \textbf{Targets.} Only disposable files (\code{testfile.bin}, \code{bigfile.bin}) in a dedicated
-        scratch directory are ever written; nothing else on the SSD is touched. Both files are deleted
-        when \code{run.sh} exits, including on interrupt.
-  \item \textbf{Gate.} \code{scripts/safety.sh} runs before every experiment. It hard-refuses a block or
-        character device (including through a symlink), a mountpoint, a directory, any path outside the
-        scratch directory, and a target without enough free space. It also refuses a scratch directory
-        that resolves to \code{/}, to \code{\$HOME} or to the root of a mounted filesystem, or that the
-        user does not own. \code{scripts/validate.sh} (\code{make test}) exercises the block-device,
-        symlink, directory, outside-scratch, mountpoint and all four scratch-directory rules
-        (\cref{sec:validation}). These checks only \code{stat} the paths and never open them.
-  \item \textbf{Benchmark.} \code{blkbench} \code{lstat}s its target \emph{before} opening it, refuses
-        anything that is not a regular file, and opens with \code{O_NOFOLLOW}. No raw device or
-        partition is ever opened.
-  \item \textbf{Space.} The large device-state file (\qty{60}{\gibi\byte} in the original run,
-        \qty{40}{\gibi\byte} in the lean re-run) is refused unless the filesystem
-        keeps at least \qty{10}{\gibi\byte} free after creating it.
+  \item \textbf{Targets.} Only disposable files in a dedicated scratch directory are written, and both are
+        deleted when \code{run.sh} exits, including on interrupt.
+  \item \textbf{Gate.} \code{scripts/safety.sh} runs before every experiment and refuses block or character
+        devices (also via symlinks), mountpoints, directories, paths outside the scratch directory and
+        targets without enough free space; the scratch directory itself may not be \code{/},
+        \code{\$HOME}, a filesystem root or foreign-owned. It only \code{stat}s paths
+        (\cref{sec:validation}).
+  \item \textbf{Benchmark.} \code{blkbench} \code{lstat}s its target, refuses anything but a regular file
+        and opens with \code{O_NOFOLLOW}; no raw device is ever opened.
+  \item \textbf{Space.} The large device-state file is refused unless \qty{10}{\gibi\byte} stay free.
 \end{itemize}
 
 \subsection{I/O engines and configuration}
-The primary engine is \code{build/blkbench}, a small O\_DIRECT benchmark built on Linux \code{libaio},
-the same asynchronous engine as FIO's \code{libaio} ioengine \cite{axboe_fio}. It keeps exactly QD
-requests in flight in a closed loop: every completion is immediately replaced. It records the
-submit-to-completion latency of every I/O. FIO 3.42 runs the same points through
-\code{fio/job.fio} (\code{libaio}, \code{direct=1}, total-latency percentiles), and
-\cref{sec:validation} compares the two engines. \code{ENGINE=fio} routes every standard sweep through
-FIO instead.
+The primary engine, \code{build/blkbench}, is a small O\_DIRECT \code{libaio} benchmark (the engine FIO
+also uses \cite{axboe_fio}). It keeps exactly QD requests in flight in a closed loop and records every
+I/O's submit-to-completion latency. FIO 3.42 runs the same points through \code{fio/job.fio}
+(\cref{sec:validation}), and \code{ENGINE=fio} routes every sweep through FIO.
 \begin{knobs}
-  Engine          & \code{libaio}; \code{O_DIRECT} (page cache bypassed); 4\,KiB-aligned buffers and
-                    block-aligned offsets; 64-bit uniform random offsets (splitmix64) \\
-  Timing          & \qty{4}{\second} per repetition (\qty{6}{\second} for tail runs). Points that write
-                    also stop after \qty{256}{\mebi\byte} per repetition, which bounds the bytes written
-                    (\cref{tab:budget}); \qty{128}{\mebi\byte} in the lean re-run, which also waits
-                    \qty{15}{\second} before each write point. No separate ramp: preconditioning absorbs
-                    warm-up \\
-  Repetitions     & 5 per point (3 for the block-size write points, also to bound bytes written; in the
-                    lean re-run 4 per engine for the FIO write points and 4 per working-set span);
-                    figures and tables show the median with inter-quartile-range (IQR) bars \\
-  Data pattern    & incompressible: every write buffer is filled once, before timing, from an
-                    xorshift64* generator seeded per queue slot; the preconditioning pass uses the same
-                    generator. \code{make test} checks that \code{gzip} cannot compress the result.
-                    The buffers are fixed per queue slot, so the content is incompressible but not unique
-                    per I/O: the same QD distinct blocks are written over and over, which a deduplicating
-                    controller could exploit; we did not test whether the 2210 does \\
-  Latency metric  & per-I/O submit$\to$completion latency; p50/p95/p99/p99.9 from the full sorted
-                    sample, with no reservoir truncation \\
-  Preconditioning & one sequential O\_DIRECT write pass over the \code{fallocate}d test file,
-                    repeated before every \emph{sequential-read} group, because random writes scatter
-                    the physical layout (\cref{sec:device-state}). The current \code{run.sh} also
-                    preconditions before \emph{every} experiment, including inside \code{all}. In the
-                    reported 2026-10-21 run, \code{all} preconditioned only once, before
-                    \code{zero_queue}. Later experiments started from the file the previous one left;
-                    only the sequential-read groups of \code{zero_queue}, \code{block_size},
-                    \code{pitfall} and \code{layout} were re-filled. \code{rerun_clean.sh}
-                    (\cref{app:repro}) preconditions before each experiment. Its lean mode
-                    preconditions the \qty{4}{\gibi\byte} test file once, before \code{tail}; the later
-                    lean steps (random reads and writes only) run on that file \\
-  Temperature     & NVMe composite temperature recorded with every repetition (\code{temp_c}) \\
-  Driver          & \code{SSD_Performance_Profiling/scripts/run.sh}; benchmark \code{src/blkbench.c} \\
+  Engine          & \code{libaio}; \code{O_DIRECT}; 4\,KiB-aligned buffers and offsets; 64-bit uniform
+                    random offsets (splitmix64) \\
+  Timing          & \qty{4}{\second} per repetition (\qty{6}{\second} for tail); write points also stop after
+                    \qty{256}{\mebi\byte} (\qty{128}{\mebi\byte} and a \qty{15}{\second} pause in the lean
+                    re-run); preconditioning absorbs warm-up \\
+  Repetitions     & 5 per point (3 for block-size writes, 4 per engine or span in parts of the lean
+                    re-run); median with inter-quartile-range (IQR) bars \\
+  Data pattern    & incompressible xorshift64* buffers, fixed per queue slot (we did not test whether the
+                    2210 deduplicates) \\
+  Latency metric  & per-I/O submit$\to$completion; p50/p95/p99/p99.9 from the full sorted sample \\
+  Preconditioning & sequential O\_DIRECT write over the test file before every sequential-read group
+                    (\cref{sec:layout}). In the reported \code{all} run the file was otherwise
+                    preconditioned only before \code{zero_queue} (the current \code{run.sh} does it before
+                    every experiment); the lean re-run did it once, before \code{tail} \\
+  Driver          & \code{SSD_Performance_Profiling/scripts/run.sh}; \code{src/blkbench.c} \\
 \end{knobs}
-Because the issuing thread only submits and reaps completions, one thread can keep the device's queue
-full. The Little's-Law check in \cref{sec:queue-depth} shows where this stops being true.
 
-\subsection{Execution and run order}
-The timed runs were executed by the author in a terminal, using the scripts described here, with the
-CPU governor at \code{performance}, turbo off and SMT off. \code{run.sh all} ran the experiments in the
-order of \cref{tab:budget} on 2026-10-21, from 10:32 to 10:54. \code{SUSTAIN_GIB=60 run.sh
-device_state} followed immediately, from 10:54 to 11:23. Harness development and a discarded pilot run took place from 2026-10-12 to 2026-10-20; all reported
-numbers come from the 2026-10-21 runs. In those two runs the drive's state carried over from one
-experiment to the next, and nothing in between trimmed or idled it: the SLC-cache fill level and the
-background folding/GC backlog were both inherited. Several results depended on this: the write
-collapses in \cref{sec:block-size,sec:queue-depth}, the tail runs in \cref{sec:tail}, and the whole of
-\cref{sec:device-state}.
+\subsection{Execution, run order and idle periods}
+The author ran all timed runs in a terminal (governor \code{performance}, turbo and SMT off).
+\code{run.sh all} ran in the order of \cref{tab:budget} on 2026-10-21, 10:32--10:54, followed directly by
+\code{SUSTAIN_GIB=60 run.sh device_state} until 11:23 (run \code{20261021-103201}); an earlier pilot was
+discarded. Nothing in between trimmed or idled the drive, so each experiment inherited the SLC-cache
+fill and background work of the previous one, which shaped the write collapses in
+\cref{sec:block-size,sec:queue-depth}, the tails in \cref{sec:tail} and \cref{sec:device-state}.
 
-\paragraph{Lean re-run.} Those experiments were therefore measured again the same evening with
-\code{rerun_clean.sh lean} (run \code{20261021-220614}; \cref{tab:lean}). The author ran
-\code{sudo fstrim -v /} at 21:34:54 and left the machine idle for at least \qty{30}{\minute}. The
-script's own idle check then passed (over \qty{10}{\second}: \qty{0}{\mebi\byte} read,
-\qty{1}{\mebi\byte} written, 0\,\% busy), with \qty{77}{\gibi\byte} free on the scratch filesystem. The
-run started at 22:06 and ended at 22:32:17 EDT, with the governor at \code{performance}, turbo off, SMT
-off and the ACPI GPE~0x42 interrupt source masked. The sequence puts the sustained fill first, on the
-rested drive, and stops it soon after the cliff instead of writing \qty{60}{\gibi\byte}. After that, it
-rests \qty{10}{\minute} before the tail runs and \qty{5}{\minute} before the large random writes. Every
-write point is capped at \qty{128}{\mebi\byte} per repetition and preceded by a \qty{15}{\second}
-pause. Each lean measurement replaces only the matching configurations of the earlier run, and every
-other value in the report still comes from \code{20261021-103201}. Figure and table captions name the
-run their points come from.
+\textbf{Idle period.} An \emph{idle period} means that the drive received no I/O from our scripts for a
+stated time (\qtyrange{5}{30}{\minute}), so that the controller could finish background SLC-to-QLC folding
+and garbage collection; an \emph{idle drive} is one measured after such a period.
 
+\paragraph{Lean re-run.} The confounded experiments were re-measured that evening with
+\code{rerun_clean.sh lean} (run \code{20261021-220614}, 22:06--22:32 EDT; \cref{tab:lean}) after
+\code{sudo fstrim -v /} at 21:34:54 and an idle period of at least \qty{30}{\minute}, with the sustained
+fill first and stopped soon after the cliff. Lean points replace only the matching configurations of the
+original run; captions name each point's run.
 
-\begin{table}[tbp]
+\begin{table}[!htbp]
   \centering\small
   \caption{Measured wall-clock time of each experiment in the original 2026-10-21 runs, in execution
   order, and the maximum bytes it can write with the default knobs (byte caps plus
@@ -149,18 +110,18 @@ run their points come from.
   \end{tabularx}
 \end{table}
 
-\begin{table}[tbp]
+\begin{table}[!htbp]
   \centering\small
   \caption{The lean re-run (\code{rerun_clean.sh lean}, 2026-10-21, 22:06--22:32 EDT) in execution order:
-  wall-clock time from the run log, including rests, and the most each step could write.}\label{tab:lean}
+  wall-clock time from the run log, including idle periods, and the most each step could write.}\label{tab:lean}
   \begin{tabularx}{\linewidth}{@{}lrrX@{}}
     \toprule
     Step & Time & Max written & What it re-measured \\
     \midrule
     \code{sustained}   & \qty{1.6}{\minute}  & \qty{6.3}{\gibi\byte} & fill (stopped at \qty{4.3}{\gibi\byte}), \qty{1}{\gibi\byte} random, \qty{60}{\second} idle, \qty{1}{\gibi\byte} recovery \\
-    \code{tail}        & \qty{12.1}{\minute} & \qty{4}{\gibi\byte}   & \qty{10}{\minute} rest, fresh \qty{4}{\gibi\byte} precondition, QD 8/32/64/128 reads \\
+    \code{tail}        & \qty{12.1}{\minute} & \qty{4}{\gibi\byte}   & \qty{10}{\minute} idle, fresh \qty{4}{\gibi\byte} precondition, QD 8/32/64/128 reads \\
     \code{working_set} & \qty{1.6}{\minute}  & \qty{0.75}{\gibi\byte} & spans 1, 2, \qty{4}{\gibi\byte}, forward then reverse \\
-    \code{block_size}  & \qty{8.5}{\minute}  & \qty{1.1}{\gibi\byte} & QD=32 random reads (8 sizes), \qty{5}{\minute} rest, QD=1 random writes $\geq$\qty{256}{\kibi\byte} \\
+    \code{block_size}  & \qty{8.5}{\minute}  & \qty{1.1}{\gibi\byte} & QD=32 random reads (8 sizes), \qty{5}{\minute} idle, QD=1 random writes $\geq$\qty{256}{\kibi\byte} \\
     \code{queue_depth} & \qty{1.1}{\minute}  & \qty{2.5}{\gibi\byte} & random writes at QD 4--32 \\
     \code{fio_check}   & \qty{1.0}{\minute}  & \qty{3}{\gibi\byte}   & the three write points, engine order alternating \\
     \bottomrule

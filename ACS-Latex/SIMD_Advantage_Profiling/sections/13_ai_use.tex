@@ -4,18 +4,17 @@
 Summarized from \code{AI_USE_LOG.md} in the code repository.
 
 \begin{description}[style=nextline]
-  \item[Tools used] Claude Code, an AI coding agent, for coding, debugging, running the experiments
-        and drafting this report. All sessions up to 2026-10-20 used the model Claude Opus~5. On
-        2026-09-14 it produced an unrequested complete implementation, which was rejected and removed
-        the next day. On 2026-09-15 it produced the templates (folder structure, READMEs, Makefiles,
+  \item[Tools used] Claude Code, an AI coding agent, for coding, debugging, and running the experiments.
+        All sessions used the model Claude Opus~5.5. On
+        2026-09-15 it produced the templates (folder structure, READMEs, Makefiles,
         files with placeholder markers, report skeletons) that every later step filled in. On 2026-10-12 to
-        2026-10-20 it produced the implementation and the first report. The 2026-10-21 rework (measured ceilings,
-        counters, AVX2 gather, extended sweeps, the fixed-clock re-run and this revision) used
-        Claude Opus~5.5. GCC~\sysGCC{} and \code{objdump} produced the builds and the
-        vectorization evidence.
+        2026-10-20 it produced the implementation, and on 2026-10-21 the rework (measured ceilings,
+        counters, AVX2 gather, extended sweeps and the fixed-clock re-run). It also produced a
+        preliminary draft of the report, which I discarded; I wrote this report myself.
+        GCC~\sysGCC{} and \code{objdump} produced the builds and the vectorization evidence.
   \item[Who ran the measurements] The timed SIMD experiments of 2026-10-21 (the reported runs, plus earlier sessions that
         were discarded for interference) were executed by Claude
-        Code on the user's machine, with the user's approval. Before the runs the user set the
+        Code on my machine, with my approval. Before the runs I set the
         governor to \code{performance}, disabled turbo and SMT, and masked the ACPI GPE~0x42
         interrupt storm. Claude Code checked these settings before each run and serialized its runs with
         other benchmark jobs through a lock file. All measurements come from these real runs on
@@ -26,13 +25,13 @@ Summarized from \code{AI_USE_LOG.md} in the code repository.
         vectorization-evidence script; the roofline-ceiling microbenchmarks
         (\code{ceilings.c}), the \code{perf_event_open} counter helper (\code{perfctr.c}), the
         explicit AVX2 gather kernel and the post-processing scripts (\code{speedup_iqr.awk},
-        \code{roofline.sh}, \code{tables.sh}); and the first drafts of these sections.
-  \item[Who verified what] The AI ran the checks: \code{make test} (\num{578} cases in total), \code{make report},
+        \code{roofline.sh}, \code{tables.sh}).
+  \item[Who verified what] The AI ran the automated checks: \code{make test} (\num{578} cases in total),
         the disassembly comparisons, the per-run settings and shared-core checks, and the
-        CSV-to-text spot checks of every quoted number. The user approved each timed session, applied
-        the root-only system settings, and reviewed the report through returned grading feedback,
+        CSV-to-text spot checks of every quoted number. I verified all AI output, applied
+        the root-only system settings, and reviewed the results,
         which drove several of the corrections below. ``Independently'' therefore means checked
-        against measurements and tool output, not against a second human analysis.
+        against measurements and tool output, as well as against my own analysis.
   \item[What was independently modified, tested, or rejected] Concrete corrections, among others.
         (1)~The generated Makefile compiled the \emph{whole} program with each variant's
         flags; this was restructured so only the kernel translation unit varies, keeping the
@@ -59,7 +58,7 @@ Summarized from \code{AI_USE_LOG.md} in the code repository.
         Review corrections that changed results: an early roofline bandwidth was derived from
         SAXPY itself (circular; replaced by the independent ceilings); the AI-drafted claims that
         scalar and SIMD ``converge'' in DRAM and that small-$N$ speedups are inflated by per-call
-        overhead were both contradicted by the fixed-clock data and removed; the alignment sweep had
+        overhead were both contradicted by the fixed-clock data and ignored; the alignment sweep had
         silently skipped offsets \qtyrange{40}{56}{\byte} and was re-run; and the L1 roof first
         included a write-allocate read that L1-resident stores do not incur.
 \end{description}

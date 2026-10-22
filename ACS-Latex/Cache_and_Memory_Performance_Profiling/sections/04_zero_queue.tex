@@ -1,6 +1,5 @@
 % !TeX root = ../main.tex
 \section{Zero-Queue Baselines}\label{sec:zero-queue}
-\rubric{Zero-queue baselines}{25}{Methodologically sound per-level latency measurements with clear units and caveats.}
 
 \begin{hypothesis}
   With a single dependent access in flight, latency should rise in steps at the L1 (\qty{32}{\kibi\byte}),
@@ -15,30 +14,22 @@
   Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh zero_queue} \\
 \end{knobs}
 
-The ring is a single random cycle over one node per cache line, so each load depends on the previous one
-and exactly one request is outstanding---zero-queue latency. Cycles are converted with the
-fixed \qty{2.8}{\giga\hertz} core clock, which the cycle counter confirms (\cref{sec:method}).
-
-\paragraph{Plateau rule.} A level's latency is \emph{not} read at its capacity edge, where the set is
-partly spilling (e.g.\ \qty{256}{\kibi\byte} is a transition point, not an L2 point). Instead,
-\code{derive.py} takes the median, over all measured sizes $s$ with
-$2\,C_{\text{prev}} \le s \le 0.75\,C_{\text{level}}$, of the per-size medians ($C_{\text{prev}} =
-\qty{4}{\kibi\byte}$ for L1); DRAM uses every size $\ge 4\times$ the L3. The same values feed the
-abstract, introduction and conclusion through generated macros, so they cannot disagree.
+The ring is a single random cycle over one node per cache line, so exactly one request is outstanding.
+\emph{Plateau rule:} a level's latency is not read at its capacity edge, where the set partly spills;
+\code{derive.py} takes the median of the per-size medians over all measured sizes $s$ with
+$2\,C_{\text{prev}} \le s \le 0.75\,C_{\text{level}}$ ($C_{\text{prev}} = \qty{4}{\kibi\byte}$ for L1);
+DRAM uses every size $\ge 4\times$ the L3.
 
 \begin{table}[tbp]
   \centering\small
-  \caption{Zero-queue random-access latency per level (median over the plateau sizes; each size is the
-  median of 8 repetitions); cycles = ns $\times$ \qty{2.8}{\giga\hertz}, the fixed core clock with turbo
-  disabled (\cref{sec:method}). ``min--max'' is the spread across plateau sizes, and ``IQR\%'' the largest
-  inter-quartile range of the 8 repetitions at any one of those sizes, relative to its median. ``x-check'' is our second
-  method (xorshift64* ring, \code{rdtscp} timing), with $\Delta_{\text{x}}$ its signed difference from the
-  primary value. ``2\,MiB'' is the same chase with \qty{2}{\mebi\byte} pages: for DRAM it removes the
-  page-walk component; for L2 (taken from the working-set sweep at the same plateau sizes,
-  \cref{sec:working-set}) it removes the \qty{4}{\kibi\byte}-page conflict misses and is the L2 hit latency.
-  ``MLC'' is Intel MLC \texttt{-{}-idle\_latency -e -r} at \qty{16}{\kibi\byte}, \qty{128}{\kibi\byte},
-  \qty{4}{\mebi\byte} and \qty{256}{\mebi\byte} (median of 3 runs), with $\Delta_{\text{MLC}}$ its signed
-  difference from our value (negative: MLC is lower). Generated from \code{data/zero_queue_table.csv}.}
+  \caption{Zero-queue random-access latency per level (median over plateau sizes of per-size medians of 8
+  repetitions); cycles = ns $\times$ \qty{2.8}{\giga\hertz}. min/max: spread across plateau sizes; IQR\%:
+  largest relative IQR at any plateau size. x-check: second method (xorshift64* ring, \code{rdtscp}),
+  $\Delta_{\text{x}}$ its signed difference. 2\,MiB: same chase with \qty{2}{\mebi\byte} pages (L2 value from
+  the working-set sweep, \cref{sec:working-set}); it removes the page walk (DRAM) and the
+  \qty{4}{\kibi\byte}-page conflict misses (L2). MLC: \texttt{-{}-idle\_latency -e -r} at \qty{16}{\kibi\byte},
+  \qty{128}{\kibi\byte}, \qty{4}{\mebi\byte} and \qty{256}{\mebi\byte} (median of 3 runs); negative
+  $\Delta_{\text{MLC}}$: MLC is lower. From \code{data/zero_queue_table.csv}.}
   \label{tab:zero-queue}
   \setlength{\tabcolsep}{4pt}%
   \IfDataExists{zero_queue_table}{%
@@ -64,45 +55,29 @@ abstract, introduction and conclusion through generated macros, so they cannot d
 \end{table}
 
 \subsection{Analysis}
-Latency is flat at \valqty{zq_L1_ns}{\nano\second} (\valnum{zq_L1_cyc}~cycles) while the set fits in L1.
-The L2 plateau with \qty{4}{\kibi\byte} pages is \valqty{zq_L2_ns}{\nano\second} (\valnum{zq_L2_cyc}~cycles),
-the median of sizes that measure \val{zq_L2_min}--\valqty{zq_L2_max}{\nano\second}. This headline value is
-\emph{not} the L2 hit latency: the high end comes from \qty{128}{\kibi\byte} and \qty{192}{\kibi\byte}, where
-\qty{4}{\kibi\byte} pages already cause L2 conflict misses (\cref{sec:working-set}). With \qty{2}{\mebi\byte}
-pages the same plateau sizes give \valqty{zq_L2_hugens}{\nano\second} (about 12 cycles), as does the low end
-of the \qty{4}{\kibi\byte} range; that is the L2 hit latency. Latency spans
-\val{zq_L3_min}--\valqty{zq_L3_max}{\nano\second} across the L3 (median \valqty{zq_L3_ns}{\nano\second});
-L3 latency is not a single number, because larger sets also miss the second-level TLB. It reaches
+Latency is \valqty{zq_L1_ns}{\nano\second} (\valnum{zq_L1_cyc}~cycles) in L1. The L2 plateau with \qty{4}{\kibi\byte} pages is \valqty{zq_L2_ns}{\nano\second} (\valnum{zq_L2_cyc}~cycles),
+the median of sizes that measure \val{zq_L2_min}--\valqty{zq_L2_max}{\nano\second}. This is \emph{not} the
+L2 hit latency: at \qty{128}{\kibi\byte} and \qty{192}{\kibi\byte}, \qty{4}{\kibi\byte} pages already cause
+L2 conflict misses (\cref{sec:working-set}). With \qty{2}{\mebi\byte} pages the same sizes give the L2 hit
+latency, \valqty{zq_L2_hugens}{\nano\second} (about 12 cycles). L3 latency spans
+\val{zq_L3_min}--\valqty{zq_L3_max}{\nano\second} (median \valqty{zq_L3_ns}{\nano\second}), because larger
+sets also miss the second-level TLB. Latency reaches
 \valqty{zq_DRAM_ns}{\nano\second} (\valnum{zq_DRAM_cyc}~cycles) in DRAM. With \qty{2}{\mebi\byte} pages the
 DRAM figure drops to \valqty{zq_DRAM_hugens}{\nano\second}; the \valqty{zq_DRAM_walk_ns}{\nano\second}
 difference is the page walk that every random \qty{4}{\kibi\byte} access beyond the TLB reach pays
-(\cref{sec:tlb}). Our second method agrees within \val{zq_xdiff_absmax}\% at every level: the largest
-difference is on the L2 plateau, where it reads \val{zq_L2_xdiff_abs}\% lower, and on DRAM it differs by
-\val{zq_DRAM_xdiff_abs}\%. Against the hypothesis, L1 (5 cycles), L2 (12 cycles without conflicts) and L3
-match. DRAM with \qty{4}{\kibi\byte} pages is slower than the \ensuremath{\sim}\qty{80}{\nano\second} we
-expected, and the \qty{2}{\mebi\byte}-page value shows that the excess is mostly the page walk.
+(\cref{sec:tlb}). Our second method agrees within \val{zq_xdiff_absmax}\% at every level (largest on the
+L2 plateau, \val{zq_L2_xdiff_abs}\%; DRAM \val{zq_DRAM_xdiff_abs}\%). L1, L2 and L3 match the hypothesis;
+DRAM with \qty{4}{\kibi\byte} pages is slower than the \ensuremath{\sim}\qty{80}{\nano\second} we expected,
+and the \qty{2}{\mebi\byte}-page value shows the excess is mostly the page walk.
 
 \paragraph{Comparison with Intel MLC.} MLC agrees with our \qty{4}{\kibi\byte}-page L2 plateau
 (\valqty{zq_L2_mlcns}{\nano\second}, \valnum{zq_L2_mlcdiff}\% relative to ours) but is lower at the other
 levels: L1 \valqty{zq_L1_mlcns}{\nano\second} (\valnum{zq_L1_mlcdiff}\%), L3
 \valqty{zq_L3_mlcns}{\nano\second} (\valnum{zq_L3_mlcdiff}\%), and DRAM \valqty{zq_DRAM_mlcns}{\nano\second}
-(\valnum{zq_DRAM_mlcdiff}\%). The differences follow from how the tools walk
-memory, not from noise:
-\begin{itemize}
-  \item \textbf{L1.} MLC's 4 clocks versus our 5 cycles fit the known 4-cycle load-to-use latency for a plain
-        pointer dereference. Our index ring forms \code{ring[p]} with a scaled-index address, which costs
-        one extra cycle.
-  \item \textbf{DRAM.} MLC returns the same \valqty{mlc_DRAM_huge_ns}{\nano\second} with and without
-        \code{-L} (\qty{2}{\mebi\byte} pages). So its random walk takes no page walks, consistent with its
-        \code{-D} random-access range of \qty{4}{\kibi\byte} (the default): consecutive accesses stay
-        inside one page. Our ring is random over the whole buffer, so even with \qty{2}{\mebi\byte} pages MLC's
-        figure is \val{mlc_DRAM_huge_below}\% below ours (\valqty{zq_DRAM_hugens}{\nano\second}), and with
-        \qty{4}{\kibi\byte} pages our ring also pays the walk. Accesses that stay close together should also hit open DRAM rows more often.
-\end{itemize}
-MLC therefore measures a best-case local latency; our numbers are the cost of truly random access. Both
-are valid, and we keep ours as the zero-queue baseline because the rest of the report (AMAT, TLB) needs
-fully random access.
-
-Caveats: the L3 and DRAM figures are a single-core view of shared resources on an otherwise idle
-system. Sequential ``latency'' (\cref{sec:pattern}) is prefetcher throughput, which is why the chase is
-randomized.
+(\valnum{zq_DRAM_mlcdiff}\%). In L1, MLC's 4 clocks are a plain pointer dereference; our index ring's scaled-index address costs one
+extra cycle. In DRAM, MLC returns the same \valqty{mlc_DRAM_huge_ns}{\nano\second} with and without \code{-L}
+(\qty{2}{\mebi\byte} pages): its default \code{-D} random range of \qty{4}{\kibi\byte} keeps consecutive
+accesses inside one page, so it takes no page walks. Even against
+our \qty{2}{\mebi\byte}-page value (\valqty{zq_DRAM_hugens}{\nano\second}) it is \val{mlc_DRAM_huge_below}\%
+lower. MLC thus measures a best-case local latency; we keep ours because AMAT and TLB analysis need fully
+random access.

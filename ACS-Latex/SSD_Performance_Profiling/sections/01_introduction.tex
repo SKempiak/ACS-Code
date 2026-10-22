@@ -1,16 +1,12 @@
 % !TeX root = ../main.tex
 \section{Introduction}\label{sec:intro}
 
-Modern NVMe SSDs deliver high IOPS and throughput only when requests are issued concurrently. Like
-memory, storage shows a queueing-driven throughput--latency tradeoff: deeper queues raise device
-utilization up to a saturation knee, and past it latency climbs sharply for little extra throughput.
-This project characterizes that behaviour on a Micron 2210 \qty{512}{\giga\byte} QLC NVMe SSD. It
-measures QD=1 latency, block-size and read/write-mix effects, the queue-depth knee, tail latency and
-device state (working set, SLC-cache exhaustion, temperature). All I/O is \code{O_DIRECT} against
-disposable files. The primary engine is a small \code{libaio} benchmark, and FIO cross-checks it
-(\cref{sec:method,sec:validation}).
-
-This report answers:
+NVMe SSDs deliver high IOPS and throughput only when requests are issued concurrently. Like memory,
+storage shows a queueing-driven throughput--latency tradeoff: deeper queues raise utilization up to a
+saturation knee, and past it latency climbs for little extra throughput. We characterize this on a
+Micron 2210 \qty{512}{\giga\byte} QLC NVMe SSD, using \code{O_DIRECT} I/O against disposable files, a
+small \code{libaio} benchmark as the primary engine and FIO as a cross-check
+(\cref{sec:method,sec:validation}). The report answers:
 \begin{enumerate}
   \item What are the QD=1 latencies for small random and large sequential I/O? (\cref{sec:zero-queue})
   \item How do block size, access pattern, read/write mix and queue depth shape IOPS, MiB/s and latency,
@@ -21,14 +17,3 @@ This report answers:
         state, data layout, and temperature? (\cref{sec:tail,sec:device-state})
   \item Which setup mistake produces misleading numbers? (\cref{sec:pitfall})
 \end{enumerate}
-
-In summary, QD=1 random reads cost
-\csvq[1]{zero_queue}{mode=read,pattern=rand}{lat_mean_us_median}\,\si{\micro\second} and writes only
-\csvq[1]{zero_queue}{mode=write,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}, because the write
-buffer absorbs them. With one request in flight, sequential reads are limited by per-request latency
-rather than the PCIe~3.0~$\times$4 link. Deeper queues raise them to only \qty{57}{\percent} of the link,
-where the NAND back end becomes the limit (\cref{sec:block-size}). The random-read knee sits at QD~\csvq{queue_depth_knee}{mode=read}{knee_qd}.
-Tails stretch with queueing and with background flash work. Once the SLC cache is full, sustained writes drop
-$\ssdburstratio\times$ to the direct-to-QLC rate, and the drive's recent write history changes both read tails and
-sequential-read speed (\cref{sec:device-state}). Buffered I/O over-reports throughput
-by more than an order of magnitude because it measures the page cache, not the device.

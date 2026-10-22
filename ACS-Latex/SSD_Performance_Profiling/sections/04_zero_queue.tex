@@ -19,7 +19,7 @@
   Script      & \code{SSD_Performance_Profiling/scripts/run.sh zero_queue} \\
 \end{knobs}
 
-\begin{table}[tbp]
+\begin{table}[!htbp]
   \centering\small
   \caption{QD=1 performance on the Micron 2210 NVMe SSD: medians over repetitions, with the IQR in
   brackets for IOPS and p99; latencies in \si{\micro\second}. Random reads pay the full flash-read
@@ -45,42 +45,23 @@
 \end{table}
 
 \subsection{Analysis}
-The QD=1 numbers identify an NVMe SSD, not a rotational disk. \qty{4}{\kibi\byte} random read latency is
-\csvq[1]{zero_queue}{mode=read,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}, not the
-milliseconds an HDD would show, and it is dominated by the NAND read plus the NVMe/\code{libaio} host
-path, with no seek. Random \emph{writes} take only
+The QD=1 numbers identify an NVMe SSD, not a rotational disk: \qty{4}{\kibi\byte} random reads take
+\csvq[1]{zero_queue}{mode=read,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}, dominated by the
+NAND read plus the NVMe/\code{libaio} host path, with no seek. Random \emph{writes} take only
 \csvq[1]{zero_queue}{mode=write,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}
 (\csvq{zero_queue}{mode=write,pattern=rand}{iops_median} IOPS), because the controller acknowledges them
-from its write buffer (SLC cache plus controller SRAM) before the flash program finishes. A QD=1 read
-has no such buffer to hide behind.
+from its write buffer (SLC cache plus SRAM) before the flash program finishes; a read has no such buffer.
+The \qty{128}{\kibi\byte} sequential
+read takes \csvq[0]{zero_queue}{mode=read,pattern=seq}{lat_mean_us_median}\,\si{\micro\second} per
+request (\csvq{zero_queue}{mode=read,pattern=seq}{mibps_median}\,MiB/s): one outstanding request leaves
+the device idle between transfers, which \cref{sec:block-size,sec:queue-depth} remove. The p99.9 column
+already shows background flush and GC outliers (\cref{sec:tail}).
 
-The \qty{128}{\kibi\byte} sequential rows are limited by per-request latency. The read takes
-\csvq[0]{zero_queue}{mode=read,pattern=seq}{lat_mean_us_median}\,\si{\micro\second} per request
-(\csvq{zero_queue}{mode=read,pattern=seq}{mibps_median}\,MiB/s), and the single outstanding request
-leaves the device idle between transfers. \Cref{sec:block-size,sec:queue-depth} show throughput climbing
-once larger blocks or deeper queues keep more data moving.
-
-Two caveats apply. First, a QD=1 random read cannot be prefetched, so this is a genuine floor. Second,
-the p99.9 column already shows occasional outliers of several hundred microseconds to milliseconds from
-background flush and garbage collection, which preview the tail behaviour in \cref{sec:tail}.
-
-\textbf{The sequential-write row is unstable.} Its IOPS IQR spans
-\csvq{zero_queue}{mode=write,pattern=seq}{iops_q25}--\csvq{zero_queue}{mode=write,pattern=seq}{iops_q75},
-and its p99 IQR runs to \csvq[1]{zero_queue}{mode=write,pattern=seq}{lat_p99_us_q75}\,\si{\micro\second}.
-The raw repetitions are bimodal. The first two ran at \num{490} and \num{891} IOPS with p99 of
-\qtyrange{30}{35}{\milli\second}; the last three ran at \numrange{5100}{5460} IOPS with p99 of
-\qty{1.4}{\milli\second}. The p50 stays near \qty{90}{\micro\second} in all five, so typical writes were
-fast throughout, and the slow repetitions are dominated by a few stalls of tens of milliseconds. The
-point ran directly after the \qty{2}{\gibi\byte} sequential re-fill that precedes the sequential-read
-case. We read the first two repetitions as waiting for the controller to flush that burst, and the
-later ones as the unloaded QD=1 write path. The median (\csvq{zero_queue}{mode=write,pattern=seq}{iops_median}
-IOPS) therefore describes the recovered state, and the row should not be read as a stable baseline.
-The full \code{rerun_clean.sh} repeats it after a rest; the lean re-run reported here does not include
-it, so this row is still from the original run. \code{blkbench} now logs each point's start time
-(\code{timeline.csv}), so such stalls can be placed in time.
-
-An early pilot run, since discarded, measured this sequential read directly after the random-write
-case and got only a fraction of the rate above. That discrepancy led to the re-fill step in the
-procedure, and the \code{layout} experiment (\cref{sec:layout}) reproduces it:
-\csvq{layout}{experiment=layout_rand_overwritten,bs=131072,qd=1}{mibps_median} vs.\
-\csvq{layout}{experiment=layout_seq_filled,bs=131072,qd=1}{mibps_median}\,MiB/s.
+\textbf{The sequential-write row is unstable} (IOPS IQR
+\csvq{zero_queue}{mode=write,pattern=seq}{iops_q25}--\csvq{zero_queue}{mode=write,pattern=seq}{iops_q75}).
+Its first two repetitions ran at \num{490} and \num{891} IOPS with p99 of \qtyrange{30}{35}{\milli\second},
+the last three at \numrange{5100}{5460} IOPS, with p50 near \qty{90}{\micro\second} throughout. It
+directly followed the \qty{2}{\gibi\byte} sequential re-fill, so we read the slow repetitions as the
+controller flushing that burst; the median describes the recovered state, not a stable baseline. The
+re-fill itself exists because a discarded pilot that read sequentially right after the random writes got
+only a fraction of this rate (\cref{sec:layout}).

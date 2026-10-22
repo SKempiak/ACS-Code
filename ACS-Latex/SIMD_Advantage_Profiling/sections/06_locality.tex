@@ -14,20 +14,18 @@ of SIMD gains in the memory-bound regime explained.}
 \begin{knobs}
   Fixed       & kernel SAXPY; float32; unit stride; aligned; pinned to CPU~2 \\
   Varied      & $N$ (dense grid, powers of two and midpoints, across L1/L2/LLC/DRAM); variant \\
-  Counters    & user-space cycles, instructions, LLC misses and L1D read misses per repetition via
-                \code{perf_event_open} (\cref{sec:ceilings-method}); written to
-                \code{locality_counters.csv} when the counters can be opened \\
-  Bandwidth   & effective SAXPY bandwidth $=\text{elements/s}\times\qty{12}{\byte}$ (read $x$, read and
-                write $y$), compared with the independently measured triad roof of each level \\
+  Counters    & user-space cycles, instructions, LLC and L1D read misses (\cref{sec:ceilings-method}) \\
+  Bandwidth   & elements/s $\times\,\qty{12}{\byte}$ (read $x$, read and write $y$) vs.\ each level's triad roof \\
   Script      & \code{SIMD_Advantage_Profiling/scripts/run.sh locality} \\
 \end{knobs}
 
 \begin{figure}[tbp]
   \centering
+  \begin{minipage}[t]{0.49\linewidth}
   \IfDataExists{locality}{%
     \begin{tikzpicture}
       \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, xlabel={$N$ (elements)}, ylabel={Time per element (ns)},
-                   ytick={0.05,0.1,0.2,0.5,1}, yticklabels={0.05,0.1,0.2,0.5,1}, legend pos=north west]
+                   ytick={0.05,0.1,0.2,0.5,1}, yticklabels={0.05,0.1,0.2,0.5,1}, width=\linewidth, height=0.68\linewidth, legend pos=south east, legend style={font=\scriptsize}]
         \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{scalar}] {data/locality.csv};
         \addlegendentry{scalar}
         \addplot+[iqr bars] table[x=n, y=ns_per_elem_median, iqr of=ns_per_elem, only if={variant}{autovec}] {data/locality.csv};
@@ -40,40 +38,15 @@ of SIMD gains in the memory-bound regime explained.}
       \end{axis}
     \end{tikzpicture}%
   }
-  \caption{SAXPY time per element across cache levels. The native curve rises in steps at each cache
-  boundary; in DRAM it stays $1.88$--$1.96\times$ below the scalar curve.}\label{fig:locality}
-\end{figure}
-
-\begin{table}[tbp]
-  \centering\small
-  \caption{Effective SAXPY bandwidth (GiB/s, \qty{12}{\byte}/element) at one $N$ inside each level,
-  next to the triad roof measured for that level by the independent bandwidth benchmark
-  (actual traffic: explicit loads and stores in L1, plus write-allocate in L2--DRAM,
-  \cref{sec:ceilings-method}).}\label{tab:locality-bw}
-  \IfDataExists{locality_levels}{%
-    \pgfplotstabletypeset[
-      col sep=comma, string type,
-      columns={level,n,footprint,scalar,autovec,native,triad},
-      columns/level/.style={column name=Level},
-      columns/n/.style={column name=$N$},
-      columns/footprint/.style={column name=Footprint},
-      columns/scalar/.style={column name=scalar, column type=r},
-      columns/autovec/.style={column name=autovec, column type=r},
-      columns/native/.style={column name=native, column type=r},
-      columns/triad/.style={column name=triad roof, column type=r},
-      every head row/.style={before row=\toprule, after row=\midrule},
-      every last row/.style={after row=\bottomrule},
-    ]{data/locality_levels.csv}%
-  }
-\end{table}
-
-\begin{figure}[tbp]
-  \centering
+  \caption{SAXPY time per element across cache levels: native rises in steps at each
+  boundary.}\label{fig:locality}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.49\linewidth}
   \IfDataExists{locality}{%
     \begin{tikzpicture}
       \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, xlabel={Footprint (bytes)},
                    ylabel={Bandwidth (GiB/s)}, ytick={5,10,20,50,100,200,500},
-                   yticklabels={5,10,20,50,100,200,500}, legend pos=south west, legend style={font=\scriptsize}]
+                   yticklabels={5,10,20,50,100,200,500}, width=\linewidth, height=0.68\linewidth, legend pos=south west, legend style={font=\tiny}]
         \addplot+[iqr bars] table[x expr=\thisrow{n}*8, y expr=\thisrow{elems_per_s_median}*12/1073741824,
             y error plus expr=(\thisrow{elems_per_s_q75}-\thisrow{elems_per_s_median})*12/1073741824,
             y error minus expr=(\thisrow{elems_per_s_median}-\thisrow{elems_per_s_q25})*12/1073741824,
@@ -99,20 +72,42 @@ of SIMD gains in the memory-bound regime explained.}
       \end{axis}
     \end{tikzpicture}%
   }
-  \caption{Effective bandwidth versus footprint: SAXPY (from \cref{fig:locality}) against the
-  independently measured triad (explicit traffic below \qty{32}{\kibi\byte}, incl.\ write-allocate
-  above). Where the native SAXPY curve meets the triad curve, SIMD SAXPY is bandwidth-bound at that
-  level. The dashed read stream is \emph{not} a bandwidth ceiling: four dependent accumulator
-  chains with a \num{4}-cycle add latency allow at most one \qty{32}{\byte} load per cycle
-  ($\approx\qty{89}{\gibi\byte\per\second}$), which is what it shows in L1 and L2.}\label{fig:locality-bw}
+  \caption{Effective bandwidth versus footprint: SAXPY against the independently measured triad
+  (explicit traffic below \qty{32}{\kibi\byte}, incl.\ write-allocate above). Where native meets the
+  triad it is bandwidth-bound. The dashed read stream is add-latency-bound
+  ($\approx\qty{89}{\gibi\byte\per\second}$ in L1 and L2), not a ceiling.}\label{fig:locality-bw}
+  \end{minipage}
 \end{figure}
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{Effective SAXPY bandwidth (GiB/s, \qty{12}{\byte}/element) at one $N$ per level, next to
+  that level's independently measured triad roof (\cref{sec:ceilings-method}).}\label{tab:locality-bw}
+  \IfDataExists{locality_levels}{%
+    \pgfplotstabletypeset[
+      col sep=comma, string type,
+      columns={level,n,footprint,scalar,autovec,native,triad},
+      columns/level/.style={column name=Level},
+      columns/n/.style={column name=$N$},
+      columns/footprint/.style={column name=Footprint},
+      columns/scalar/.style={column name=scalar, column type=r},
+      columns/autovec/.style={column name=autovec, column type=r},
+      columns/native/.style={column name=native, column type=r},
+      columns/triad/.style={column name=triad roof, column type=r},
+      every head row/.style={before row=\toprule, after row=\midrule},
+      every last row/.style={after row=\bottomrule},
+    ]{data/locality_levels.csv}%
+  }
+\end{table}
+
+
 
 \begin{figure}[tbp]
   \centering
   \IfDataExists{locality_counters}{%
     \begin{subfigure}[t]{0.49\linewidth}
       \begin{tikzpicture}
-        \begin{axis}[acs, width=0.95\linewidth, height=0.8\linewidth, xmode=log, log basis x=2, ymode=log,
+        \begin{axis}[acs, width=0.95\linewidth, height=0.58\linewidth, xmode=log, log basis x=2, ymode=log,
                      xlabel={$N$}, ylabel={LLC misses / element}, legend pos=north west,
                      legend style={font=\scriptsize}]
           \addplot+[iqr bars] table[x=n, y=llc_miss_per_elem_median, iqr of=llc_miss_per_elem,
@@ -128,7 +123,7 @@ of SIMD gains in the memory-bound regime explained.}
     \end{subfigure}\hfill
     \begin{subfigure}[t]{0.49\linewidth}
       \begin{tikzpicture}
-        \begin{axis}[acs, width=0.95\linewidth, height=0.8\linewidth, xmode=log, log basis x=2, ymode=log,
+        \begin{axis}[acs, width=0.95\linewidth, height=0.58\linewidth, xmode=log, log basis x=2, ymode=log,
                      xlabel={$N$}, ylabel={Cycles / element}, legend pos=north west,
                      ytick={0.1,0.2,0.5,1,2,5,10}, yticklabels={0.1,0.2,0.5,1,2,5,10},
                      legend style={font=\scriptsize}]
@@ -150,44 +145,25 @@ of SIMD gains in the memory-bound regime explained.}
 \end{figure}
 
 \subsection{Analysis}
-The measured transitions line up with the cache sizes. While $N\lesssim\num{4096}$ (L1-resident)
-native SAXPY takes \qtyrange{0.080}{0.100}{\nano\second} per element, a $5.6\text{--}6.9\times$
-speedup over scalar's \qtyrange{0.55}{0.57}{\nano\second}. Past the \qty{32}{\kibi\byte} L1, at
-$N=\num{6144}$, the native time jumps to \qty{0.144}{\nano\second} and the speedup drops to
-$4.2\times$; it stays at $4.0\text{--}4.2\times$ through L2. Past the \qty{256}{\kibi\byte} L2,
-at $N=\num{49152}$, it falls to $3.1\times$ (\qty{0.21}{\nano\second}), and the L3 plateau holds
-$2.8\times$ (\qty{0.23}{\nano\second}) from $N=\num{98304}$ to \num{1572864}. Past L3 the gap
-narrows but does \emph{not} close, contradicting the hypothesis: from $N=\num{16777216}$ on, native
-settles at \qtyrange{0.43}{0.45}{\nano\second} per element and scalar at
-\qtyrange{0.83}{0.85}{\nano\second}, a remaining speedup of $1.88\text{--}1.96\times$.
+The transitions line up with the cache sizes. In L1 native SAXPY takes
+\qtyrange{0.080}{0.100}{\nano\second} per element, $5.6\text{--}6.9\times$ faster than scalar; the
+speedup drops to $4.0\text{--}4.2\times$ past L1, $3.1\times$ past L2 and $2.8\times$ on the L3
+plateau. Past L3 the gap narrows but does \emph{not} close, contradicting the hypothesis: native
+takes \qtyrange{0.43}{0.45}{\nano\second} and scalar \qtyrange{0.83}{0.85}{\nano\second}, a speedup
+of $1.88\text{--}1.96\times$.
 
-\Cref{tab:locality-bw,fig:locality-bw} convert the same data to bandwidth. Native SAXPY moves
-\qty{118}{\gibi\byte\per\second} in L1, \num{77.8} in L2, \num{48.4} in L3 and
-\qty{25.0}{\gibi\byte\per\second} from DRAM (at the representative $N$ of the table), and each level
-boundary is a step in \cref{fig:locality}. The independently measured triad roofs are \num{155.6},
-\num{90.5}, \num{48.6} and \qty{24.3}{\gibi\byte\per\second}, so native SAXPY reaches 76, 86, 100
-and \SI{103}{\percent} of the roof. It is therefore bandwidth-bound in L3 and DRAM, where it runs at
-the measured roof. In DRAM it slightly exceeds the triad roof, staying below the copy stream's
-\qty{25.7}{\gibi\byte\per\second}; copy has the same two-reads-one-write pattern. In L1 and L2 it falls short: there the limit is the core's
-load/store issue rate (below), not the cache. Scalar SAXPY, by contrast, is flat at
-\qtyrange{17}{20.5}{\gibi\byte\per\second} through L1, L2 and L3, far below every cache roof, and
-drops to \qty{13.3}{\gibi\byte\per\second} in DRAM.
+In bandwidth terms (\cref{tab:locality-bw,fig:locality-bw}) native SAXPY reaches 76, 86, 100 and
+\SI{103}{\percent} of the measured triad roof in L1, L2, L3 and DRAM: bandwidth-bound in L3 and DRAM
+(in DRAM still below the \qty{25.7}{\gibi\byte\per\second} of the copy stream, which has the same
+two-reads-one-write pattern) and issue-bound in L1 and L2. Scalar is flat at
+\qtyrange{17}{20.5}{\gibi\byte\per\second} through L3, far below every roof.
 
-\emph{Counters} (\cref{fig:locality-counters}; effective clock \qtyrange{2.78}{2.79}{\giga\hertz}
-at every point). LLC misses per element stay below $10^{-5}$ up to an \qty{8}{\mebi\byte}
-working set ($N=\num{1048576}$). At \num{12} and \qty{16}{\mebi\byte}, still inside the
-\qty{20}{\mebi\byte} L3, they already rise to $\approx6\times10^{-4}$ and
-\numrange{3.6e-3}{4.9e-3}, plausibly because the shared, not perfectly LRU L3 already loses
-some lines of a working set close to its capacity. For DRAM-resident native SAXPY they reach \numrange{0.122}{0.128}
-($N=\num{16777216}\ldots\num{50331648}$), matching the compulsory $2/16 = 0.125$ (two
-\qty{64}{\byte} lines, $x$ and $y$, per \num{16} elements; the dirty $y$ line is written back, not
-missed again). So the vector loop moves no more data than it must. Scalar shows
-\numrange{0.156}{0.164}, about \SI{28}{\percent} more. Its cause is open. Untested hypothesis: at
-scalar's lower request rate the L2 streamer prefetches further ahead of the demand stream, and its
-prefetch requests, which the generic LLC-miss event may count, include lines evicted before use or
-fetched past the end of each pass. A per-element IMC read count (see \cref{sec:anomalies}) would
-show whether the extra misses are extra DRAM traffic or only extra prefetch requests. Either way, scalar does not lose because
-the vector loop saves misses. The cycle counts explain the remaining gap:
+\emph{Counters} (\cref{fig:locality-counters}). For DRAM-resident native SAXPY, LLC misses reach
+\numrange{0.122}{0.128} per element, the compulsory $2/16 = 0.125$ (one line each of $x$ and $y$ per
+\num{16} elements), so the vector loop moves no more data than it must. Scalar shows
+\numrange{0.156}{0.164}, about \SI{28}{\percent} more, for a reason we have not established
+(\cref{sec:anomalies}). The cycle counts explain
+the remaining gap:
 
 \begin{center}\small
   \begin{tabular}{@{}lrrrr@{}}
@@ -199,16 +175,9 @@ the vector loop saves misses. The cycle counts explain the remaining gap:
     \bottomrule
   \end{tabular}
 \end{center}
-
-Native SAXPY's cycles per element grow $4.7\times$ from L1 to DRAM and its IPC falls to
-\num{0.6}: it is waiting on memory. Scalar SAXPY already spends \num{1.53} cycles per element of
-pure core work in L1, at an IPC of \num{4.6}. That is at this core's issue limit (4 fused micro-ops
-per cycle, with compare-and-branch pairs macro-fused). In DRAM it needs \SI{53}{\percent} more
-(\num{2.34} cycles) but still retires \num{3.0} instructions per cycle. So most of its DRAM time is
-instruction execution, not waiting, and $2.34/1.25 = 1.88$ is exactly the measured DRAM speedup at
-this size. This is the mechanism of the ``compression'' the rubric asks about. SIMD does not get
-slower in DRAM; once native SAXPY sits on the bandwidth roof, its advantage shrinks to the scalar
-loop's (mostly instruction-bound) time divided by the memory time. That ratio depends on the clock:
-at turbo ($\approx\qty{4.9}{\giga\hertz}$) the same scalar work takes less time while the memory
-time stays fixed, and that sweep measured only $1.32\text{--}1.44\times$ (\cref{sec:method}). Absolute native time grows step by step while scalar time is nearly flat,
-which is why the \emph{ratio} shrinks at every level boundary.
+Native SAXPY's cycles per element grow $4.7\times$ from L1 to DRAM and its IPC falls to \num{0.6}:
+it waits on memory. Scalar already spends \num{1.53} cycles per element in L1 at IPC \num{4.6}, this
+core's issue limit, and in DRAM still retires \num{3.0} instructions per cycle: most of its time is
+execution. $2.34/1.25 = 1.88$ is exactly the measured DRAM speedup at this size. So once
+native sits on the bandwidth roof, the speedup is scalar's instruction-bound time over the memory
+time, a ratio that depends on the clock (\cref{sec:method}).

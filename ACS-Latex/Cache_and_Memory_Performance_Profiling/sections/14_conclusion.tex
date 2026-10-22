@@ -6,19 +6,13 @@ Zero-queue latency is \valqty{zq_L1_ns}{\nano\second} (\valnum{zq_L1_cyc}~cycles
 \valqty{zq_L2_ns}{\nano\second} on the L2 plateau with \qty{4}{\kibi\byte} pages (L2 hit latency
 \valqty{zq_L2_hugens}{\nano\second} without conflict misses), \valqty{zq_L3_ns}{\nano\second} in L3 and
 \valqty{zq_DRAM_ns}{\nano\second} in DRAM, of which \valqty{zq_DRAM_walk_ns}{\nano\second} is page walking
-that \qty{2}{\mebi\byte} pages remove. Concurrency is the other half of the story. Measured under load,
-bandwidth reaches \valqty{int_sat_gib}{\gibi\byte\per\second} at only \val{int_sat_ratio}$\times$ the
-unloaded latency, and past that point more cores buy queueing, not bandwidth; Intel MLC's sweep draws
-the same curve. With measured latency, Little's Law separates the \valnum{int_L0max} lines the memory
-system serves at saturation from up to \valnum{int_Lmax} lines that merely queue; one core sustains at most
-\valnum{mlp_t1_Lmem_max} random demand misses, but far more lines when the prefetcher streams; and a
-counter-fitted AMAT model shows random SAXPY paying \valqty{amat_rand_aD}{\nano\second} per DRAM miss---the
-DRAM latency divided by \valnum{amat_rand_mlp}-way overlap. Memory-controller counters turn two
-estimates into measurements: every written line costs one extra read (the RFO; within 1\% at full load,
-a few percent below the model with one core), and sparse strided reads
-cost two lines each because of the adjacent-line prefetcher. The lessons are about measurement discipline as
-much as hardware: a bandwidth benchmark must out-size the LLC or it measures cache reuse
-(\cref{sec:pitfall}); a latency benchmark must randomize or it measures the prefetcher; a knee must come from
-measured latency, not throughput alone; a read/write mix must be defined at line granularity; a
-huge-page study must verify its pages---in both directions (\cref{sec:tlb}); and a clock must be measured, not
-assumed, because firmware can silently steal wall time from every core (\cref{sec:anomalies}).
+that \qty{2}{\mebi\byte} pages remove. Under load, bandwidth reaches \valqty{int_sat_gib}{\gibi\byte\per\second}
+at only \val{int_sat_ratio}$\times$ the unloaded latency; past that point more cores buy queueing, not
+bandwidth, as MLC confirms. Little's Law with measured latency separates the \valnum{int_L0max} lines the
+memory system serves from up to \valnum{int_Lmax} that queue; one core sustains at most
+\valnum{mlp_t1_Lmem_max} random demand misses; and counter-fitted AMAT shows random SAXPY paying
+\valqty{amat_rand_aD}{\nano\second} per DRAM miss (\valnum{amat_rand_mlp}-way overlap). Memory-controller
+counters confirm the RFO cost of writes and the adjacent-line cost of sparse reads. The lessons are about
+measurement discipline: out-size the LLC (\cref{sec:pitfall}), randomize latency chases, measure loaded
+latency, mix reads and writes per line, verify huge pages (\cref{sec:tlb}), and measure the clock
+(\cref{sec:anomalies}).

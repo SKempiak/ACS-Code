@@ -22,37 +22,26 @@
 \end{hypothesis}
 
 \begin{knobs}
-  \code{sustained} & lean re-run: one O\_DIRECT sequential pass (128\,KiB, QD32) over a fresh
-                     \code{fallocate}d file of up to \qty{40}{\gibi\byte}, stopped 10 seconds after the
-                     throughput stays below \qty{30}{\percent} of the first-5-second burst median
-                     (\code{STOP_BELOW=0.3}, \code{STOP_HOLD=10}). Then \qty{4}{\kibi\byte} random writes at
-                     QD32 over the written part for \qty{60}{\second} or \qty{1}{\gibi\byte}, a
-                     \qty{60}{\second} idle gap, and a \qty{10}{\second} / \qty{1}{\gibi\byte} sequential
-                     recovery probe. Throughput, p50/p99/p99.9/max latency and NVMe temperature are logged
-                     every second \\
-  \code{working_set} & lean re-run, on the freshly preconditioned \qty{4}{\gibi\byte} test file right after
-                     \code{tail}: \qty{4}{\kibi\byte} random read (QD1, QD32) and random write (QD32,
-                     \qty{64}{\mebi\byte} cap) restricted to its first 1, 2 and \qty{4}{\gibi\byte}, in the
-                     order 1, 2, 4, 4, 2, \qty{1}{\gibi\byte} with 2 repetitions per pass \\
-  \code{layout}     & original run, on the \qty{2}{\gibi\byte} test file: \qty{128}{\kibi\byte} sequential read (QD1,
-                     QD32) and \qty{4}{\kibi\byte} random read, first after a sequential fill, then after
-                     a \qty{4}{\gibi\byte} random \qty{4}{\kibi\byte} overwrite (about
-                     \qty{86}{\percent} of blocks rewritten in random order) \\
-  Volume / safety   & the fill file is capped at \qty{40}{\gibi\byte} (\qty{77}{\gibi\byte} free; the gate
-                     needs file $+$ \qty{10}{\gibi\byte}) and is deleted before the next step. The
-                     filesystem has no online discard \\
-  Drive state       & \code{sudo fstrim -v /} at 21:34:54, then at least \qty{30}{\minute} idle; the script's
-                     idle check passed and the fill started at 22:06:25. The scratch partition
-                     (\code{nvme0n1p3}, \qty{124.9}{\gibi\byte}) had \qty{77}{\gibi\byte} free; the drive's
-                     other partitions, including a \qty{351}{\gibi\byte} one this study never touches,
-                     were not trimmed \\
-  Script            & \code{rerun_clean.sh lean} (\code{sustained}, then \code{tail}, then
-                     \code{working_set}); \code{run.sh layout} (inside \code{all}) \\
+  \code{sustained} & lean re-run: sequential 128\,KiB QD32 fill of a fresh file (at most
+                     \qty{40}{\gibi\byte}), stopped 10\,s after throughput stays below \qty{30}{\percent} of
+                     the burst; then \qty{4}{\kibi\byte} QD32 random writes (\qty{60}{\second} or
+                     \qty{1}{\gibi\byte}), a \qty{60}{\second} idle gap and a \qty{1}{\gibi\byte} recovery
+                     probe; logged every second \\
+  \code{working_set} & lean re-run, fresh \qty{4}{\gibi\byte} file after \code{tail}: \qty{4}{\kibi\byte}
+                     random read (QD1, QD32) and write (QD32) over its first 1, 2, \qty{4}{\gibi\byte}, then
+                     in reverse order, 2 repetitions per pass \\
+  \code{layout}     & original run, \qty{2}{\gibi\byte} file: \qty{128}{\kibi\byte} sequential (QD1, QD32)
+                     and \qty{4}{\kibi\byte} random reads after a sequential fill, then after a
+                     \qty{4}{\gibi\byte} random overwrite (\ensuremath{\sim}\qty{86}{\percent} of blocks) \\
+  Drive state       & \code{fstrim} at 21:34:54, then at least \qty{30}{\minute} idle; fill at 22:06:25.
+                     \qty{77}{\gibi\byte} free on the scratch partition; other partitions (one untouched
+                     \qty{351}{\gibi\byte}) not trimmed \\
+  Script            & \code{rerun_clean.sh lean}; \code{run.sh layout} (inside \code{all}) \\
 \end{knobs}
 
 \subsection{SLC-cache exhaustion and steady state}
 \pgfplotsset{susplot/.style={acs, height=0.62\linewidth, legend style={font=\scriptsize}}}
-\begin{figure}[tbp]
+\begin{figure}[!htbp]
   \centering
   \IfDataExists{sustained}{%
     \begin{subfigure}[t]{0.49\linewidth}
@@ -102,7 +91,7 @@
   phases.}\label{fig:sustained}
 \end{figure}
 
-\begin{table}[tbp]
+\begin{table}[!htbp]
   \centering\small
   \caption{Sustained-write summary (computed by \code{run.sh} into \code{sustained_summary.csv}). Burst is
   the median of the leading seconds that stay above half the first second's rate. The cliff is the first
@@ -129,94 +118,49 @@
   \end{tabular}
 \end{table}
 
-\paragraph{Analysis.} The fill began at the SLC ingest rate,
-\csvval{sustained_summary}{burst_mibps}\,MiB/s, for \csvval{sustained_summary}{burst_s}\,s. After
-\csvval[1]{sustained_summary}{cliff_gib}\,GiB it collapsed. Four seconds at
-\qtyrange{13}{21}{\mebi\byte\per\second}, with per-second median latencies of up to
-\qty{0.31}{\second} at QD32, were followed by seven seconds at
-\qtyrange{62}{68}{\mebi\byte\per\second}. The stop rule then ended the fill at
-\csvval[1]{sustained_summary}{fill_gib}\,GiB after \csvval{sustained_summary}{fill_s}\,s (average
-\csvval{sustained_summary}{fill_avg_mibps}\,MiB/s). The median of all post-cliff seconds is
-\csvval{sustained_summary}{steady_mibps}\,MiB/s, \csvval[3]{sustained_summary}{steady_over_burst} of
-the burst. A burst \ssdburstratio$\times$ the steady rate is far more than the \enquote{several times}
-of hypothesis~(i). The steady value rests on only \qty{11}{\second} of data. Its median matches,
-however, that of the original run, whose \qty{60}{\gibi\byte} fill wrote for \num{1226}\,s (about
-twenty minutes) after its cliff (\code{sustained/20261021-105439}): the median of those seconds is
-\qty{62}{\mebi\byte\per\second}. That run was far from steady, though. It alternated between two
-levels: \qty{55}{\percent} of its post-cliff seconds ran at \qtyrange{60}{70}{\mebi\byte\per\second}
-and \qty{32}{\percent} at only \qtyrange{10}{20}{\mebi\byte\per\second}, so its mean was
-\qty{47}{\mebi\byte\per\second} and its per-minute means ranged from \qtyrange{37}{78}{\mebi\byte\per\second}
-(median \qty{44}{\mebi\byte\per\second}), drifting downwards over the twenty minutes. We therefore take
-\ensuremath{\sim}\qty{60}{\mebi\byte\per\second} as the rate at which this QLC drive writes when it
-must program QLC directly while also folding cached data, and expect long fills to average less
-because of the slow phases. The lean run's \qty{11}{\second} cannot show such phases, so the
-post-cliff \emph{steady state} is only partly tested.
+\paragraph{Analysis.} The fill ran at the SLC ingest rate,
+\csvval{sustained_summary}{burst_mibps}\,MiB/s, for \csvval{sustained_summary}{burst_s}\,s and collapsed
+after \csvval[1]{sustained_summary}{cliff_gib}\,GiB: four seconds at \qtyrange{13}{21}{\mebi\byte\per\second}
+(median latency up to \qty{0.31}{\second}), then seven at \qtyrange{62}{68}{\mebi\byte\per\second}. The
+post-cliff median, \csvval{sustained_summary}{steady_mibps}\,MiB/s
+(\csvval[3]{sustained_summary}{steady_over_burst} of the burst, a \ssdburstratio$\times$ drop, far more
+than the \enquote{several times} of hypothesis~(i)), rests on \qty{11}{\second} but matches the
+\qty{62}{\mebi\byte\per\second} median of the original run's \num{1226}\,s post-cliff fill. That run never
+settled: it alternated between \qtyrange{60}{70}{\mebi\byte\per\second} (\qty{55}{\percent} of seconds)
+and \qtyrange{10}{20}{\mebi\byte\per\second} (\qty{32}{\percent}), averaging \qty{47}{\mebi\byte\per\second}
+and drifting down. We take \ensuremath{\sim}\qty{60}{\mebi\byte\per\second} as the direct-to-QLC rate while
+folding; the long-run steady state is only partly tested.
 
-\textbf{How large is the cache?} Hypothesis~(i) assumed a fill \enquote{far larger than the SLC cache},
-and the lean plan sized the fill on the assumption that a fresh cache would hold
-\ensuremath{\sim}\qty{20}{\gibi\byte}. Instead, on a drive that had been trimmed and idle for half an
-hour, the cliff came at \csvval[1]{sustained_summary}{cliff_gib}\,GiB. That is a measurement of the
-SLC capacity \emph{available to this fill in this drive state}, not of a fixed property of the drive,
-and it falls well short of the expectation. The original run had found a similar cliff at
-\qty{3.1}{\gibi\byte}, and we had attributed that small value to the run order, since that fill
-followed \ensuremath{\sim}\qty{60}{\gibi\byte} of writes with no idle and no TRIM. The lean re-run removes
-those confounds and adds only \qty{0.7}{\gibi\byte}, so the run order was not the main reason. A
-plausible explanation, which we did not test, is a dynamic SLC cache sized by free space, a common
-design in QLC client drives, whose cache shrinks as the drive fills \cite{tallis2018intel660p}. Micron
-describes the 2210's cache only as \enquote{dynamic write acceleration} \cite{micron2210brief}. Such a controller can only borrow blocks it believes are unused. The
-scratch filesystem had \qty{77}{\gibi\byte} free and was trimmed, but the rest of the drive, including a
-\qty{351}{\gibi\byte} partition this study never touches, was not, so the drive-wide free space that
-such a cache would scale with is unknown and may be small. Two other explanations remain open. Thirty
-minutes may not have drained all folded data after the TRIM, or the 2210 may simply use a small
-cache in this capacity class. Telling these apart would need fills at several known free-space levels,
-or vendor counters of SLC usage, which the standard SMART log does not report.
-Under the free-space explanation the cache size is state dependent, and
-\csvval[1]{sustained_summary}{cliff_gib}\,GiB describes this drive at its current fill level.
+\textbf{How large is the cache?} We expected \ensuremath{\sim}\qty{20}{\gibi\byte}, but even on a trimmed,
+idle drive the cliff came at \csvval[1]{sustained_summary}{cliff_gib}\,GiB, only \qty{0.7}{\gibi\byte} more
+than the original run's \qty{3.1}{\gibi\byte}, so run order was not the main cause. This is the capacity
+available \emph{in this drive state}; a plausible, untested explanation is a dynamic cache sized by
+drive-wide free space (unknown here, as only the scratch partition was trimmed), common in QLC client
+drives \cite{tallis2018intel660p,micron2210brief}.
 
-The random-write phase wrote \qty{4}{\kibi\byte} blocks at QD32 over the
-\csvval[1]{sustained_summary}{fill_gib}\,GiB just written. For eight full seconds the per-second rate
-stayed at \numrange{12471}{16548} IOPS (median \num{14666}; quartiles \numrange{13958}{15042}), with a
-median per-second p99 of \qty{36.0}{\milli\second}; these values exclude the final partial sample
-described next. (Over all 9 samples, as in \cref{tab:sustained}, the median is \num{14924}, the
-quartiles \csvval{sustained_summary}{rand_iops_q25}--\csvval{sustained_summary}{rand_iops_q75} and the
-median p99 \qty{35.7}{\milli\second}.) That is about $16\times$ below the in-cache random-write
-rate at the same depth (\csvq{queue_depth}{qd=32,mode=write}{iops_median} IOPS,
-\cref{sec:queue-depth}), and it supports hypothesis~(ii) only in part: the rate is lower and the tails
-heavier, but eight seconds directly after an \qty{11}{\second} post-cliff fill cannot establish a
-steady state, so that part of hypothesis~(ii) remains untested. In the final \qty{0.7}{\second} the rate
-jumped to \ensuremath{\sim}\num{205}k IOPS with a p99 of \qty{149}{\micro\second}, as if the controller
-had just freed SLC blocks in the background. That burst wrote \qty{56}{\percent} of the phase's
-\qty{1}{\gibi\byte} cap, which ended the phase after \qty{8.7}{\second}. The byte-weighted phase average
-in \cref{tab:sustained}, \csvval{sustained_summary}{rand_steady_iops} IOPS, therefore mixes two states
-and should not be read as a steady state. The per-second median of the eight full seconds is the
-better summary.
+The random-write phase (\qty{4}{\kibi\byte}, QD32, over the data just written) ran for eight full seconds
+at \numrange{12471}{16548} IOPS (median \num{14666}) with a median per-second p99 of
+\qty{36.0}{\milli\second}, about $16\times$ below the in-cache rate
+(\csvq{queue_depth}{qd=32,mode=write}{iops_median} IOPS). This supports hypothesis~(ii) only in part:
+eight seconds cannot establish a steady state. In a final \qty{0.7}{\second} the rate jumped to
+\ensuremath{\sim}\num{205}k IOPS, as if SLC blocks had just been freed, and hit the \qty{1}{\gibi\byte}
+cap, so the byte-weighted average in \cref{tab:sustained}
+(\csvval{sustained_summary}{rand_steady_iops} IOPS) mixes two states.
 
-After the \qty{60}{\second} idle, the recovery probe wrote its whole \qty{1}{\gibi\byte} at
-\csvval{sustained_summary}{recovery_mibps}\,MiB/s, the full burst rate, in under a second. At least
-\qty{1}{\gibi\byte} of cache was therefore free again, and hypothesis~(iii) holds at this scale. The cap
-means we cannot say how much of the \csvval[1]{sustained_summary}{cliff_gib}\,GiB came back. This
-reverses the original run, where the same idle followed tens of gigabytes of writes and gave no
-recovery (\qty{61}{} then \qty{19}{\mebi\byte\per\second}). Recovery depends on the size of the fold
-backlog, not on the idle time alone.
+After the \qty{60}{\second} idle gap the recovery probe wrote its whole \qty{1}{\gibi\byte} at
+\csvval{sustained_summary}{recovery_mibps}\,MiB/s, the burst rate, so hypothesis~(iii) holds at this
+scale. In the original run the same gap after tens of gigabytes gave no recovery (\qty{61}{} then
+\qty{19}{\mebi\byte\per\second}): recovery depends on the fold backlog. This is short-term
+behaviour, not the full-drive SNIA steady state \cite{snia_pts}.
 
-Two caveats. First, because the cliff came early, the lean fill wrote only
-\csvval[1]{sustained_summary}{fill_gib}\,GiB of a \qty{512}{\giga\byte} drive, and its post-cliff and
-random phases last seconds rather than minutes. This is the short-term behaviour after the cache fills,
-not the full-drive steady state of the SNIA Performance Test Specification \cite{snia_pts}, which
-would need the raw device (ruled out by the data-safety rule). Second, a TRIM only marks blocks free; it does not make the drive fresh, and the state of the
-untrimmed rest of the drive is unknown.
-
-\paragraph{Temperature.} The composite temperature ranged from
-\csvval[1]{sustained_summary}{temp_min_c} to \csvval[1]{sustained_summary}{temp_max_c}\,\si{\celsius}
-during this experiment, and from \qtyrange{31.9}{61.9}{\celsius} over both runs (the peak was during
-the QD=32 sequential-read sweep of the original run). Both are far below the
-\qty{86.85}{\celsius} warning and \qty{89.85}{\celsius} critical thresholds reported by the drive. The
-throughput fell within one second at \qty{35.9}{\celsius} and stayed low while the temperature moved
-only between \qty{34.9}{} and \qty{37.9}{\celsius}, so the drop comes from the cache, not from thermal
-throttling. In the original run the same cliff came at \qty{50.9}{\celsius}.
+\paragraph{Temperature.} The composite temperature stayed at
+\csvval[1]{sustained_summary}{temp_min_c}--\csvval[1]{sustained_summary}{temp_max_c}\,\si{\celsius} here and
+\qtyrange{31.9}{61.9}{\celsius} over both runs, far below the \qty{86.85}{\celsius} warning threshold.
+Throughput fell at \qty{35.9}{\celsius} and stayed low between \qty{34.9}{} and \qty{37.9}{\celsius}, so
+the cliff is the cache, not thermal throttling.
 
 \subsection{Working set (LBA range)}
-\begin{figure}[tbp]
+\begin{figure}[!htbp]
   \centering
   \IfDataExists{working_set}{%
     \begin{subfigure}[t]{0.49\linewidth}
@@ -246,42 +190,22 @@ throttling. In the original run the same cliff came at \qty{50.9}{\celsius}.
   reverse pass, with IQR bars; \ssdfromall). No span effect is visible in this range.}\label{fig:working-set}
 \end{figure}
 
-QD=1 random-read latency is flat:
-\csvq[1]{working_set}{span_gib=1,mode=read,qd=1}{lat_mean_us_median},
+QD=1 random-read latency is flat
+(\csvq[1]{working_set}{span_gib=1,mode=read,qd=1}{lat_mean_us_median},
 \csvq[1]{working_set}{span_gib=2,mode=read,qd=1}{lat_mean_us_median} and
-\csvq[1]{working_set}{span_gib=4,mode=read,qd=1}{lat_mean_us_median}\,\si{\micro\second} for spans of 1,
-2 and \qty{4}{\gibi\byte}. So are QD=32 read IOPS
-(\csvq{working_set}{span_gib=1,mode=read,qd=32}{iops_median},
-\csvq{working_set}{span_gib=2,mode=read,qd=32}{iops_median} and
-\csvq{working_set}{span_gib=4,mode=read,qd=32}{iops_median}), which differ by less than
-\qty{0.3}{\percent}. QD=32 random writes give
-\csvq{working_set}{span_gib=1,mode=write,qd=32}{iops_median},
-\csvq{working_set}{span_gib=2,mode=write,qd=32}{iops_median} and
-\csvq{working_set}{span_gib=4,mode=write,qd=32}{iops_median} IOPS, all at the in-cache write rate of
-\cref{sec:queue-depth}. The lower \qty{1}{\gibi\byte} median comes with the widest IQR
-(\csvq{working_set}{span_gib=1,mode=write,qd=32}{iops_q25}--\csvq{working_set}{span_gib=1,mode=write,qd=32}{iops_q75})
-and does not indicate a trend. Because every span ran once on the way up and once on the way down, a
-drift over time would have shown up as a forward/reverse difference. For reads the two passes agree
-within \qty{1}{\percent}. The absolute read latency is about \qty{6}{\percent} lower than the original
-run's clean baseline on the \qty{2}{\gibi\byte} file
-(\csvq[1]{layout}{experiment=layout_seq_filled,bs=4096}{lat_mean_us_median}\,\si{\micro\second} QD=1
-random read in \code{layout}).
-
-Hypothesis~(iv) predicted slower random reads as the span grows from 1 to \qty{60}{\gibi\byte},
-because map lookups would miss the controller's mapping cache more often. The lean re-run covers only
-1--\qty{4}{\gibi\byte}. At 4 bytes of map per \qty{4}{\kibi\byte} page, \qty{4}{\gibi\byte} needs only
-\qty{4}{\mebi\byte} of map, so the flat result is consistent with a mapping cache that covers at least that
-much, and says nothing about larger spans. The original run did sweep 1 to \qty{60}{\gibi\byte}
-(\code{working_set/20261021-105439}). There, QD=1 latency rose by about \qty{37}{\percent} and QD=32
-read IOPS fell by \qty{25}{\percent}. That sweep ran right after the \qty{60}{\gibi\byte} fill, with
-tens of gigabytes still being folded, in increasing span order only, and even its \qty{1}{\gibi\byte}
-point reached only \num{12100} QD=1 IOPS against \num{20000} here. Its trend cannot be separated from
-the fold backlog and elapsed time. Hypothesis~(iv) is therefore only partly tested: no effect from 1
-to \qty{4}{\gibi\byte}, and untested beyond \qty{4}{\gibi\byte}, where it predicted the effect. We
-could not tell whether the drive uses a host memory buffer (no allocation message in the kernel log).
+\csvq[1]{working_set}{span_gib=4,mode=read,qd=1}{lat_mean_us_median}\,\si{\micro\second}), QD=32 read IOPS
+differ by less than \qty{0.3}{\percent}, and QD=32 writes stay at the in-cache rate
+(\csvq{working_set}{span_gib=1,mode=write,qd=32}{iops_median}--%
+\csvq{working_set}{span_gib=4,mode=write,qd=32}{iops_median} IOPS). Forward and reverse passes agree within
+\qty{1}{\percent}, so there was no drift. At 4 bytes of map per \qty{4}{\kibi\byte} page,
+\qty{4}{\gibi\byte} needs only \qty{4}{\mebi\byte} of map, so this says nothing about hypothesis~(iv)'s
+larger spans. The original 1--\qty{60}{\gibi\byte} sweep showed QD=1 latency rising \qty{37}{\percent},
+but it ran right after the \qty{60}{\gibi\byte} fill, in one direction, with its \qty{1}{\gibi\byte} point
+already at \num{12100} QD=1 IOPS against \num{20000} here, so it cannot be separated from the fold
+backlog. Hypothesis~(iv) remains untested beyond \qty{4}{\gibi\byte}.
 
 \subsection{Data layout: why preconditioning order matters}\label{sec:layout}
-\begin{table}[tbp]
+\begin{table}[!htbp]
   \centering\small
   \caption{The same reads on the same \qty{2}{\gibi\byte} file after a sequential fill and after a random
   \qty{4}{\kibi\byte} overwrite (medians of 5 repetitions).}\label{tab:layout}
@@ -299,28 +223,13 @@ could not tell whether the drive uses a host memory buffer (no allocation messag
   \end{tabular}
 \end{table}
 
-An early pilot run, since discarded, exposed this effect by accident: a \qty{128}{\kibi\byte} QD=1
-sequential read run right after a random-write test was several times slower than the block-size sweep.
-An SSD places data in the order it was \emph{written}, not by logical address. \Cref{tab:layout} tests
-this directly, and the hypothesis is confirmed strongly. After the random overwrite, QD=1 sequential
-reads drop from \csvq{layout}{experiment=layout_seq_filled,bs=131072,qd=1}{mibps_median} to
-\csvq{layout}{experiment=layout_rand_overwritten,bs=131072,qd=1}{mibps_median}\,MiB/s ($6.4\times$).
-\qty{4}{\kibi\byte} random reads are unaffected
-(\csvq{layout}{experiment=layout_seq_filled,bs=4096}{iops_median} vs.\
-\csvq{layout}{experiment=layout_rand_overwritten,bs=4096}{iops_median} IOPS), since a single page costs
-the same wherever it sits.
-
-Our sub-prediction that QD=32 would hide the gap was \emph{wrong}. At QD=32 the fragmented file gives
-\csvq{layout}{experiment=layout_rand_overwritten,bs=131072,qd=32}{mibps_median}\,MiB/s against
-\csvq{layout}{experiment=layout_seq_filled,bs=131072,qd=32}{mibps_median}, a $9.2\times$ gap, and no
-better than at QD=1. Each fragmented \qty{128}{\kibi\byte} request becomes up to 32 scattered page
-reads. The drive completes \ensuremath{\sim}\num{1830} such requests per second (about \num{58}k page
-reads/s) at either depth, well below the \num{130}k random \qty{4}{\kibi\byte} reads/s it sustains at
-QD=32. We hypothesise that the controller serializes the fragments of one command, or that read-ahead
-actively wastes bandwidth on the wrong pages, but we did not test this.
-
-This is the \enquote{insufficient preconditioning} pitfall in a subtler form. A sequential benchmark is
-meaningful only if the data's write history is controlled. That is why \code{run.sh} rewrites the test
-file sequentially before every sequential-read group. One group missed this in the original run:
-in \code{all}, \code{fio_check} followed \code{layout} without a rewrite, so its sequential points
-measured the fragmented layout (\cref{sec:fio-check}). The script has since been fixed.
+An SSD places data in the order it was \emph{written}, not by logical address, and \cref{tab:layout}
+confirms hypothesis~(v) strongly. After the random overwrite, QD=1 sequential reads drop from
+\csvq{layout}{experiment=layout_seq_filled,bs=131072,qd=1}{mibps_median} to
+\csvq{layout}{experiment=layout_rand_overwritten,bs=131072,qd=1}{mibps_median}\,MiB/s ($6.4\times$), while
+\qty{4}{\kibi\byte} random reads are unaffected. Our sub-prediction that QD=32 would hide the gap was
+\emph{wrong}: it grows to $9.2\times$. Each fragmented \qty{128}{\kibi\byte} request becomes up to 32
+scattered page reads, and the drive completes \ensuremath{\sim}\num{1830} such requests per second (about
+\num{58}k page reads/s) at either depth, well below the \num{130}k random reads/s it sustains at QD=32; why
+is untested. A sequential benchmark is meaningful only if the data's write history is controlled, which
+is why \code{run.sh} rewrites the file before every sequential-read group.

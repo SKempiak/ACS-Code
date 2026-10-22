@@ -5,10 +5,9 @@ comparisons (with \cref{sec:rw-mix}).}
 
 \begin{hypothesis}
   \emph{Access size.} Reading a whole $B$-byte block per access should leave sequential bandwidth roughly
-  unchanged (the stream is the same) but raise random bandwidth steeply with $B$, because a larger block
-  amortises one DRAM latency over more lines and lets the adjacent-line and stream prefetchers help.
-  The latency of one dependent $B$-byte access should grow far less than $B$, since its lines are fetched
-  in parallel. \emph{Stride.} With one \qty{8}{\byte} element used per stride, useful bandwidth should
+  unchanged but raise random bandwidth steeply with $B$, because a larger block amortises one DRAM latency
+  over more lines and lets the prefetchers help. The latency of one dependent $B$-byte access should grow far
+  less than $B$, since its lines are fetched in parallel. \emph{Stride.} With one \qty{8}{\byte} element used per stride, useful bandwidth should
   fall roughly as $1/\text{stride}$ once the stride reaches a \qty{64}{\byte} line.
 \end{hypothesis}
 
@@ -18,19 +17,17 @@ comparisons (with \cref{sec:rw-mix}).}
   Script      & \code{Cache_and_Memory_Performance_Profiling/scripts/run.sh pattern} \\
 \end{knobs}
 
-\paragraph{Definitions.} \emph{Access size} $B$: the buffer is cut into $B$-byte blocks and every byte of
-a block is read (\qty{256}{\bit} vector loads) before the next block; sequential visits blocks in address
-order, random in a shuffled order. For \emph{latency}, \code{mem_latency --access B} chains the blocks:
-the next block's address depends on all lines of the current block, so one access is one dependent
-$B$-byte request. \emph{Stride} (secondary, \cref{fig:stride}) keeps the earlier definition: one
-\qty{8}{\byte} element used per stride, scalar FP loads.
+\paragraph{Definitions.} \emph{Access size} $B$: every byte of a $B$-byte block is read (\qty{256}{\bit}
+loads) before the next block, visited in address or shuffled order. For latency, the next block's address
+depends on all lines of the current one, so one access is one dependent $B$-byte request. \emph{Stride}
+(\cref{fig:stride}): one \qty{8}{\byte} scalar element used per stride.
 
 \begin{figure}[tbp]
   \centering
   \begin{subfigure}[t]{0.49\linewidth}
     \IfDataExists{pattern_bw}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, xmode=log, log basis x=2, height=0.85\linewidth, ymin=0,
+      \begin{axis}[acs, xmode=log, log basis x=2, height=0.72\linewidth, ymin=0,
                    xlabel={Access size $B$ (bytes)}, ylabel={Bandwidth (GiB/s)}, legend pos=south east]
         \addplot+[iqr bars] table[x=access, y=gib_s_median, iqr of=gib_s, only if={pattern}{sequential}] {data/pattern_bw.csv};
         \addlegendentry{sequential}
@@ -43,7 +40,7 @@ $B$-byte request. \emph{Stride} (secondary, \cref{fig:stride}) keeps the earlier
   \begin{subfigure}[t]{0.49\linewidth}
     \IfDataExists{pattern_lat}{%
     \begin{tikzpicture}
-      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, height=0.85\linewidth,
+      \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, height=0.72\linewidth,
                    xlabel={Access size $B$ (bytes)}, ylabel={Latency per access (ns)}, legend pos=north west]
         \addplot+[iqr bars] table[x=access, y=ns_per_access_median, iqr of=ns_per_access, only if={pattern}{random}] {data/pattern_lat.csv};
         \addlegendentry{random}
@@ -65,25 +62,21 @@ Growing the block to \qty{256}{\byte} and \qty{1024}{\byte} lifts random bandwid
 (sequential: \valqty{pat_bw_seq_256}{\gibi\byte\per\second}, \valqty{pat_bw_seq_1024}{\gibi\byte\per\second}),
 shrinking the gap to \val{pat_bw_ratio_1024}$\times$; at \qty{4096}{\byte} random blocks reach
 \valqty{pat_bw_rand_4096}{\gibi\byte\per\second}, close to the sequential \valqty{pat_bw_seq_4096}{\gibi\byte\per\second}.
-Within a block lines are contiguous, so their misses overlap and the prefetchers engage. Sequential
-bandwidth is flat from \qty{256}{\byte} up, as expected; it is lower only at \qty{64}{\byte}, where the
-per-block loop overhead is paid on every line. The latency panel tells the same story per request. A random
-dependent \qty{64}{\byte} access costs \valqty{pat_lat_rand_64_ns}{\nano\second}, but a
-\qty{1024}{\byte} one costs only \valqty{pat_lat_rand_1024_ns}{\nano\second}---16 lines for far less
-than 16 latencies---so a single dependent chain moves \valqty{pat_lat_rand_1024_gib}{\gibi\byte\per\second}
-instead of \valqty{pat_lat_rand_64_gib}{\gibi\byte\per\second}. Sequentially chained blocks cost \valqty{pat_lat_seq_64_ns}{\nano\second} (\qty{64}{\byte}) and
-\valqty{pat_lat_seq_1024_ns}{\nano\second} (\qty{1024}{\byte}); the difference from the random values is
-the part of the DRAM latency the stream prefetcher hides by fetching the next block early, so sequential
-``latency'' is partly throughput. The hiding fades as blocks grow: at \qty{4096}{\byte} a sequential access
-costs \valqty{pat_lat_seq_4096_ns}{\nano\second}, no better than random (\valqty{pat_lat_rand_4096_ns}{\nano\second}).
-Every block then starts a new \qty{4}{\kibi\byte} page, and the stream prefetcher does not prefetch across
-page boundaries, so each dependent access begins with a full miss.
+Contiguous lines within a block overlap their misses and engage the prefetchers; sequential bandwidth is
+flat from \qty{256}{\byte} up. Per request, a random dependent \qty{64}{\byte} access costs
+\valqty{pat_lat_rand_64_ns}{\nano\second} but a \qty{1024}{\byte} one only
+\valqty{pat_lat_rand_1024_ns}{\nano\second}---16 lines for far less than 16 latencies---so one dependent
+chain moves \valqty{pat_lat_rand_1024_gib}{\gibi\byte\per\second} instead of
+\valqty{pat_lat_rand_64_gib}{\gibi\byte\per\second}. Sequentially chained blocks cost
+\valqty{pat_lat_seq_64_ns}{\nano\second} (\qty{64}{\byte}) and \valqty{pat_lat_seq_1024_ns}{\nano\second}
+(\qty{1024}{\byte}), the gap to random being latency the prefetcher hides; at \qty{4096}{\byte} it is gone (\valqty{pat_lat_seq_4096_ns}{\nano\second} vs.\ \valqty{pat_lat_rand_4096_ns}{\nano\second}
+random): every block starts a new \qty{4}{\kibi\byte} page, and the prefetcher does not cross pages.
 
-\begin{figure}[tbp]
+\begin{figure}[htb]
   \centering
   \IfDataExists{pattern_bw}{%
   \begin{tikzpicture}
-    \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, width=0.7\linewidth,
+    \begin{axis}[acs, xmode=log, log basis x=2, ymode=log, width=0.75\linewidth, height=0.36\linewidth,
                  xlabel={Byte stride (one \qty{8}{\byte} element used per stride)},
                  ylabel={Useful bandwidth (GiB/s)}, legend pos=south west]
       \addplot+[iqr bars] table[x=strideb, y=gib_s_median, iqr of=gib_s, only if={access}{0}, only if={pattern}{sequential}] {data/pattern_bw.csv};
@@ -98,32 +91,28 @@ page boundaries, so each dependent access begins with a full miss.
 \subsection{Analysis: stride, and the line-traffic anomaly}
 Sequential useful bandwidth is \valqty{pat_stride_seq_8}{\gibi\byte\per\second} at unit (\qty{8}{\byte})
 stride and \valqty{pat_stride_seq_64}{\gibi\byte\per\second} at \qty{64}{\byte}. At \qty{64}{\byte} stride
-every access still pulls a whole line, so the \emph{line} traffic is $8\times$ the useful bandwidth:
+every access pulls a whole line, so \emph{line} traffic is $8\times$ the useful bandwidth:
 \valqty{pat_stride_seq_64_line}{\gibi\byte\per\second}, i.e.\ \val{pat_stride64_over_unit}$\times$ the
-unit-stride rate. A unit-stride scalar read is therefore \emph{not} a measure of the single-core
-streaming limit, although it is the obvious kernel to use for one. The
-explanation is on the core side, not in memory: the unit-stride scalar kernel spends eight loads and eight
-FP adds on every line, so fewer distinct lines fit in the out-of-order window and fewer misses are in
-flight. Kernels that spend fewer instructions per line move more lines: one load per line
-(\qty{64}{\byte} stride) gives \valqty{pat_stride_seq_64_line}{\gibi\byte\per\second}, and full-line vector
-reads of large blocks give up to \valqty{pat_bw_seq_max}{\gibi\byte\per\second}. The vector kernel at
-\qty{64}{\byte} blocks, which still pays per-block loop overhead, is only \val{pat_vec_over_scalar}$\times$
-the scalar kernel (\valqty{pat_bw_seq_64}{\gibi\byte\per\second}). The single-core streaming limit is
-therefore about \qtyrange{15}{16}{\gibi\byte\per\second}, and no measured line traffic exceeds it. The
-loaded-latency study (\cref{sec:intensity}) uses a two-loads-per-line vector stream. Contrary to our hypothesis, useful bandwidth does \emph{not} keep falling as
+unit-stride rate. So the obvious unit-stride scalar read does \emph{not} measure the single-core streaming
+limit: with eight loads and adds per line, fewer lines fit in the out-of-order window. Full-line vector reads of large blocks reach
+\valqty{pat_bw_seq_max}{\gibi\byte\per\second} (at \qty{64}{\byte} blocks, with loop overhead, only
+\val{pat_vec_over_scalar}$\times$ the scalar kernel: \valqty{pat_bw_seq_64}{\gibi\byte\per\second}). The
+single-core streaming limit is therefore about \qtyrange{15}{16}{\gibi\byte\per\second}; the loaded-latency
+study (\cref{sec:intensity}) uses a two-loads-per-line vector stream.
+
+Contrary to our hypothesis, useful bandwidth does \emph{not} keep falling as
 $1/\text{stride}$ beyond one line: it is \valqty{pat_stride_seq_256}{\gibi\byte\per\second} at
 \qty{256}{\byte} and \valqty{pat_stride_seq_1024}{\gibi\byte\per\second} at \qty{1024}{\byte}, so touched-line
 traffic drops from \valqty{pat_stride_seq_64_line}{\gibi\byte\per\second} to
 \valqty{pat_stride_seq_256_line}{\gibi\byte\per\second} and \valqty{pat_stride_seq_1024_line}{\gibi\byte\per\second}.
-Once each access is a separate line, the kernel is limited by how many misses it keeps in flight, not by
-bandwidth; skipping lines saves bandwidth it was not using. The memory-controller counters show where the bytes go. At \qty{64}{\byte} stride DRAM reads are
+Each access is then a separate miss, so misses in flight, not bandwidth, limit it. At \qty{64}{\byte} stride DRAM reads are
 \valqty{pat_stride_seq_64_imcrd}{\gibi\byte\per\second}, \val{pat_stride_seq_64_imc_over_line}$\times$ the
 touched-line traffic. At \qty{256}{\byte} and \qty{1024}{\byte} strides DRAM reads are
 \val{pat_stride_seq_256_imc_over_line}$\times$ and \val{pat_stride_seq_1024_imc_over_line}$\times$ the touched
 lines (\valqty{pat_stride_seq_256_imcrd}{\gibi\byte\per\second} and
 \valqty{pat_stride_seq_1024_imcrd}{\gibi\byte\per\second}): the spatial (adjacent-line) prefetcher fetches the
 other half of each \qty{128}{\byte} pair, so every useful \qty{8}{\byte} costs two lines of DRAM traffic.
-Random 64\,B blocks show the same pairing: DRAM reads are \valqty{pat_bw_rand_64_imcrd}{\gibi\byte\per\second}
-for \valqty{pat_bw_rand_64}{\gibi\byte\per\second} of useful blocks. Random strided access is flat at
-\val{pat_stride_rand_8}--\valqty{pat_stride_rand_1024}{\gibi\byte\per\second} of useful data: each access is
-an independent miss, so stride barely matters.
+Random 64\,B blocks show the same pairing (\valqty{pat_bw_rand_64_imcrd}{\gibi\byte\per\second} of DRAM reads
+for \valqty{pat_bw_rand_64}{\gibi\byte\per\second} useful). Random strided access is flat at
+\val{pat_stride_rand_8}--\valqty{pat_stride_rand_1024}{\gibi\byte\per\second}: every access is an independent
+miss.

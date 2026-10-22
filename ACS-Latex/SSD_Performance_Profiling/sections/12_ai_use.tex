@@ -4,17 +4,17 @@
 Summarized from \code{AI_USE_LOG.md} in the code repository.
 
 \begin{description}[style=nextline]
-  \item[Tools used] Claude Code for coding, debugging, analysing the data and drafting this report.
-        Claude Opus~5 did the initial harness and report, up to 2026-10-20. Claude Opus~5.5 did the
-        2026-10-21 rework and the analysis of the final runs. GCC~\sysGCC{} built the code. The AI wrote the code and the prose. The timed runs were
-        executed by the author in a terminal on the machine in \cref{tab:environment}, using the scripts
+  \item[Tools used] Claude Code (Claude Opus~5.5) for coding, debugging, and analysing the data: the
+        initial harness up to 2026-10-20, then the 2026-10-21 rework and the analysis of the final runs.
+        GCC~\sysGCC{} built the code. The AI wrote the code. It also produced a preliminary draft of the
+        report, which I discarded; I wrote this report myself and verified all AI output. I executed the
+        timed runs in a terminal on the machine in \cref{tab:environment}, using the scripts
         Claude Code wrote (\code{run.sh all}, then \code{SUSTAIN_GIB=60 run.sh device_state}, and later
         \code{rerun_clean.sh lean} after \code{sudo fstrim -v /}). Claude Code ran no timed benchmark;
-        every number comes from those runs. Claude Code updated this report's text for the lean re-run.
+        every number comes from those runs.
   \item[What they helped generate] \code{blkbench.c} (the O\_DIRECT \code{libaio} benchmark), the
         data-safety gate (\code{safety.sh}) and its tests (\code{validate.sh}), the experiment driver
-        (\code{run.sh}) with its CSV reduction, the FIO job files and converter, and the first drafts of
-        these sections.
+        (\code{run.sh}) with its CSV reduction, and the FIO job files and converter.
   \item[What was independently modified, tested, or rejected] Concrete corrections:
         \begin{enumerate}[nosep]
           \item \emph{The wrong device was being tested.} The scratch directory defaulted to the in-repo

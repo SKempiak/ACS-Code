@@ -1,48 +1,22 @@
 % !TeX root = ../main.tex
 \section{Conclusion}\label{sec:conclusion}
 
-The Micron 2210 NVMe SSD shows the queueing-driven throughput--latency tradeoff the project set out to
-measure. At QD=1, \qty{4}{\kibi\byte} random reads cost
-\csvq[1]{zero_queue}{mode=read,pattern=rand}{lat_mean_us_median}\,\si{\micro\second} and writes only
-\csvq[1]{zero_queue}{mode=write,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}, because the
-controller's write buffer hides the flash program.
+At QD=1 the Micron 2210's write buffer makes \qty{4}{\kibi\byte} random writes faster than reads. Block size moves the
+bottleneck from per-request latency to bandwidth, but even at QD=32 sequential reads reach only
+\qty{57}{\percent} of the PCIe link, so the NAND back end is the ceiling, and writes saturate the
+\ensuremath{\sim}\qty{1.06}{\gibi\byte\per\second} SLC ingest rate even at QD=1. Mixing reads and writes
+is worse than either pure workload. The read knee lies at QD~\csvq{queue_depth_knee}{mode=read}{knee_qd}
+under an explicit \qty{10}{\percent}-per-doubling rule; beyond it latency doubles per doubling of QD, and
+$L/\text{QD}$ of 0.987--0.998 confirms that the saturation is the device's, not the harness's.
 
-Block size moves the bottleneck from per-request latency to bandwidth. With one request in flight,
-sequential reads stay near \qty{1.4}{\gibi\byte\per\second} from 64 to \qty{256}{\kibi\byte} and reach
-\csvq{block_size}{bs=1048576,pattern=seq,mode=read,qd=1}{mibps_median}\,MiB/s at \qty{1}{\mebi\byte}. At
-QD=32 they top out at \csvq{block_size}{bs=65536,pattern=seq,mode=read,qd=32}{mibps_median}\,MiB/s,
-\qty{57}{\percent} of the \qty{3756}{\mebi\byte\per\second} PCIe~3.0~$\times$4 link. The NAND back end,
-not the interface, is the ceiling. Writes saturate at \ensuremath{\sim}\qty{1.06}{\gibi\byte\per\second}
-of SLC ingest even at QD=1. Mixing reads with writes is worse than either pure workload.
+Device state matters as much as configuration. Even on a trimmed, idle drive the SLC cache held only
+\csvval[1]{sustained_summary}{cliff_gib}\,GiB, plausibly because it scales with free space, and past it
+writes fell $\ssdburstratio\times$. Recent writes halved read IOPS and stretched p99.9/p50 from
+\ssdtailratio{128}{p999}$\times$ to $24\times$, and the write history of the data made
+\enquote{sequential} reads 6--9$\times$ slower. Temperature stayed far below the warning threshold.
 
-The read knee is at QD~\csvq{queue_depth_knee}{mode=read}{knee_qd} under an explicit
-\qty{10}{\percent}-per-doubling rule. Beyond it, latency doubles with every doubling of QD for at most a
-few percent more IOPS. $L/\text{QD}$ stays at 0.987--0.998. Little's Law holds by construction in a
-closed loop, so this confirms that the harness keeps the queue full and the saturation is the device's.
-
-Device state matters as much as configuration. A lean re-run on a freshly trimmed, idle drive found
-the SLC cache much smaller than expected: a sequential fill hit the cliff after
-\csvval[1]{sustained_summary}{cliff_gib}\,GiB instead of the \ensuremath{\sim}\qty{20}{\gibi\byte} we
-had assumed, so the stop-at-cliff fill wrote only \csvval[1]{sustained_summary}{fill_gib}\,GiB. That
-size is consistent with a dynamic cache that scales with the drive's free space, which we could not
-control or measure because only the scratch partition was trimmed. We report it as the cache available
-in this state, not as a fixed capacity. Past the cliff, sequential writes fall from
-\csvval{sustained_summary}{burst_mibps} to \csvval{sustained_summary}{steady_mibps}\,MiB/s
-($\ssdburstratio\times$), and 4\,KiB random writes run at about \num{15}k IOPS with
-\qty{36}{\milli\second} per-second p99. A minute of idle restored at least \qty{1}{\gibi\byte} of cache
-after this short fill, but nothing after the original run's \qty{60}{\gibi\byte} one. On the rested
-drive, read tails widen with queue depth to p99.9/p50 $=\ssdtailratio{128}{p999}\times$ at QD=128.
-Right after heavy writes they lost half their IOPS and reached $24\times$. Sequential reads of randomly
-written data run $6$--$9\times$ slower whatever the queue depth. The write collapses seen inside the
-original sweeps disappeared when the same points were re-measured after a rest. The NVMe temperature
-peaked at \qty{61.9}{\celsius}, far below the drive's \qty{86.85}{\celsius} warning threshold, so we
-saw no thermal effects.
-
-The sharpest lessons are methodological. Without \code{O_DIRECT}, the same workload reported
-page-cache fiction. The first dataset was taken on the HDD until the \code{rotational} flag gave it away.
-A \enquote{sequential} read can be six to nine times slower depending only on how the data was written.
-And on a QLC drive, \emph{what ran just before} changes write throughput by an order of magnitude and read
-tails severalfold, and even a trimmed, idle drive offered an SLC cache far smaller than expected,
-plausibly because its size depends on how full the drive is. A storage measurement can be trusted only if it bypasses the cache, verifies its
-effective queue depth, controls the data's write history and the drive's recent workload, and confirms
-which device it is talking to.
+The sharpest lessons are methodological. Without \code{O_DIRECT} the same workload reported page-cache
+fiction, and the first dataset was taken on the HDD until the \code{rotational} flag gave it away. A
+storage measurement can be trusted only if it bypasses the cache, verifies its effective queue depth,
+controls the data's write history and the drive's recent workload, and confirms which device it is
+talking to.
