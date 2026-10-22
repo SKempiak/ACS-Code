@@ -29,11 +29,15 @@
   Random-read IOPS saturate at QD~\csvq{queue_depth_knee}{mode=read}{knee_qd}
   (\csvq{queue_depth_knee}{mode=read}{knee_iops} IOPS) under a stated knee criterion, and Little's Law
   serves as a consistency check on the closed-loop harness. Writes land in an SLC cache at
-  \csvval{sustained_summary}{burst_mibps}\,MiB/s. Once it is full, sequential writes fall to
-  \csvval{sustained_summary}{steady_mibps}\,MiB/s and 4\,KiB random writes to
-  \csvval{sustained_summary}{rand_steady_iops} IOPS. Reads issued while the drive is still folding
-  recent writes show p99.9 latencies up to 24$\times$ their median, and sequential reads of randomly
-  written data run 6--9$\times$ slower. The required misleading setup, dropping
+  \csvval{sustained_summary}{burst_mibps}\,MiB/s. In a lean re-run on a freshly trimmed, idle drive,
+  that cache absorbed only \csvval[1]{sustained_summary}{cliff_gib}\,GiB of a sequential fill, far
+  less than the \ensuremath{\sim}\qty{20}{\gibi\byte} we expected and consistent with a dynamic SLC
+  cache sized by the drive's free space. Past it, sequential writes fall to
+  \csvval{sustained_summary}{steady_mibps}\,MiB/s and 4\,KiB random writes to about \num{15}k IOPS.
+  On a rested drive, read tails widen with queue depth to a p99.9 of
+  \ssdtailratio{128}{p999}$\times$ the median at QD=128; in an earlier run that followed heavy writes
+  they reached 24$\times$. Sequential reads of randomly written data run 6--9$\times$ slower. The
+  required misleading setup, dropping
   \code{O_DIRECT}, over-reports throughput
   \csvget\ssdBuf{pitfall}{mode=read-buffered}{iops_median}\csvget\ssdDir{pitfall}{mode=read}{iops_median}%
   \ssdratio[0]{\ssdBuf}{\ssdDir}$\times$ because it measures the page cache.

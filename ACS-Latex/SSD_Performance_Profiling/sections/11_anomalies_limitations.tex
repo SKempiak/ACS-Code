@@ -4,39 +4,61 @@
 
 \subsection{Unexpected results}
 \begin{itemize}
+  \item \textbf{The SLC cache is small.} On a trimmed drive that had been idle for half an hour, a
+        sequential fill hit the cliff after \csvval[1]{sustained_summary}{cliff_gib}\,GiB, not the
+        \ensuremath{\sim}\qty{20}{\gibi\byte} we expected. The original run's \qty{3.1}{\gibi\byte},
+        which we had blamed on run order, was therefore mostly not a run-order artifact. Hypothesis:
+        a dynamic cache sized by drive-wide free space, which is unknown here because only the
+        scratch partition was trimmed (\cref{sec:device-state}). Not tested.
   \item \textbf{Random writes beat random reads, until the cache fills.} At QD=1, \qty{4}{\kibi\byte}
         writes take \csvq[1]{zero_queue}{mode=write,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}
         and reads \csvq[1]{zero_queue}{mode=read,pattern=rand}{lat_mean_us_median}\,\si{\micro\second}.
         At QD=16, pure writes (\csvq{rw_mix}{rwmix=0}{iops_median} IOPS) beat pure reads
         (\csvq{rw_mix}{rwmix=10}{iops_median}). The controller acknowledges writes from its SLC/SRAM buffer.
-        The sustained run confirms the mechanism: once the buffer is full, random writes average
-        \csvval{sustained_summary}{rand_steady_iops} IOPS, far below reads.
-  \item \textbf{Write collapses inside ordinary sweeps.} Three block-size random-write points
-        ($\geq$\qty{256}{\kibi\byte}) and the QD=8 queue-depth write point fell to the direct-to-QLC rate,
-        with p99 of tens of milliseconds, while their neighbours did not. Hypothesis: transient SLC
-        exhaustion after several GiB of writes. These points are reported, not dropped, and the knee
-        rule's output for writes is overridden in the text.
+        The sustained run confirms the mechanism: once the buffer is full, random writes at QD32 drop
+        to about \num{15}k IOPS per second, far below reads.
+  \item \textbf{Write collapses inside ordinary sweeps were drive state.} In the original run, three
+        block-size random-write points ($\geq$\qty{256}{\kibi\byte}) and the QD=8 queue-depth write
+        point fell to the direct-to-QLC rate, with p99 of tens of milliseconds. The lean re-run
+        measured them again after rests and pauses, and all ran at the in-cache rate
+        (\cref{sec:block-size,sec:queue-depth}). The knee rule no longer needs overriding for writes.
   \item \textbf{Sequential-read speed depends on write history} ($6.4\times$ at QD=1 and $9.2\times$ at
         QD=32; \cref{sec:layout}). Deep queues did not hide the gap, contrary to our prediction.
-  \item \textbf{Tails depend on recent writes.} At the same QD, tail runs right after the queue-depth
-        write sweep had half the IOPS and up to $5\times$ larger p99.9/p50 ratios than the clean sweep
-        (\cref{sec:tail}).
-  \item \textbf{FIO and \code{blkbench} differ on QD=32 random writes} (0.78), with matching medians and
-        a heavier FIO tail. Hypothesis: FIO always ran second in each pair, after \code{blkbench} had just
-        written \qty{256}{\mebi\byte} (\cref{sec:fio-check}). Not tested.
-  \item \textbf{No recovery after \qty{60}{\second} idle} following the sustained write. The fold backlog
-        needs much longer.
+  \item \textbf{Tails depend on recent writes.} The original tail runs, right after the queue-depth
+        write sweep, had half the IOPS of the rested lean re-run at QD=32 and p99.9/p50 ratios up to
+        $24\times$, against at most \ssdtailratio{128}{p999}$\times$ on the rested drive (\cref{sec:tail}).
+  \item \textbf{FIO and \code{blkbench} differ on write points by up to \qty{12}{\percent}}, in both
+        directions, and the QD=32 ratio changed sign between the two runs (0.78, then
+        \csvq[2]{fio_compare}{mode=write,pattern=rand,qd=32}{iops_ratio}). The alternating order shows
+        that for the sequential write the position within a pair moves a result more than the
+        engine does. A small extra per-I/O cost in FIO at QD=1 cannot be ruled out (\cref{sec:fio-check}).
+  \item \textbf{Recovery depends on the backlog.} After a \qty{60}{\second} idle, the lean re-run's
+        recovery probe wrote \qty{1}{\gibi\byte} at full burst speed; the original run, after tens of
+        gigabytes of writes, recovered nothing.
 \end{itemize}
 
 \subsection{Limitations}
 \begin{itemize}
-  \item \textbf{Run order shaped the device-state results.} \code{device_state} ran immediately after
-        \code{all}, with no idle and no TRIM. Only \ensuremath{\sim}\qty{3}{\gibi\byte} of SLC was free,
-        so the fresh-drive SLC capacity was not measured, and the working-set numbers describe a drive
-        busy with background folding. A clean measurement needs an idle and trimmed drive. That needs
-        root for \code{fstrim}, or waiting for the weekly timer.
+  \item \textbf{Two runs are combined.} The lean re-run (\code{20261021-220614}) re-measured only the
+        experiments that the original run order had confounded: sustained, tail, working set, the
+        QD=32 random reads and $\geq$\qty{256}{\kibi\byte} random writes of the block-size sweep, write
+        QD 4--32 and the FIO write points. Zero-queue, read/write mix, the read queue-depth sweep,
+        layout, pitfall and the rest of the block-size sweep still come from \code{20261021-103201}, on
+        a drive that had absorbed earlier writes without a rest. Where both runs measured comparable
+        points, the rested drive was about \qty{5}{\percent} faster for \qty{4}{\kibi\byte} reads at
+        QD=32 and \qty{22}{\percent} faster at QD=8 (\cref{sec:tail}), so the original-run read
+        numbers may be slightly pessimistic.
+  \item \textbf{The lean fill is short.} The cliff came early, so the fill wrote only
+        \csvval[1]{sustained_summary}{fill_gib}\,GiB. The post-cliff rate rests on \qty{11}{\second},
+        the random phase on \qty{8.7}{\second} (its average is skewed by a final SLC-speed burst), and
+        the recovery probe was capped at \qty{1}{\gibi\byte}. The cache size was measured in one drive
+        state only, and the free-space explanation for it is untested.
+  \item \textbf{Working set only up to \qty{4}{\gibi\byte} on a clean drive.} The lean re-run found no
+        span effect from 1 to \qty{4}{\gibi\byte}; the original 1--\qty{60}{\gibi\byte} sweep is
+        confounded by the fold backlog, so larger spans remain untested.
   \item \textbf{Primary engine is not FIO.} The sweeps use \code{blkbench}. FIO cross-checks it on seven
-        points (\cref{sec:fio-check}): reads agree within \qty{2}{\percent}, QD=32 random writes do not.
+        points (\cref{sec:fio-check}): reads agree within \qty{2}{\percent}, writes within
+        \qty{12}{\percent}, with drive state the main source of the difference.
         \code{ENGINE=fio} reruns every sweep through FIO.
   \item \textbf{Closed-loop load only.} Every experiment holds a fixed QD. An open-loop (fixed arrival
         rate) generator would show queueing delay against offered load, and its tails would differ.
@@ -44,15 +66,19 @@
         $L/\text{QD}$ (\cref{tab:littles-law}). That includes time in the kernel block layer, so it
         bounds device-queue occupancy from above.
   \item \textbf{SMART needs root.} Temperature comes from the NVMe hwmon sensor, which needs no root.
-        Data-units-written, media errors and the throttle counters are unavailable, so throttling is
+        The lean re-run's \code{nvme smart-log} snapshots failed with \enquote{Permission denied}, so
+        data-units-written, media errors and the throttle counters are unavailable, and throttling is
         inferred only from temperature and throughput together.
   \item \textbf{Filesystem, not raw device; partial LBA range.} I/O goes to disposable files on ext4: a
-        \qty{2}{\gibi\byte} file for the sweeps and a \qty{60}{\gibi\byte} file for device state, about
-        \qty{13}{\percent} of the drive. Full-drive SNIA steady state is out of scope.
+        \qty{2}{\gibi\byte} (original) or \qty{4}{\gibi\byte} (lean) file for the sweeps, a
+        \qty{60}{\gibi\byte} file for the original device-state run (about \qty{13}{\percent} of the
+        drive) and \qty{4.3}{\gibi\byte} of fill in the lean one. Full-drive SNIA steady state is out of
+        scope, and only the scratch partition could be trimmed.
   \item \textbf{Byte caps and few repetitions on write points.} Write points stop after
-        \qty{256}{\mebi\byte} per repetition and use 3--5 repetitions, so a single flush stall can move a
-        median (QD=8 writes). The QD=32 FIO comparison suggests a \ensuremath{\sim}\qty{20}{\percent}
-        drive-state uncertainty on write numbers.
+        \qty{256}{\mebi\byte} (\qty{128}{\mebi\byte} in the lean re-run) per repetition and use 3--5
+        repetitions, so a single flush stall can move a median, as the original QD=8 write point showed.
+        The FIO order split suggests a \ensuremath{\sim}\qty{15}{\percent} drive-state uncertainty on
+        write numbers.
   \item \textbf{One \code{fio_check} group was not re-filled.} Its sequential points measured the
         fragmented layout left by \code{layout}. This does not affect the engine comparison, and the
         script has since been fixed.

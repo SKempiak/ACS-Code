@@ -46,8 +46,9 @@ error), so small p99 differences are expected.
 
 \begin{table}[tbp]
   \centering\small
-  \caption{\code{blkbench} vs.\ FIO on identical points (medians of 5 interleaved repetitions each;
-  latencies in \si{\micro\second}). \ssdfrom{the write points}}\label{tab:fio-check}
+  \caption{\code{blkbench} vs.\ FIO on identical points (medians of interleaved repetitions: 5 per
+  engine for reads, 4 per engine for writes, 2 of them in each position; latencies in
+  \si{\micro\second}). \ssdfrom{the write points}}\label{tab:fio-check}
   \IfFileExists{data/fio_compare.csv}{%
     \ssdload{fio_compare}\def\ssdRows{}%
     \pgfplotsforeachungrouped \ssdR in {0,...,\ssdLast}{%
@@ -76,42 +77,63 @@ leaves the file randomly overwritten, and the script did not rewrite it in betwe
 points therefore measured the fragmented layout of \cref{sec:layout}. That does not affect the engine
 comparison, but their absolute values must not be read as sequential-read performance.
 
-\textbf{Writes partly disagree.} QD=1 sequential writes agree (ratio 1.054) and QD=1 random writes are
-within the criterion (0.929, p50 \qty{14.7}{} vs.\ \qty{15.4}{\micro\second}). The QD=32 random-write point
-fails it: FIO reached \csvq{fio_compare}{mode=write,pattern=rand,qd=32}{fio_iops} IOPS against
-\code{blkbench}'s \csvq{fio_compare}{mode=write,pattern=rand,qd=32}{blk_iops} (0.78), with p99 at
-\csvq[0]{fio_compare}{mode=write,pattern=rand,qd=32}{fio_p99_us} vs.\
-\csvq[0]{fio_compare}{mode=write,pattern=rand,qd=32}{blk_p99_us}\,\si{\micro\second}. The medians, by
-contrast, agree (\csvq[0]{fio_compare}{mode=write,pattern=rand,qd=32}{fio_p50_us} vs.\
-\csvq[0]{fio_compare}{mode=write,pattern=rand,qd=32}{blk_p50_us}\,\si{\micro\second}). Identical medians
-argue against a per-I/O engine cost. The deficit sits in the tail, which is the signature of the drive
-pausing to flush its write buffer. Within each pair of repetitions, \code{blkbench} always ran first and
-FIO second, immediately after \code{blkbench} had written \qty{256}{\mebi\byte}. FIO therefore met a
-fuller buffer more often. We consider this ordering effect the most likely explanation, but we did not
-test it: that would need the engine order alternated or randomized per pair. Until then, write numbers
-from either engine carry an uncertainty of about \qty{20}{\percent} at QD=32, set by drive state rather
-than by the tool. The read results, which are not order-sensitive, show no such effect.
+\textbf{Writes vary more, and mostly with drive state.} The write points come from the lean re-run,
+where the engine order alternates within each pair of repetitions. The QD=1 sequential write agrees
+(ratio \csvq[3]{fio_compare}{mode=write,pattern=seq,qd=1}{iops_ratio}). The two random-write points
+fall just outside the \qty{10}{\percent} criterion, in opposite directions:
+\csvq[3]{fio_compare}{mode=write,pattern=rand,qd=1}{iops_ratio} at QD=1 and
+\csvq[3]{fio_compare}{mode=write,pattern=rand,qd=32}{iops_ratio} at QD=32. Their p50 latencies differ by
+less than \qty{1}{\micro\second}
+(\csvq[1]{fio_compare}{mode=write,pattern=rand,qd=1}{blk_p50_us} vs.\
+\csvq[1]{fio_compare}{mode=write,pattern=rand,qd=1}{fio_p50_us} and
+\csvq[1]{fio_compare}{mode=write,pattern=rand,qd=32}{blk_p50_us} vs.\
+\csvq[1]{fio_compare}{mode=write,pattern=rand,qd=32}{fio_p50_us}\,\si{\micro\second}).
+\Cref{tab:fio-order} splits each write point by engine and by position in the pair. For the same
+engine, the position alone moves the result by a similar amount to the engine gap. The clearest case is
+the sequential write: \code{blkbench} gave
+\csvq{fio_order}{experiment=blkbench_1st,mode=write,pattern=seq}{iops_median} IOPS when it ran first and
+\csvq{fio_order}{experiment=blkbench_2nd,mode=write,pattern=seq}{iops_median} when it ran second, a
+larger spread than between the engines in either position. For the random writes the position effect
+is smaller (2--7\,\%) and the engine gap (6--12\,\%) persists in both positions. Across the two runs,
+however, the QD=32 random-write ratio flipped, from 0.78 (FIO slower, and always second) in the original
+run to \csvq[2]{fio_compare}{mode=write,pattern=rand,qd=32}{iops_ratio} now, and the sequential ratio
+went from 1.05 to \csvq[2]{fio_compare}{mode=write,pattern=seq,qd=1}{iops_ratio}. A fixed engine bias
+would not change sign like that. We therefore attribute the write differences mainly to drive-state
+variance, that is, to how much buffered data the drive still had to flush when a repetition started,
+rather than to an engine bias.
 
-\IfFileExists{data/fio_order.csv}{%
-\paragraph{Engine order.} The current \code{fio_check} alternates which engine runs first in each pair
-of repetitions (\code{fio_order.csv}). If drive state rather than the engine explains the QD=32
-random-write gap, the IOPS should track position (1st vs.\ 2nd) more than engine:
-\begin{center}\small
-\begin{tabular}{@{}lrrrr@{}}
-  \toprule
-  QD=32 rand write & blkbench 1st & blkbench 2nd & FIO 1st & FIO 2nd \\
-  \midrule
-  IOPS & \csvq{fio_order}{experiment=blkbench_1st,mode=write,qd=32}{iops_median}
-       & \csvq{fio_order}{experiment=blkbench_2nd,mode=write,qd=32}{iops_median}
-       & \csvq{fio_order}{experiment=fio_1st,mode=write,qd=32}{iops_median}
-       & \csvq{fio_order}{experiment=fio_2nd,mode=write,qd=32}{iops_median} \\
-  p99 (\si{\micro\second}) & \csvq{fio_order}{experiment=blkbench_1st,mode=write,qd=32}{lat_p99_us_median}
-       & \csvq{fio_order}{experiment=blkbench_2nd,mode=write,qd=32}{lat_p99_us_median}
-       & \csvq{fio_order}{experiment=fio_1st,mode=write,qd=32}{lat_p99_us_median}
-       & \csvq{fio_order}{experiment=fio_2nd,mode=write,qd=32}{lat_p99_us_median} \\
-  \bottomrule
-\end{tabular}
-\end{center}}{%
-\paragraph{Engine order.} The reported run always ran \code{blkbench} first. \code{fio_check} now
-alternates the order per repetition and records each row's position (\code{fio_order.csv}), so the next
-run can separate drive state from engine.}
+One pattern is consistent with a small engine effect, though. At QD=1 random write, FIO is slower in
+\emph{both} positions, and it was also slower in the original run (0.93), with p50 about
+\qty{0.6}{\micro\second} higher each time. That would fit a slightly larger per-I/O host cost in FIO,
+which matters only when one request is in flight. With two repetitions per cell we cannot separate it
+from noise. We therefore give write numbers from either engine an uncertainty of roughly
+\qty{15}{\percent}, the size of the same-engine order effect. The reads, which leave no buffer to
+flush, agree within \qty{2}{\percent}.
+
+\begin{table}[tbp]
+  \centering\small
+  \caption{Write points of \code{fio_check} split by engine and by position within each pair of
+  repetitions: median IOPS of 2 repetitions per cell (\ssdfromall).}\label{tab:fio-order}
+  \IfFileExists{data/fio_order.csv}{%
+  \begin{tabular}{@{}lrrrr@{}}
+    \toprule
+    Point & blkbench 1st & blkbench 2nd & FIO 1st & FIO 2nd \\
+    \midrule
+    \qty{4}{\kibi\byte} rand, QD=1
+         & \csvq{fio_order}{experiment=blkbench_1st,mode=write,pattern=rand,qd=1}{iops_median}
+         & \csvq{fio_order}{experiment=blkbench_2nd,mode=write,pattern=rand,qd=1}{iops_median}
+         & \csvq{fio_order}{experiment=fio_1st,mode=write,pattern=rand,qd=1}{iops_median}
+         & \csvq{fio_order}{experiment=fio_2nd,mode=write,pattern=rand,qd=1}{iops_median} \\
+    \qty{4}{\kibi\byte} rand, QD=32
+         & \csvq{fio_order}{experiment=blkbench_1st,mode=write,qd=32}{iops_median}
+         & \csvq{fio_order}{experiment=blkbench_2nd,mode=write,qd=32}{iops_median}
+         & \csvq{fio_order}{experiment=fio_1st,mode=write,qd=32}{iops_median}
+         & \csvq{fio_order}{experiment=fio_2nd,mode=write,qd=32}{iops_median} \\
+    \qty{128}{\kibi\byte} seq, QD=1
+         & \csvq{fio_order}{experiment=blkbench_1st,mode=write,pattern=seq}{iops_median}
+         & \csvq{fio_order}{experiment=blkbench_2nd,mode=write,pattern=seq}{iops_median}
+         & \csvq{fio_order}{experiment=fio_1st,mode=write,pattern=seq}{iops_median}
+         & \csvq{fio_order}{experiment=fio_2nd,mode=write,pattern=seq}{iops_median} \\
+    \bottomrule
+  \end{tabular}}{\acsmissing{data/fio_order.csv}}
+\end{table}

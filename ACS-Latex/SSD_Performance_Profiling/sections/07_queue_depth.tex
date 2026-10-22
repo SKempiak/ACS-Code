@@ -74,20 +74,29 @@ QD~\csvq{queue_depth_knee}{mode=read}{next_qd} adds only
 \csvq[1]{queue_depth_knee}{mode=read}{gain_pct}\,\% IOPS. The preceding doubling, QD 32$\to$64, still
 gained \qty{15}{\percent}. The grid doubles at each step, so the knee lies between 32 and 64.
 
-\textbf{Writes.} Applied literally, the rule returns QD~\csvq{queue_depth_knee}{mode=write}{knee_qd}.
-That is an artifact. The QD=8 write point caught a buffer-flush stall: median
-\csvq{queue_depth}{qd=8,mode=write}{iops_median} IOPS with an IQR of
-\csvq{queue_depth}{qd=8,mode=write}{iops_q25}--\csvq{queue_depth}{qd=8,mode=write}{iops_q75} and a p99
-of \csvq[1]{queue_depth}{qd=8,mode=write}{lat_p99_us_median}\,\si{\micro\second}. The rule therefore saw
-a fall rather than a gain. Read with that point excluded, write IOPS rise from
-\csvq{queue_depth}{qd=1,mode=write}{iops_median} (QD=1) to
+\textbf{Writes.} The write points at QD 4--32 come from the lean re-run, each after a
+\qty{15}{\second} pause; QD 1, 2 and 64--256 are from the original run. The rule gives
+QD~\csvq{queue_depth_knee}{mode=write}{knee_qd}
+(\csvq{queue_depth_knee}{mode=write}{knee_iops} IOPS,
+\csvq[1]{queue_depth_knee}{mode=write}{knee_lat_us}\,\si{\micro\second} mean), and doubling to
+QD~\csvq{queue_depth_knee}{mode=write}{next_qd} changes IOPS by
+\csvq[1]{queue_depth_knee}{mode=write}{gain_pct}\,\%. Write IOPS rise from
+\csvq{queue_depth}{qd=1,mode=write}{iops_median} (QD=1) through
 \csvq{queue_depth}{qd=4,mode=write}{iops_median} (QD=4) and
-\csvq{queue_depth}{qd=16,mode=write}{iops_median} (QD=16), then stay at
+\csvq{queue_depth}{qd=8,mode=write}{iops_median} (QD=8) to the QD=16 peak, then stay at
 \csvq{queue_depth}{qd=32,mode=write}{iops_median}--\csvq{queue_depth}{qd=256,mode=write}{iops_median}
-out to QD=256. The write knee is effectively QD\,$\approx$\,16. The write plateau of
-\ensuremath{\sim}\num{250}k IOPS $\times$ \qty{4}{\kibi\byte} $\approx$ \qty{0.97}{\gibi\byte\per\second}
-matches the SLC ingest rate measured in \cref{sec:block-size}. Writes saturate the buffer's intake, not
-the NAND parallelism that limits reads.
+out to QD=256. The dip at QD=32 is not significant: its IQR
+(\csvq{queue_depth}{qd=32,mode=write}{iops_q25}--\csvq{queue_depth}{qd=32,mode=write}{iops_q75})
+overlaps that of QD=16
+(\csvq{queue_depth}{qd=16,mode=write}{iops_q25}--\csvq{queue_depth}{qd=16,mode=write}{iops_q75}). The QD=4
+point is the least stable (IQR
+\csvq{queue_depth}{qd=4,mode=write}{iops_q25}--\csvq{queue_depth}{qd=4,mode=write}{iops_q75}).
+In the original run the QD=8 write point caught a buffer-flush stall (\num{16884} IOPS, p99
+\qty{27.9}{\milli\second}). The knee rule then returned QD=4, and the text had to override it. After the
+pauses of the lean re-run, the stall did not recur, and the rule's answer agrees with the shape of the
+curve. The write plateau of \ensuremath{\sim}\num{250}k IOPS $\times$ \qty{4}{\kibi\byte}
+$\approx$ \qty{0.97}{\gibi\byte\per\second} matches the SLC ingest rate measured in
+\cref{sec:block-size}. Writes saturate the buffer's intake, not the NAND parallelism that limits reads.
 
 \subsection{Little's Law as a consistency check}
 Little's Law \cite{little1961proof} relates the mean number of requests in a system $L$, the throughput

@@ -14,7 +14,10 @@ thermal and garbage-collection effects (with \cref{sec:device-state}).}
                 temperature recorded per repetition \\
   Varied      & iodepth 8 (mid), 32 and 64 (bracketing the knee of \cref{sec:queue-depth}), 128 (past
                 it) \\
-  Script      & \code{SSD_Performance_Profiling/scripts/run.sh tail} \\
+  Drive state & lean re-run: after the short sustained fill, the large file was deleted, the drive
+                rested \qty{10}{\minute}, and a fresh \qty{4}{\gibi\byte} test file was preconditioned
+                sequentially; reads cover its first \qty{2}{\gibi\byte} \\
+  Script      & \code{SSD_Performance_Profiling/scripts/run.sh tail} (inside \code{rerun_clean.sh lean}) \\
 \end{knobs}
 
 \begin{figure}[tbp]
@@ -32,42 +35,58 @@ thermal and garbage-collection effects (with \cref{sec:device-state}).}
     \end{tikzpicture}%
   }
   \caption{Latency percentiles at a mid queue depth (8), around the knee (32, 64) and past it (128);
-  medians with IQR bars (\ssdfromall). In the 2026-10-21 run these points followed \ensuremath{\sim}\qty{11}{\gibi\byte} of random writes
-  while the drive was still doing background flash work, and the upper tail detaches from the median as
-  QD grows: p99.9/p50 rises from about 4$\times$ to 24$\times$.}\label{fig:tail}
+  medians with IQR bars (\ssdfromall). Measured after a \qty{10}{\minute} rest on a freshly
+  preconditioned file. The upper tail widens faster than the median as QD grows: p99.9/p50 rises from
+  \ssdtailratio{8}{p999}$\times$ at QD=8 to \ssdtailratio{128}{p999}$\times$ at QD=128.}\label{fig:tail}
 \end{figure}
 
 \subsection{Analysis}
-The tail runs did \emph{not} see the same drive as the queue-depth read sweep, and that difference is the
-main result. In \code{run.sh all} they started immediately after the queue-depth \emph{write} sweep,
-which wrote \ensuremath{\sim}\qty{11}{\gibi\byte} of random \qty{4}{\kibi\byte} data, and there was no
-idle gap. At the same queue depth, the tail runs delivered half the IOPS of the earlier, clean read
-sweep: \csvq{tail}{qd=32}{iops_median} vs.\ \csvq{queue_depth}{qd=32,mode=read}{iops_median} at QD=32.
-Their median latency was
-\csvq[0]{tail}{qd=32}{lat_p50_us_median} vs.\ \csvq[0]{queue_depth}{qd=32,mode=read}{lat_p50_us_median}\,\si{\micro\second}.
-The temperature was \qtyrange{50.9}{52.9}{\celsius}, so this is not thermal. The likely cause is
-foreground reads competing with the controller's background folding and garbage collection of the data
-just written.
-
-Under that contention the tail detaches from the body as QD grows, as hypothesised but more strongly:
+On a rested drive the tail widens with queue depth roughly as hypothesised, but modestly:
 \begin{itemize}[nosep]
   \item QD=8: p50~\csvq{tail}{qd=8}{lat_p50_us_median}, p99~\csvq{tail}{qd=8}{lat_p99_us_median},
-        p99.9~\csvq{tail}{qd=8}{lat_p999_us_median}\,\si{\micro\second}; p99.9/p50 $=4.1\times$.
+        p99.9~\csvq{tail}{qd=8}{lat_p999_us_median}\,\si{\micro\second}; p99.9/p50 $=\ssdtailratio{8}{p999}\times$.
   \item QD=32: p50~\csvq{tail}{qd=32}{lat_p50_us_median}, p99~\csvq{tail}{qd=32}{lat_p99_us_median},
-        p99.9~\csvq{tail}{qd=32}{lat_p999_us_median}\,\si{\micro\second}; $6.7\times$.
-  \item QD=64: p99.9 \csvq{tail}{qd=64}{lat_p999_us_median}\,\si{\micro\second}; $15\times$.
-  \item QD=128: p99.9 \csvq{tail}{qd=128}{lat_p999_us_median}\,\si{\micro\second}; $24\times$.
+        p99.9~\csvq{tail}{qd=32}{lat_p999_us_median}\,\si{\micro\second}; $\ssdtailratio{32}{p999}\times$.
+  \item QD=64: p50~\csvq{tail}{qd=64}{lat_p50_us_median}, p99.9~\csvq{tail}{qd=64}{lat_p999_us_median}\,\si{\micro\second};
+        $\ssdtailratio{64}{p999}\times$.
+  \item QD=128: p50~\csvq{tail}{qd=128}{lat_p50_us_median}, p99.9~\csvq{tail}{qd=128}{lat_p999_us_median}\,\si{\micro\second};
+        $\ssdtailratio{128}{p999}\times$.
 \end{itemize}
-Meanwhile IOPS barely grow past QD=32 (\csvq{tail}{qd=32}{iops_median}$\to$\csvq{tail}{qd=128}{iops_median}).
-In the clean sweep, by contrast, p99.9/p50 stays between 3.8 and $4.9\times$ from QD=16 to 256: the whole
-distribution shifts up together, which is pure queueing. The tail ratio is therefore a sensitive
-detector of background flash activity. Queueing alone keeps it near $4\times$, and a read that arrives
-during a program/erase or a garbage-collection burst waits milliseconds. Deeper queues hold more requests
-behind each such stall.
+From QD=8 to 32 the median grows $2.4\times$ and p99.9 $3.0\times$; from 32 to 64, $1.6\times$ and
+$2.3\times$. IOPS meanwhile barely grow past the knee
+(\csvq{tail}{qd=64}{iops_median}$\to$\csvq{tail}{qd=128}{iops_median}). Past the knee every added
+request waits in a queue, and a request queued behind one of the drive's occasional slow reads waits
+longer. That stretches the upper percentiles more than the median. The p99/p50 ratio follows the same
+trend (\ssdtailratio{8}{p99}$\times$ at QD=8 to \ssdtailratio{128}{p99}$\times$ at QD=128).
 
-These are the numbers that govern provisioning for a latency-SLA service, not the mean. At QD=32 on a
-drive that has recently absorbed writes, one read in a thousand takes
-\csvq{tail}{qd=32}{lat_p999_us_median}\,\si{\micro\second}. The knee from \cref{sec:queue-depth}
-is therefore a latency decision as much as a throughput one: past it, almost no IOPS are gained and these
-tails inflate fastest. The NVMe composite temperature stayed at \qtyrange{33.9}{61.9}{\celsius} across
-all runs, far below the \qty{86.85}{\celsius} warning threshold (\cref{sec:device-state}).
+These tail runs agree with the original queue-depth read sweep wherever both measured the same depth:
+\csvq{tail}{qd=32}{iops_median} vs.\ \csvq{queue_depth}{qd=32,mode=read}{iops_median} IOPS at QD=32,
+and \csvq{tail}{qd=128}{iops_median} vs.\ \csvq{queue_depth}{qd=128,mode=read}{iops_median} at QD=128.
+The exception is QD=8, where the rested drive is faster
+(\csvq{tail}{qd=8}{iops_median} vs.\ \csvq{queue_depth}{qd=8,mode=read}{iops_median} IOPS) and has a
+much lower p99 (\csvq{tail}{qd=8}{lat_p99_us_median} vs.\
+\csvq{queue_depth}{qd=8,mode=read}{lat_p99_us_median}\,\si{\micro\second}). The original sweep's p99
+sat near \qty{0.5}{\milli\second} at every depth from 4 to 16. We suspect that it, too, met some
+background flash work left by the earlier write experiments, but we did not test this.
+
+\textbf{The tail depends on recent writes.} The original tail run (\code{tail/20261021-103201}) started
+immediately after the queue-depth \emph{write} sweep, which wrote \ensuremath{\sim}\qty{11}{\gibi\byte}
+of random \qty{4}{\kibi\byte} data, with no idle gap. At QD=32 it delivered \num{64475} IOPS, half the
+rested value, at a median of \qty{385}{\micro\second}, and its p99.9/p50 ratio rose from $4.1\times$ at
+QD=8 to $24\times$ at QD=128 (p99.9 \qty{16.0}{\milli\second}). Its temperature,
+\qtyrange{50.9}{52.9}{\celsius}, was no higher than that of the lean tail run
+(\qtyrange{39.9}{52.9}{\celsius} per-point medians), so the difference is not thermal. The two runs
+differ in more than drive state, including the file size (\qty{2}{\gibi\byte} vs.\
+\qty{4}{\gibi\byte}) and the time of day. The likely cause is still foreground reads competing with the
+background folding and garbage collection of freshly written data. A read that arrives during a program,
+erase or GC burst waits milliseconds, and deeper queues hold more requests behind each such stall. The
+tail ratio is therefore a sensitive detector of background flash activity. Queueing alone keeps it at
+3--6$\times$, while a recent heavy write load pushes it to $24\times$.
+
+These are the numbers that govern provisioning for a latency-SLA service, not the mean. At QD=32 one read
+in a thousand takes \csvq{tail}{qd=32}{lat_p999_us_median}\,\si{\micro\second} on a rested drive, but
+took \qty{2.6}{\milli\second} right after heavy writes. The knee from \cref{sec:queue-depth} is
+therefore a latency decision as much as a throughput one: past it, almost no IOPS are gained and these
+tails inflate fastest. Over both runs the NVMe composite temperature stayed at
+\qtyrange{31.9}{61.9}{\celsius}, far below the \qty{86.85}{\celsius} warning threshold
+(\cref{sec:device-state}).

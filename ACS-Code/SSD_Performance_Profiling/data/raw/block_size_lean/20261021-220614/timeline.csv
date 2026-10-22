@@ -1,0 +1,14 @@
+1792635707,blkbench,--span 2147483648 --experiment block_size --bs 4096 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5 --header
+1792635727,blkbench,--span 2147483648 --experiment block_size --bs 16384 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792635747,blkbench,--span 2147483648 --experiment block_size --bs 32768 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792635767,blkbench,--span 2147483648 --experiment block_size --bs 65536 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792635788,blkbench,--span 2147483648 --experiment block_size --bs 131072 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792635808,blkbench,--span 2147483648 --experiment block_size --bs 262144 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792635828,blkbench,--span 2147483648 --experiment block_size --bs 524288 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792635848,blkbench,--span 2147483648 --experiment block_size --bs 1048576 --qd 32 --pattern rand --rwmix 10 --runtime 4 --reps 5
+1792636169,gap,15
+1792636184,blkbench,--span 2147483648 --experiment block_size --bs 262144 --qd 1 --pattern rand --rwmix 0 --runtime 4 --reps 3 --max-bytes 134217728
+1792636184,gap,15
+1792636199,blkbench,--span 2147483648 --experiment block_size --bs 524288 --qd 1 --pattern rand --rwmix 0 --runtime 4 --reps 3 --max-bytes 134217728
+1792636200,gap,15
+1792636215,blkbench,--span 2147483648 --experiment block_size --bs 1048576 --qd 1 --pattern rand --rwmix 0 --runtime 4 --reps 3 --max-bytes 134217728

@@ -75,7 +75,8 @@ point ran directly after the \qty{2}{\gibi\byte} sequential re-fill that precede
 case. We read the first two repetitions as waiting for the controller to flush that burst, and the
 later ones as the unloaded QD=1 write path. The median (\csvq{zero_queue}{mode=write,pattern=seq}{iops_median}
 IOPS) therefore describes the recovered state, and the row should not be read as a stable baseline.
-\code{rerun_clean.sh} repeats it after a rest, and \code{blkbench} now logs each point's start time
+The full \code{rerun_clean.sh} repeats it after a rest; the lean re-run reported here does not include
+it, so this row is still from the original run. \code{blkbench} now logs each point's start time
 (\code{timeline.csv}), so such stalls can be placed in time.
 
 An early pilot run, since discarded, measured this sequential read directly after the random-write

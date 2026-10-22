@@ -20,8 +20,9 @@ scripts/sync_data.sh SSD_Performance_Profiling
 cd ../ACS-Latex && make ssd
 \end{lstlisting}
 
-\paragraph{Clean re-run.} Several results in this report are shaped by the run order: \code{all}
-followed directly by \code{device_state}, with no TRIM and no idle (\cref{sec:method}).
+\paragraph{Clean re-run.} Several results of the original run were shaped by the run order: \code{all}
+followed directly by \code{device_state}, with no TRIM and no idle (\cref{sec:method}). The full clean
+re-run below has not been run; the lean version after it has.
 \code{scripts/rerun_clean.sh} repeats the affected experiments in an order that avoids these confounds.
 It first checks free space (at least \code{SUSTAIN_GIB}$+$\qty{10}{\gibi\byte}), drive idleness
 (\code{/sys/block/nvme0n1/stat} over \qty{10}{\second}) and recent-TRIM evidence in the journal. It then
@@ -62,10 +63,24 @@ scripts/sync_data.sh SSD_Performance_Profiling
 It also takes an NVMe SMART snapshot before and after, when \code{nvme smart-log} works without root.
 Partial re-measurements replace only the matching configurations of the 2026-10-21 run, and figure
 captions say which run each point comes from.
+
+The lean re-run reported here has the timestamp \code{20261021-220614}. It was run on 2026-10-21 as
+follows. \code{sudo fstrim -v /} ran at 21:34:54, the machine was then left idle for at least
+\qty{30}{\minute}, and the script's idle and TRIM checks passed. The run lasted from 22:06 to
+22:32:17 EDT, with the governor at \code{performance}, turbo off, SMT off and ACPI GPE~0x42 masked. Its
+complete console output, including the free-space, TRIM-evidence and idle checks, the plan table and
+the per-minute temperature during the rests, is in
+\code{ACS-Code/SSD_Performance_Profiling/data/raw/rerun_clean_20261021-220614.log}. The SMART
+snapshots taken before and after the run (in \code{data/raw/smart/}) hold only the hwmon temperature,
+because \code{nvme smart-log} needs root. A second log, \code{rerun_clean_20261021-220544.log}, holds
+only the preflight lines of a start \qty{30}{\second} earlier that did not proceed to any
+measurement.
 \begin{lstlisting}[language=bash]
-sudo fstrim -v /                 # then leave the machine idle >= 30 min
+sudo fstrim -v /                 # 21:34:54; then idle >= 30 min
+export ACS_SCRATCH="$HOME/acs_ssd_scratch"
 SSD_Performance_Profiling/scripts/rerun_clean.sh lean dryrun
-SSD_Performance_Profiling/scripts/rerun_clean.sh lean
+SSD_Performance_Profiling/scripts/rerun_clean.sh lean   # 20261021-220614, 22:06-22:32 EDT
+scripts/sync_data.sh SSD_Performance_Profiling
 \end{lstlisting}
 
 \code{ACS_SCRATCH} selects the device under test, and the \code{safety.sh} gate is identical wherever it
@@ -77,25 +92,29 @@ from the newest raw run of each experiment.
 
 The timed runs reported here were executed by the author in a terminal on the test machine, with the
 CPU governor set to \code{performance}, turbo off and SMT off. \code{run.sh all} started at 10:32 and
-\code{SUSTAIN_GIB=60 run.sh device_state} followed immediately at 10:54 on 2026-10-21.
+\code{SUSTAIN_GIB=60 run.sh device_state} followed immediately at 10:54 on 2026-10-21; the lean re-run
+followed at 22:06 the same day.
 
 \begin{table}[h]
   \centering\small
-  \caption{Raw data behind each figure (\code{ACS-Code/SSD_Performance_Profiling/data/raw/...}).}\label{tab:raw-data}
+  \caption{Raw data behind each figure (\code{ACS-Code/SSD_Performance_Profiling/data/raw/...}). Where two
+  directories are listed, the lean (\code{_lean}) rows replace the matching configurations of the
+  original run.}\label{tab:raw-data}
   \begin{tabularx}{\linewidth}{@{}lX@{}}
     \toprule
     Figure / table & Raw run directory \\
     \midrule
     \Cref{tab:zero-queue} & \code{zero_queue/20261021-103201} \\
-    \Cref{fig:block-size,fig:block-size-qd} & \code{block_size/20261021-103201} \\
+    \Cref{fig:block-size,fig:block-size-qd} & \code{block_size/20261021-103201} $+$ \code{block_size_lean/20261021-220614} \\
     \Cref{fig:rw-mix}, \cref{tab:rw-mix} & \code{rw_mix/20261021-103201} \\
-    \Cref{fig:queue-depth}, \cref{tab:littles-law} & \code{queue_depth/20261021-103201} \\
-    \Cref{fig:tail} & \code{tail/20261021-103201} \\
+    \Cref{fig:queue-depth}, \cref{tab:littles-law} & \code{queue_depth/20261021-103201} $+$ \code{queue_depth_lean/20261021-220614} \\
+    \Cref{fig:tail} & \code{tail/20261021-220614} (original run: \code{tail/20261021-103201}) \\
     \Cref{tab:pitfall} & \code{pitfall/20261021-103201} \\
     \Cref{tab:layout} & \code{layout/20261021-103201} \\
-    \Cref{tab:fio-check} & \code{fio_check/20261021-103201} (FIO JSON under \code{fio/}) \\
-    \Cref{fig:sustained}, \cref{tab:sustained} & \code{sustained/20261021-105439} \\
-    \Cref{fig:working-set} & \code{working_set/20261021-105439} \\
+    \Cref{tab:fio-check,tab:fio-order} & \code{fio_check/20261021-103201} $+$ \code{fio_check_lean/20261021-220614} (FIO JSON under \code{fio/}) \\
+    \Cref{fig:sustained}, \cref{tab:sustained} & \code{sustained/20261021-220614} (original run: \code{sustained/20261021-105439}) \\
+    \Cref{fig:working-set} & \code{working_set/20261021-220614} (original run: \code{working_set/20261021-105439}) \\
+    \Cref{tab:lean} & \code{rerun_clean_20261021-220614.log} \\
     \bottomrule
   \end{tabularx}
 \end{table}

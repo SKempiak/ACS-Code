@@ -91,3 +91,6 @@
   \else none up to \csvval[1]{sustained_summary}{fill_gib}\,GiB (cache $\geq$ that)\fi}
 \DeclareRobustCommand{\ssdifcliff}[2]{\csvstr\ssdCF{sustained_summary}{cliff_found}\def\ssdOne{1}%
   \ifx\ssdCF\ssdOne #1\else #2\fi}
+% \ssdtailratio{qd}{pctl}: ratio of the tail run's lat_<pctl>_us_median to its p50 at that QD (e.g. {128}{p999})
+\DeclareRobustCommand{\ssdtailratio}[2]{\csvget\ssdTa{tail}{qd=#1}{lat_#2_us_median}\csvget\ssdTb{tail}{qd=#1}{lat_p50_us_median}%
+  \ssdratio{\ssdTa}{\ssdTb}}

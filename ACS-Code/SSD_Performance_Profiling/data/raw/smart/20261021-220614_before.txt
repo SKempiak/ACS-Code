@@ -1,0 +1,30 @@
+# 2026-10-21T22:06:24-04:00 before
+# hwmon composite temperature: 31.85 C
+WARNING: 'smart-log' is deprecated and will be removed in the next major version, use 'nvme log smart' instead
+[1mUsage: nvme log smart <device> [OPTIONS][0m
+
+Retrieve SMART log for the given device (or optionally a namespace) in 
+either decoded format (default) or binary.
+
+[1mOptions:[0m
+  [  --namespace-id=<NUM>, -n <NUM> ]   --- (optional) desired namespace
+  [  --raw-binary, -b ]                 --- output in binary format
+
+[1mGlobal options:[0m
+  [  --verbose, -v ]                    --- Increase output verbosity
+  [  --quiet ]                          --- suppress informational output
+  [  --output-format=<FMT>, -o <FMT> ]  --- Output format: 
+                                            normal|json|binary
+  [  --timeout=<NUM> ]                  --- timeout value, in milliseconds
+  [  --dry-run ]                        --- show command instead of 
+                                            executing
+  [  --no-retries ]                     --- disable retry logic on errors
+  [  --no-ioctl-probing ]               --- disable 64-bit IOCTL support 
+                                            probing
+  [  --output-format-version=<NUM> ]    --- output format version: 1|2
+  [  --set-options=<KEY=VALUE> ]        --- set a libnvme library option 
+                                            (key=value[,key=value,...]);
+{
+  "error":"/dev/nvme0: Permission denied"
+}
+# nvme smart-log failed (no root?); hwmon only

@@ -20,20 +20,29 @@ The read knee is at QD~\csvq{queue_depth_knee}{mode=read}{knee_qd} under an expl
 few percent more IOPS. $L/\text{QD}$ stays at 0.987--0.998. Little's Law holds by construction in a
 closed loop, so this confirms that the harness keeps the queue full and the saturation is the device's.
 
-Device state matters as much as configuration. Once the SLC cache is full, sequential writes fall from
-\csvval{sustained_summary}{burst_mibps} to \csvval{sustained_summary}{steady_mibps}\,MiB/s ($\ssdburstratio\times$),
-and random writes average \csvval{sustained_summary}{rand_steady_iops} IOPS with
-\qty{32}{\milli\second} per-second p99. A minute of idle does not bring the cache back. Reads issued
-while the drive is still folding recent writes lose half their IOPS, and their p99.9 grows up to
-$24\times$ the median. Sequential reads of randomly written data run $6$--$9\times$ slower whatever the
-queue depth. Because our device-state run started on a cache already filled by the preceding sweeps, the
-fresh-drive SLC capacity remains unmeasured. The NVMe temperature peaked at \qty{61.9}{\celsius}, far below
-the drive's \qty{86.85}{\celsius} warning threshold, so we saw no thermal effects.
+Device state matters as much as configuration. A lean re-run on a freshly trimmed, idle drive found
+the SLC cache much smaller than expected: a sequential fill hit the cliff after
+\csvval[1]{sustained_summary}{cliff_gib}\,GiB instead of the \ensuremath{\sim}\qty{20}{\gibi\byte} we
+had assumed, so the stop-at-cliff fill wrote only \csvval[1]{sustained_summary}{fill_gib}\,GiB. That
+size is consistent with a dynamic cache that scales with the drive's free space, which we could not
+control or measure because only the scratch partition was trimmed. We report it as the cache available
+in this state, not as a fixed capacity. Past the cliff, sequential writes fall from
+\csvval{sustained_summary}{burst_mibps} to \csvval{sustained_summary}{steady_mibps}\,MiB/s
+($\ssdburstratio\times$), and 4\,KiB random writes run at about \num{15}k IOPS with
+\qty{36}{\milli\second} per-second p99. A minute of idle restored at least \qty{1}{\gibi\byte} of cache
+after this short fill, but nothing after the original run's \qty{60}{\gibi\byte} one. On the rested
+drive, read tails widen with queue depth to p99.9/p50 $=\ssdtailratio{128}{p999}\times$ at QD=128.
+Right after heavy writes they lost half their IOPS and reached $24\times$. Sequential reads of randomly
+written data run $6$--$9\times$ slower whatever the queue depth. The write collapses seen inside the
+original sweeps disappeared when the same points were re-measured after a rest. The NVMe temperature
+peaked at \qty{61.9}{\celsius}, far below the drive's \qty{86.85}{\celsius} warning threshold, so we
+saw no thermal effects.
 
 The sharpest lessons are methodological. Without \code{O_DIRECT}, the same workload reported
 page-cache fiction. The first dataset was taken on the HDD until the \code{rotational} flag gave it away.
 A \enquote{sequential} read can be six to nine times slower depending only on how the data was written.
 And on a QLC drive, \emph{what ran just before} changes write throughput by an order of magnitude and read
-tails severalfold. A storage measurement can be trusted only if it bypasses the cache, verifies its
+tails severalfold, and even a trimmed, idle drive offered an SLC cache far smaller than expected,
+plausibly because its size depends on how full the drive is. A storage measurement can be trusted only if it bypasses the cache, verifies its
 effective queue depth, controls the data's write history and the drive's recent workload, and confirms
 which device it is talking to.

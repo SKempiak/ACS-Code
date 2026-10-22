@@ -8,8 +8,9 @@ Summarized from \code{AI_USE_LOG.md} in the code repository.
         Claude Opus~5 did the initial harness and report, up to 2026-10-20. Claude Opus~5.5 did the
         2026-10-21 rework and the analysis of the final runs. GCC~\sysGCC{} built the code. The AI wrote the code and the prose. The timed runs were
         executed by the author in a terminal on the machine in \cref{tab:environment}, using the scripts
-        Claude Code wrote (\code{run.sh all}, then \code{SUSTAIN_GIB=60 run.sh device_state}). Claude Code
-        ran no timed benchmark; every number comes from those runs.
+        Claude Code wrote (\code{run.sh all}, then \code{SUSTAIN_GIB=60 run.sh device_state}, and later
+        \code{rerun_clean.sh lean} after \code{sudo fstrim -v /}). Claude Code ran no timed benchmark;
+        every number comes from those runs. Claude Code updated this report's text for the lean re-run.
   \item[What they helped generate] \code{blkbench.c} (the O\_DIRECT \code{libaio} benchmark), the
         data-safety gate (\code{safety.sh}) and its tests (\code{validate.sh}), the experiment driver
         (\code{run.sh}) with its CSV reduction, the FIO job files and converter, and the first drafts of
@@ -42,6 +43,12 @@ Summarized from \code{AI_USE_LOG.md} in the code repository.
                 \qty{3}{\second}, that reported a misleading \qty{66}{\mebi\byte\per\second} burst and a
                 spurious cliff at \qty{11}{\gibi\byte}. The definitions were fixed and the summary was
                 regenerated from the unchanged raw log (\code{run.sh reprocess}).
+          \item The earlier report attributed the small (\qty{3.1}{\gibi\byte}) cache to the run order.
+                The lean re-run on a trimmed, idle drive found \qty{3.8}{\gibi\byte}, so that
+                explanation was withdrawn (\cref{sec:device-state}). The summary column
+                \code{rand_steady_iops} is a byte-weighted phase average, and in the lean run a final
+                \qty{0.7}{\second} at SLC speed doubles it. Checked against the per-second log, the
+                text now quotes the per-second median as the steady value.
           \item Claims carried over from the pilot data were re-checked against the final run and
                 corrected where the data disagreed: the QD 1$\to$4 scaling, the 26\,\% gain from QD 32 to
                 64 (15\,\%), the constant p99.9/p50 ratio, and the prediction that deep queues hide

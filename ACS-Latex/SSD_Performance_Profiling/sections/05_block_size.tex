@@ -66,8 +66,10 @@ against latency.}
   throughput rises with block size because latency grows more slowly than the transfer size. Sequential
   reads stay near \qty{1.4}{\gibi\byte\per\second} from 64 to \qty{256}{\kibi\byte} and reach
   \qty{1.8}{\gibi\byte\per\second} at \qty{1}{\mebi\byte}, a single-request limit well below the
-  \qty{3756}{\mebi\byte\per\second} link. The random-write collapse at $\geq$\qty{256}{\kibi\byte} is an
-  SLC-cache-exhaustion episode (see text). \ssdfrom{the random writes $\geq$\qty{256}{\kibi\byte}}}\label{fig:block-size}
+  \qty{3756}{\mebi\byte\per\second} link. Random and sequential writes both stay at the
+  \ensuremath{\sim}\qty{1.05}{\gibi\byte\per\second} SLC ingest rate from \qty{64}{\kibi\byte} up; the
+  original run's collapse of the $\geq$\qty{256}{\kibi\byte} random writes did not recur after a rest
+  (see text). \ssdfrom{the random writes $\geq$\qty{256}{\kibi\byte}}}\label{fig:block-size}
 \end{figure}
 
 \begin{figure}[tbp]
@@ -152,32 +154,43 @@ appears in the preconditioning passes and in the first seconds of the sustained 
 
 \csvget\ssdHasRR{block_size}{pattern=rand,mode=read,qd=32}{mibps_median}%
 \ifx\ssdHasRR\empty\else
-\textbf{Random reads at QD=32} reach
-\csvq{block_size}{bs=4096,pattern=rand,mode=read,qd=32}{iops_median} IOPS at \qty{4}{\kibi\byte} and
+\textbf{Random reads at QD=32} (lean re-run) reach
+\csvq{block_size}{bs=4096,pattern=rand,mode=read,qd=32}{iops_median} IOPS at \qty{4}{\kibi\byte}, peak
+at \csvq{block_size}{bs=262144,pattern=rand,mode=read,qd=32}{mibps_median}\,MiB/s at
+\qty{256}{\kibi\byte} and give
 \csvq{block_size}{bs=1048576,pattern=rand,mode=read,qd=32}{mibps_median}\,MiB/s at \qty{1}{\mebi\byte}
 (dash-dotted curve in \cref{fig:block-size-qd}), against
 \csvq{block_size}{bs=1048576,pattern=seq,mode=read,qd=32}{mibps_median}\,MiB/s for sequential reads.
+Even with 32 large requests in flight, random placement costs more than half of the sequential
+bandwidth. One possible reason, which we did not test, is that the controller's read-ahead and die
+striping work best on logically sequential access. The \qty{4}{\kibi\byte} point is about \qty{5}{\percent} above the QD=32 point of the
+original queue-depth sweep (\csvq{queue_depth}{qd=32,mode=read}{iops_median} IOPS,
+\cref{sec:queue-depth}). We take that difference to be the run-to-run variation between a rested drive
+and one in the middle of a write-heavy sequence.
 \fi
 
 \textbf{Writes at QD=1.} At \qty{4}{\kibi\byte}, random writes post
 \csvq{block_size}{bs=4096,pattern=rand,mode=write,qd=1}{iops_median} IOPS against
 \csvq{block_size}{bs=4096,pattern=rand,mode=read,qd=1}{iops_median} for reads. The write buffer
 acknowledges before the NAND program, so write latency reflects the host$\to$buffer transfer, not flash
-timing. Accordingly, the random and sequential write curves coincide up to \qty{128}{\kibi\byte}
+timing. Accordingly, the random and sequential write curves coincide across the sweep
 (\csvq{block_size}{bs=65536,pattern=rand,mode=write,qd=1}{mibps_median} vs.\
 \csvq{block_size}{bs=65536,pattern=seq,mode=write,qd=1}{mibps_median}\,MiB/s at \qty{64}{\kibi\byte}).
 Both flatten at about \qty{1.05}{\gibi\byte\per\second} from \qty{64}{\kibi\byte}, the same ingest rate
 as at QD=32. Unlike reads, writes reach their ceiling with a single request in flight.
 
-\textbf{An SLC-exhaustion episode inside the sweep.} The random-write points at
+\textbf{A drive-state episode, not a block-size effect.} In the original run, the random-write points at
 \qty{256}{\kibi\byte}, \qty{512}{\kibi\byte} and \qty{1}{\mebi\byte} fell to
-\csvq{block_size}{bs=262144,pattern=rand,mode=write,qd=1}{mibps_median}--%
-\csvq{block_size}{bs=1048576,pattern=rand,mode=write,qd=1}{mibps_median}\,MiB/s, with p99 latencies of
-\qtyrange{33}{45}{\milli\second}. That is the same \ensuremath{\sim}\qty{60}{\mebi\byte\per\second}
-direct-to-QLC rate the sustained experiment measures once the SLC cache is full. These were the last
-write points before the sequential-read group, and the run had written about \qty{10}{\gibi\byte} by
-then (preconditioning, \code{zero_queue} and the smaller write points). The sequential writes, measured
-a few minutes later after the read-only group, were back at \ensuremath{\sim}\qty{1.05}{\gibi\byte\per\second}.
-This is consistent with the controller having drained part of the cache in between. Treat the three
-collapsed points as a drive-state measurement, not a block-size effect: the sequential-write curve
-shows no such drop at the same sizes.
+\qtyrange{64}{66}{\mebi\byte\per\second}, with p99 latencies of \qtyrange{33}{45}{\milli\second}. That
+is the \ensuremath{\sim}\qty{60}{\mebi\byte\per\second} direct-to-QLC rate the sustained experiment
+measures once the SLC cache is full. They were the last write points before the sequential-read group,
+after about \qty{10}{\gibi\byte} of writes in that run, and given how small the cache turned out to be
+(\cref{sec:device-state}), that was plausibly enough to fill it. The lean re-run measured the same three points
+again after a \qty{5}{\minute} rest, with \qty{15}{\second} pauses and a \qty{128}{\mebi\byte} cap per
+repetition. They ran at \csvq{block_size}{bs=262144,pattern=rand,mode=write,qd=1}{mibps_median},
+\csvq{block_size}{bs=524288,pattern=rand,mode=write,qd=1}{mibps_median} and
+\csvq{block_size}{bs=1048576,pattern=rand,mode=write,qd=1}{mibps_median}\,MiB/s, with p99 of
+\csvq[0]{block_size}{bs=262144,pattern=rand,mode=write,qd=1}{lat_p99_us_median}--%
+\csvq[0]{block_size}{bs=1048576,pattern=rand,mode=write,qd=1}{lat_p99_us_median}\,\si{\micro\second},
+on top of the sequential-write curve, so the earlier collapse reflected cache exhaustion rather than
+block size.
