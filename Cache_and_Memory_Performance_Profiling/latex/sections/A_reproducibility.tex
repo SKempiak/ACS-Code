@@ -2,11 +2,11 @@
 \section{Reproducibility}\label{app:repro}
 
 Code, scripts, raw and processed data, and this report live in one repository, in this project's
-\code{code/} and \code{latex/} directories (shared files in \code{common/}), at commit \code{65219fa68aef}.
+\code{code/} and \code{latex/} directories (shared files in \code{common/}), at commit \code{d1e7b4b7fc69}.
 
 \begin{lstlisting}[language=bash]
 gh repo clone SKempiak/ACS-Code ACS && cd ACS
-git checkout 65219fa68aef
+git checkout d1e7b4b7fc69
 make tools                                          # common/code/build/tools/summarize
 # build mem_latency mem_bandwidth mem_loaded kernel_miss; run the validate.sh sanity checks
 make -C Cache_and_Memory_Performance_Profiling/code

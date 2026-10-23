@@ -1,7 +1,7 @@
 % !TeX root = ../main.tex
 \section{Reproducibility}\label{app:repro}
 
-\newcommand{\acscommit}{\detokenize{65219fa68aef}}
+\newcommand{\acscommit}{\detokenize{d1e7b4b7fc69}}
 Code and data (\code{code/}) and this report (\code{latex/}) live in the project's folder of one repository, with shared files in \code{common/}. The timed runs (2026-10-21, 20:38--20:54) used the tree committed as \texttt{b00db66}; the
 measurement code is unchanged since, except an opt-in error print in the validation path of
 \code{main.c} that is inactive in timed runs. This report corresponds to commit
@@ -9,7 +9,7 @@ measurement code is unchanged since, except an opt-in error print in the validat
 
 \begin{lstlisting}[language=bash, basicstyle=\ttfamily\scriptsize]
 gh repo clone SKempiak/ACS-Code ACS && cd ACS
-git checkout 65219fa68aef
+git checkout d1e7b4b7fc69
 make tools                                     # common/code/build/tools/summarize
 make -C SIMD_Advantage_Profiling/code          # scalar/autovec/native simd_bench + ceilings
 make -C SIMD_Advantage_Profiling/code test     # 578 correctness cases (max error logged)

@@ -1,11 +1,11 @@
 % !TeX root = ../main.tex
 \section{Reproducibility}\label{app:repro}
 
-Code and data live in this project's \code{code/} directory, the report in \code{latex/} (shared files in \code{common/}), at commit \code{65219fa68aef}.
+Code and data live in this project's \code{code/} directory, the report in \code{latex/} (shared files in \code{common/}), at commit \code{d1e7b4b7fc69}.
 
 \begin{lstlisting}[language=bash]
 gh repo clone SKempiak/ACS-Code ACS && cd ACS
-git checkout 65219fa68aef
+git checkout d1e7b4b7fc69
 make tools                                    # common/code/build/tools/summarize
 make -C SSD_Performance_Profiling/code        # build/blkbench (O_DIRECT, libaio)
 make -C SSD_Performance_Profiling/code test   # safety + sanity checks (~70 MiB written, deleted)
