@@ -1,9 +1,0 @@
-{
-  "files.associations": {
-    "*.fio": "ini"
-  },
-  "files.exclude": {
-    "**/build": true
-  },
-  "C_Cpp.default.cStandard": "gnu11"
-}

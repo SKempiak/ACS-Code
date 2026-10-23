@@ -1,0 +1,52 @@
+% !TeX root = ../main.tex
+\section{Reproducibility}\label{app:repro}
+
+Code, scripts, raw and processed data, and this report live in one repository, in this project's
+\code{code/} and \code{latex/} directories (shared files in \code{common/}), at commit \code{65219fa68aef}.
+
+\begin{lstlisting}[language=bash]
+gh repo clone SKempiak/ACS-Code ACS && cd ACS
+git checkout 65219fa68aef
+make tools                                          # common/code/build/tools/summarize
+# build mem_latency mem_bandwidth mem_loaded kernel_miss; run the validate.sh sanity checks
+make -C Cache_and_Memory_Performance_Profiling/code
+make -C Cache_and_Memory_Performance_Profiling/code test
+common/code/scripts/collect_env.sh --tex > common/latex/system_info.tex
+Cache_and_Memory_Performance_Profiling/code/scripts/run.sh zero_queue pattern rw_mix intensity \
+    working_set cache_miss tlb pitfall mlc clock_check   # or: run.sh all (CPU_PIN=2 by default)
+common/code/scripts/sync_data.sh Cache_and_Memory_Performance_Profiling
+make memory
+\end{lstlisting}
+
+\begin{table}[h]
+  \centering\small
+  \caption{Raw data behind each figure and table (directories under
+  \code{Cache_and_Memory_Performance_Profiling/code/data/raw/}).}\label{tab:raw-data}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.2\linewidth}l>{\raggedright\arraybackslash}Xl@{}}
+    \toprule
+    Figure / table & \code{run.sh} experiment & Processed CSV & Raw run directory \\
+    \midrule
+    \Cref{tab:zero-queue} & \code{zero_queue} & \code{zero_queue}, \code{zero_queue_table} (L2 2\,MiB value: \code{working_set}) & \code{zero_queue/20261021-202254} \\
+    \Cref{fig:pattern,fig:stride} & \code{pattern} & \code{pattern_lat}, \code{pattern_bw} & \code{pattern/20261021-202254} \\
+    \Cref{fig:rw-mix} & \code{rw_mix} & \code{rw_mix}, \code{rw_mix_ref} & \code{rw_mix/20261021-202254} \\
+    \Cref{fig:intensity,fig:mlp}, \cref{tab:littles-law} & \code{intensity} & \code{intensity_loaded}, \code{intensity_mlp}, \code{littles_law}, \code{knee} & \code{intensity/20261021-202254} \\
+    \Cref{fig:working-set} & \code{working_set} & \code{working_set} & \code{working_set/20261021-202254} \\
+    \Cref{fig:cache-miss} & \code{cache_miss} & \code{cache_miss_ctr}, \code{amat_fit} & \code{cache_miss/20261021-202254} \\
+    \Cref{fig:tlb} & \code{tlb} & \code{tlb_chase} & \code{tlb/20261021-202254} \\
+    \Cref{tab:tlb-saxpy} & \code{tlb} & \code{tlb_saxpy}, \code{tlb_saxpy_table} & \code{tlb/20261021-202254} \\
+    \Cref{fig:pitfall} & \code{pitfall} & \code{pitfall} & \code{pitfall/20261021-202254} \\
+    \Cref{tab:zero-queue,fig:intensity}, \cref{sec:rw-mix} (MLC) & \code{mlc} & \code{mlc_idle}, \code{mlc_loaded}, \code{mlc_bw} & \code{mlc/20261021-202254} \\
+    \Cref{sec:method} (clock, idle DRAM traffic) & \code{clock_check} & --- (\code{summary.csv}) & \code{clock_check/20261021-202254} \\
+    \Cref{sec:anomalies} (ACPI storm) & \code{clock_check} & --- (\code{summary.csv}) & \code{clock_check/20261021-194648} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+Each experiment directory holds the raw rows (one per repetition, with full configuration metadata),
+\code{env.txt}, \code{build.txt}, \code{commands.txt} and \code{validate.txt} (\cref{sec:method}), except
+that the MLC directory (Intel's binary; raw text output plus \code{mlc_version.txt}, parsed by
+\code{scripts/mlc_to_csv.py}) has no \code{build.txt} or \code{validate.txt}, and the earlier
+\code{clock_check/20261021-194648} run, kept as evidence for \cref{sec:anomalies}, has no
+\code{validate.txt}. All other directories come from a single \code{run.sh all} invocation (2026-10-21,
+20:22--20:39) of code identical to commit \code{b00db66} (\cref{sec:method}).

@@ -1,0 +1,43 @@
+{
+  "files.associations": {
+    "*.fio": "ini"
+  },
+  "files.exclude": {
+    "**/build": true
+  },
+  "C_Cpp.default.cStandard": "gnu11",
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "latexmk (draft)",
+      "tools": ["latexmk-draft"]
+    },
+    {
+      "name": "latexmk (final: rubric boxes hidden, warns on TODOs)",
+      "tools": ["latexmk-final"]
+    }
+  ],
+  "latex-workshop.latex.tools": [
+    {
+      "name": "latexmk-draft",
+      "command": "latexmk",
+      "args": ["-synctex=1", "-interaction=nonstopmode", "-file-line-error", "%DOC%"]
+    },
+    {
+      "name": "latexmk-final",
+      "command": "latexmk",
+      "args": ["-g", "-synctex=1", "-interaction=nonstopmode", "-file-line-error", "-usepretex=\\def\\acsfinal{}", "%DOC%"]
+    }
+  ],
+  "latex-workshop.latex.recipe.default": "first",
+  "latex-workshop.latex.outDir": "%DIR%/build",
+  "latex-workshop.latex.autoBuild.run": "onSave",
+  "latex-workshop.latex.autoClean.run": "never",
+  "latex-workshop.latex.search.rootFiles.include": ["**/main.tex"],
+  "latex-workshop.latex.search.rootFiles.exclude": ["**/build/**"],
+  "latex-workshop.view.pdf.viewer": "tab",
+  "latex-workshop.view.pdf.tab.editorGroup": "right",
+  "latex-workshop.synctex.afterBuild.enabled": true,
+  "[latex]": {
+    "editor.wordWrap": "on"
+  }
+}

@@ -1,0 +1,54 @@
+% Project 2 — Cache & Memory Performance Profiling
+% Build: `latexmk` in this directory, or `make memory` from the repository root.
+\documentclass[11pt]{article}
+\input{../../common/latex/preamble}
+\input{../../common/latex/macros}
+\input{../../common/latex/system_info}
+\input{numbers}   % \val{key}: measured values from data/summary.csv (scripts/derive.py)
+
+\title{Project 2: Cache \& Memory Performance Profiling}
+\author{\acsauthor\\[2pt]\small\acscourse\\\small\href{mailto:\acsemail}{\acsemail}}
+\date{\acsdue}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+  We profile the cache and memory hierarchy of an Intel i9-10900F with four purpose-built
+  microbenchmarks, user-space core counters, memory-controller counters and Intel MLC.
+  Zero-queue pointer-chase latency is \valqty{zq_L1_ns}{\nano\second} in L1, \valqty{zq_L2_hugens}{\nano\second}
+  for an L2 hit, \valqty{zq_L3_ns}{\nano\second} in L3 and \valqty{zq_DRAM_ns}{\nano\second} in DRAM with
+  \qty{4}{\kibi\byte} pages (\valqty{zq_DRAM_hugens}{\nano\second} with \qty{2}{\mebi\byte} pages). A
+  loaded-latency probe running beside up to nine streaming cores traces the throughput--latency
+  curve: the knee is at four cores, \valqty{int_sat_gib}{\gibi\byte\per\second} (95\% of peak) at
+  \val{int_sat_ratio}$\times$ the unloaded latency, matching MLC. With measured latency, Little's Law
+  separates the \valnum{int_L0max} lines the controller serves from up to \valnum{int_Lmax} that queue.
+  Counter-fitted AMAT explains the \valnum{cm_rand_span}$\times$ random-SAXPY slowdown, \qty{2}{\mebi\byte}
+  pages remove a page-walk cost of up to \valqty{tlb_gap_65536_ns}{\nano\second} per access, and
+  memory-controller counters confirm the read-for-ownership cost of writes. A cache-resident buffer
+  reports \valqty{pit_small_gib}{\gibi\byte\per\second} of nonexistent ``DRAM'' bandwidth.
+\end{abstract}
+
+\ifacsdraft{\small\setcounter{tocdepth}{1}\renewcommand{\addvspace}[1]{\vspace{1pt}}\tableofcontents}\clearpage\fi
+
+\input{sections/01_introduction}
+\input{sections/02_methodology}
+\input{sections/03_validation}
+\input{sections/04_zero_queue}
+\input{sections/05_pattern_granularity}
+\input{sections/06_rw_mix}
+\input{sections/07_intensity_knee}
+\input{sections/08_working_set}
+\input{sections/09_cache_miss}
+\input{sections/10_tlb_miss}
+\input{sections/11_pitfall}
+\input{sections/12_anomalies_limitations}
+\input{sections/13_ai_use}
+\input{sections/14_conclusion}
+
+\printbibliography
+
+\appendix
+\input{sections/A_reproducibility}
+
+\end{document}

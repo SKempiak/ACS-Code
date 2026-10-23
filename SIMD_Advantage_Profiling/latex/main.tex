@@ -1,0 +1,101 @@
+% Project 1 — SIMD Advantage Profiling
+% Build: `latexmk` in this directory, or `make simd` from the repository root.
+\documentclass[11pt]{article}
+\input{../../common/latex/preamble}
+\input{../../common/latex/macros}
+\input{../../common/latex/system_info}
+
+% Typewriter text: keep "--" as two hyphens (command-line flags such as --info,
+% --cpu, --selftest) instead of the T1 en-dash ligature.
+\DisableLigatures[-]{encoding = T1, family = tt*}
+
+% With the bibtex fall-back backend (no biber on the build host), biblatex 3.21 never records the
+% previous run's citation list, so the citation-order check of the ieee style's sorting=none
+% template fails on every run and reports "There were undefined references" / "Please rerun
+% BibTeX". This report cites a single source, so name-year sorting gives the same list and avoids
+% the spurious warning.
+\ExecuteBibliographyOptions{sorting=nyt}
+
+% Hypothesis boxes: the shared title claims "written before measuring", which git history
+% cannot prove for this report; state what was actually done.
+\renewtcolorbox{hypothesis}{breakable, colback=black!3, colframe=black!45, boxrule=0.4pt, arc=1pt,
+  left=4pt, right=4pt, top=2pt, bottom=2pt, fonttitle=\bfseries\small,
+  title={Hypothesis (from first principles, then compared with the data)}}
+
+% Error bars for speedup columns: speedup_q25/_q75 are appended by
+% SIMD_Advantage_Profiling/code/scripts/speedup_iqr.awk.
+\pgfplotsset{
+  % Shorter single-panel plots than the shared default, to keep the report compact.
+  acs/.append style={height=0.42\linewidth},
+  % Fixed per-variant styles for plots where a variant may still be missing from the data;
+  % the legend is drawn with \acsvariantlegend so it never shifts onto the wrong curve.
+  var scalar/.style={color=blue, mark=*, mark options={fill=blue}},
+  var autovec/.style={color=red, mark=square*, mark options={fill=red}},
+  var native/.style={color=brown!80!black, mark=triangle*, mark options={fill=brown!80!black}},
+  /pgfplots/table/speedup iqr/.style={
+    y error plus expr={\thisrow{speedup_q75}-\thisrow{speedup_vs_scalar}},
+    y error minus expr={\thisrow{speedup_vs_scalar}-\thisrow{speedup_q25}},
+  },
+}
+\newcommand{\acsvariantlegend}{%
+  \addlegendimage{var scalar}\addlegendentry{scalar}%
+  \addlegendimage{var autovec}\addlegendentry{autovec}%
+  \addlegendimage{var native}\addlegendentry{native}}
+
+% Let floats share pages with text instead of forming half-empty float pages.
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.75}
+\setcounter{topnumber}{3}
+\setlength{\textfloatsep}{10pt plus 2pt minus 4pt}
+\setlength{\floatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+\setcounter{totalnumber}{4}
+
+\title{Project 1: SIMD Advantage Profiling}
+\author{\acsauthor\\[2pt]\small\acscourse\\\small\href{mailto:\acsemail}{\acsemail}}
+\date{\acsdue}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+  We measure scalar-versus-SIMD speedup for four single-threaded kernels (SAXPY, dot product,
+  elementwise multiply and a 3-point stencil) on an Intel Core i9-10900F (AVX2+FMA,
+  \qty{256}{bit} vectors) at a fixed \qty{2.8}{\giga\hertz}. With cache-resident data a
+  \code{-march=native} build reaches about $5.8\times$ over scalar for SAXPY and the generic SSE
+  build about $3\times$. In DRAM the gain compresses to $1.88\text{--}2.02\times$ for SAXPY: the
+  native kernels sit on the measured bandwidth roof, and what remains is the scalar loop's own
+  instruction cost. Float64 usually keeps about half of float32's cache-resident gain. Any non-unit
+  stride or gather erases the advantage; the AVX2 hardware gather is even $1.5\text{--}1.6\times$
+  slower than scalar in cache. A cache-aware roofline with separately
+  measured ceilings (\qty{89.2}{\giga\flop\per\second} FMA peak, triad bandwidth per level) places L3-
+  and DRAM-resident native kernels at \SIrange{95}{107}{\percent} of their roof. Our negative cases
+  are memory-bound SAXPY and the non-reassociated dot product ($\approx1\times$).
+\end{abstract}
+
+\ifacsdraft{\setcounter{tocdepth}{1}\tableofcontents}\fi
+
+\input{sections/01_introduction}
+\input{sections/02_methodology}
+\input{sections/03_correctness}
+\input{sections/04_vectorization}
+\input{sections/05_baseline}
+\input{sections/06_locality}
+\input{sections/07_alignment_tail}
+\input{sections/08_stride_gather}
+\input{sections/09_datatype}
+\input{sections/10_roofline}
+\input{sections/11_negative_case}
+\input{sections/12_anomalies_limitations}
+\input{sections/13_ai_use}
+\input{sections/14_conclusion}
+% \input{sections/15_gpu_extension}   % optional CPU-vs-GPU comparison
+
+\printbibliography
+
+\appendix
+\input{sections/A_reproducibility}
+
+\end{document}

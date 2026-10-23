@@ -1,0 +1,98 @@
+%% Project-3-only helpers: pull numbers straight from the processed CSVs in data/, so
+%% tables and quoted values update when the experiments are re-run and synced
+%% (common/code/scripts/sync_data.sh). Every helper degrades to \tbd (orange ??) when
+%% its CSV or row is missing, so the report always compiles. (Column names are the
+%% fixed schema written by SSD_Performance_Profiling/code/scripts/run.sh.)
+
+% \ssdnum[prec]{value}: fixed-point with thin-space thousands separators; empty/NA -> \tbd
+\newcommand{\ssdnum}[2][0]{%
+  \edef\ssdV{#2}\def\ssdNA{NA}%
+  \ifx\ssdV\empty\tbd\else\ifx\ssdV\ssdNA\tbd\else
+    \pgfmathprintnumber[fixed,fixed zerofill,precision=#1,1000 sep={\,}]{\ssdV}\fi\fi}
+
+% \csvget\macro{file}{k1=v1,k2=v2,...}{column}: raw value from the first row of
+% data/<file>.csv whose key columns all match; \macro is empty when the file or row
+% is missing.  \csvq[prec]{file}{k=v,...}{column} typesets it (or \tbd).
+\makeatletter
+\def\ssd@split#1=#2\@nil{\edef\ssdKk{#1}\edef\ssdKv{#2}}
+\newcommand{\csvget}[4]{%
+  \def#1{}%
+  \IfFileExists{data/#2.csv}{%
+    \pgfplotstableread[col sep=comma]{data/#2.csv}\ssdKV
+    \pgfplotstablegetrowsof{\ssdKV}\pgfmathtruncatemacro\ssdNr{\pgfplotsretval-1}%
+    \def\ssdFound{}%
+    \pgfplotsforeachungrouped \ssdI in {0,...,\ssdNr}{%
+      \ifx\ssdFound\empty
+        \def\ssdMatch{1}%
+        \@for\ssdPair:=#3\do{%
+          \expandafter\ssd@split\ssdPair\@nil
+          \pgfplotstablegetelem{\ssdI}{\ssdKk}\of\ssdKV\let\ssdCa\pgfplotsretval
+          \ifx\ssdCa\ssdKv\else\def\ssdMatch{0}\fi}%
+        \if1\ssdMatch\edef\ssdFound{\ssdI}\fi
+      \fi}%
+    \ifx\ssdFound\empty\else
+      \pgfplotstablegetelem{\ssdFound}{#4}\of\ssdKV\let#1\pgfplotsretval
+    \fi}{}}
+\makeatother
+\newcommand{\csvq}[4][0]{\csvget\ssdQ{#2}{#3}{#4}\ssdnum[#1]{\ssdQ}}
+% \csviqr[prec]{file}{k=v,...}{metric}: "median [q25, q75]" from <metric>_median/_q25/_q75
+\newcommand{\csviqr}[4][0]{\csvq[#1]{#2}{#3}{#4_median}\,{\scriptsize[\csvq[#1]{#2}{#3}{#4_q25},\,\csvq[#1]{#2}{#3}{#4_q75}]}}
+
+% \csvval[prec]{file}{column}: row 0 of a one-row summary file (e.g. sustained_summary)
+\newcommand{\csvval}[3][0]{%
+  \IfFileExists{data/#2.csv}{%
+    \pgfplotstableread[col sep=comma]{data/#2.csv}\ssdKV
+    \pgfplotstablegetelem{0}{#3}\of\ssdKV\ssdnum[#1]{\pgfplotsretval}}{\tbd}}
+
+% \ssdratio[prec]{\a}{\b}: a/b (both raw values, e.g. from \csvget); \tbd if either is empty
+\newcommand{\ssdratio}[3][1]{%
+  \ifx#2\empty\tbd\else\ifx#3\empty\tbd\else
+    \begingroup\pgfkeys{/pgf/fpu=true,/pgf/fpu/output format=fixed}%
+    \pgfmathparse{#2/#3}\pgfmathprintnumber[fixed,precision=#1]{\pgfmathresult}\endgroup
+  \fi\fi}
+
+% ---- data-driven tables: \ssdload{file}, then \pgfplotsforeachungrouped \ssdR in {0,...,\ssdLast}
+\newcommand{\ssdload}[1]{%
+  \pgfplotstableread[col sep=comma]{data/#1.csv}\ssdT
+  \pgfplotstablegetrowsof{\ssdT}\pgfmathtruncatemacro\ssdLast{\pgfplotsretval-1}}
+%   \ssdget[prec]{column}\macro   formatted number of row \ssdR into \macro
+%   \ssdstr{column}\macro         raw string of row \ssdR into \macro
+%   \ssdiqr[prec]{metric}\macro   "median [q25, q75]" of row \ssdR into \macro
+\newcommand{\ssdget}[3][0]{%
+  \pgfplotstablegetelem{\ssdR}{#2}\of\ssdT
+  \pgfmathprintnumberto[fixed,fixed zerofill,precision=#1,1000 sep={\,}]{\pgfplotsretval}{#3}}
+\newcommand{\ssdstr}[2]{\pgfplotstablegetelem{\ssdR}{#1}\of\ssdT\let#2\pgfplotsretval}
+\newcommand{\ssdiqr}[3][0]{%
+  \ssdget[#1]{#2_median}\ssdIa\ssdget[#1]{#2_q25}\ssdIb\ssdget[#1]{#2_q75}\ssdIc
+  \edef#3{\expandonce\ssdIa\noexpand\,{\noexpand\scriptsize[\expandonce\ssdIb,\noexpand\,\expandonce\ssdIc]}}}
+% block size in bytes -> "4 KiB" / "1 MiB"
+\newcommand{\ssdbs}[1]{%
+  \edef\ssdK{\the\numexpr #1/1024\relax}%
+  \ifnum\ssdK<1024 \ssdK\,KiB\else\the\numexpr\ssdK/1024\relax\,MiB\fi}
+% reads-per-10 code -> mix label (rw_mix table)
+\newcommand{\ssdmixname}[1]{\ifcase#1 100\% write\or\or\or\or\or 50/50\or\or 70/30\or\or\or 100\% read\fi}
+
+% \csvstr\macro{file}{column}: raw string from row 0 of data/<file>.csv (empty if missing)
+\newcommand{\csvstr}[3]{\def#1{}%
+  \IfFileExists{data/#2.csv}{\pgfplotstableread[col sep=comma]{data/#2.csv}\ssdKV
+    \pgfplotstablegetelem{0}{#3}\of\ssdKV\let#1\pgfplotsretval}{}}
+% burst/steady ratio of the sustained fill (or \tbd when there was no cliff)
+\DeclareRobustCommand{\ssdburstratio}{\csvstr\ssdRb{sustained_summary}{burst_mibps}\csvstr\ssdRs{sustained_summary}{steady_mibps}%
+  \ssdratio[0]{\ssdRb}{\ssdRs}}
+% Data-provenance labels. lean_info.csv exists only after `rerun_clean.sh lean` has been synced.
+%   \ssdfromall      for figures/tables the lean run re-measures completely
+%   \ssdfrom{what}   for figures where the lean run replaced only <what>
+\DeclareRobustCommand{\ssdfromall}{\csvstr\ssdLD{lean_info}{run_date}%
+  \ifx\ssdLD\empty data: 2026-10-21 run\else data: lean re-run of \ssdLD\fi}
+\DeclareRobustCommand{\ssdfrom}[1]{\csvstr\ssdLD{lean_info}{run_date}%
+  \ifx\ssdLD\empty Data: 2026-10-21 run.\else Data: #1 from the lean re-run of \ssdLD; all other points
+  from the 2026-10-21 run.\fi}
+% sustained-fill cliff cells: value if a cliff was found, else "none up to N GiB" (lower bound)
+\DeclareRobustCommand{\ssdcliffcell}{\csvstr\ssdCF{sustained_summary}{cliff_found}\def\ssdOne{1}%
+  \ifx\ssdCF\ssdOne\csvval[1]{sustained_summary}{cliff_gib} / \csvval{sustained_summary}{cliff_s}%
+  \else none up to \csvval[1]{sustained_summary}{fill_gib}\,GiB (cache $\geq$ that)\fi}
+\DeclareRobustCommand{\ssdifcliff}[2]{\csvstr\ssdCF{sustained_summary}{cliff_found}\def\ssdOne{1}%
+  \ifx\ssdCF\ssdOne #1\else #2\fi}
+% \ssdtailratio{qd}{pctl}: ratio of the tail run's lat_<pctl>_us_median to its p50 at that QD (e.g. {128}{p999})
+\DeclareRobustCommand{\ssdtailratio}[2]{\csvget\ssdTa{tail}{qd=#1}{lat_#2_us_median}\csvget\ssdTb{tail}{qd=#1}{lat_p50_us_median}%
+  \ssdratio{\ssdTa}{\ssdTb}}

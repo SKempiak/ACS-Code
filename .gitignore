@@ -1,0 +1,31 @@
+# Build outputs
+build/
+*.o
+*.dSYM/
+
+# OS
+.DS_Store
+
+# FIO target files: never commit benchmark scratch data
+*.fio-scratch
+# Project 3 disposable O_DIRECT test file(s): never commit scratch I/O data
+**/data/scratch/
+
+# data/raw and data/processed are deliverables: keep them tracked.
+AI_USE_LOG.md
+
+# LaTeX: latexmk output directory (see <project>/latex/latexmkrc)
+**/latex/build/
+
+# Stray auxiliary files from editors that ignore latexmkrc
+**/latex/**/*.aux
+**/latex/**/*.bbl
+**/latex/**/*.bcf
+**/latex/**/*.blg
+**/latex/**/*.fdb_latexmk
+**/latex/**/*.fls
+**/latex/**/*.log
+**/latex/**/*.out
+**/latex/**/*.run.xml
+**/latex/**/*.synctex.gz
+**/latex/**/*.toc
